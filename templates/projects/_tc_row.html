@@ -1,0 +1,8 @@
+<div class="tc-row d-flex align-items-center border-bottom py-2 px-1">
+  <span class="text-muted small me-2">#{{ tc.pk }}</span>
+  <a href="{% url 'testcase_detail' tc.project_id tc.pk %}" class="text-decoration-none">{{ tc.title }}</a>
+  <span class="badge text-bg-light border ms-2">{{ tc.case_type }}</span>
+  <span class="badge ms-1 {% if tc.priority == 'Critical' or tc.priority == 'High' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ tc.priority }}</span>
+  {% if tc.automatable %}<span class="badge text-bg-success ms-1">Automatable</span>{% endif %}
+  <a href="{% url 'testcase_edit' tc.project_id tc.pk %}" class="ms-auto btn btn-sm btn-link"><i class="bi bi-pencil"></i></a>
+</div>

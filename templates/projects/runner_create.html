@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Create Test Runner{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'runner_list' project.pk %}">Test Runners</a> / Create</nav>
+<h4 class="fw-bold"><i class="bi bi-play-circle text-success"></i> Create Test Runner</h4>
+<p class="text-muted small">Set up a new test execution cycle for <b>{{ project.name }}</b></p>
+
+<form method="post">{% csrf_token %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card p-3">
+      <h6 class="fw-bold"><i class="bi bi-info-circle"></i> Runner Details</h6>
+      <div class="mb-2"><label class="form-label small fw-semibold">Runner Name *</label>{{ form.name }}<div class="text-danger small">{{ form.name.errors|join:" " }}</div></div>
+      <div class="mb-2"><label class="form-label small fw-semibold">Release</label>{{ form.release }}
+        <div class="form-text">No release? <a href="{% url 'release_create' project.pk %}">Create one</a></div></div>
+      <div class="row">
+        <div class="col-6 mb-2"><label class="form-label small fw-semibold">Execution Date</label>{{ form.execution_date }}</div>
+        <div class="col-6 mb-2"><label class="form-label small fw-semibold">Due Date</label>{{ form.due_date }}</div>
+      </div>
+      <div class="mb-2"><label class="form-label small fw-semibold">Assign To</label>{{ form.assigned_to }}<div class="form-text">Shows up in their My Tasks</div></div>
+      <div class="mb-3"><label class="form-label small fw-semibold">Description</label>{{ form.description }}</div>
+      <button class="btn btn-dark w-100"><i class="bi bi-check"></i> Create Test Runner</button>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card p-3">
+      <div class="d-flex align-items-center mb-2">
+        <h6 class="fw-bold mb-0"><i class="bi bi-check2-square"></i> Select Test Cases</h6>
+        <span class="badge text-bg-dark ms-2" id="selCount">0 selected</span>
+        <input id="tcSearch" class="form-control form-control-sm ms-auto" style="max-width:280px" placeholder="Search by #ID, title or module…">
+      </div>
+      <div class="form-check mb-2"><input type="checkbox" class="form-check-input" id="selectAll"><label class="form-check-label small" for="selectAll">Select all visible</label></div>
+      <div class="text-danger small">{{ form.test_cases.errors|join:" " }}</div>
+      <div style="max-height:60vh;overflow:auto">
+        {% for m in modules %}
+          <div class="border rounded mb-2 tc-group">
+            <div class="module-head p-2 d-flex"><label><input type="checkbox" class="form-check-input module-check me-1"> <b>{{ m.name }}</b></label></div>
+            <div class="p-2">
+              {% for tc in m.test_cases.all %}{% include "projects/_tc_check.html" %}{% endfor %}
+              {% for sub in m.children.all %}
+                <div class="ms-3 tc-group">
+                  <label class="small fw-semibold text-primary"><input type="checkbox" class="form-check-input module-check me-1"> {{ sub.name }}</label>
+                  {% for tc in sub.test_cases.all %}{% include "projects/_tc_check.html" %}{% endfor %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% empty %}<p class="text-muted">This project has no test cases yet. <a href="{% url 'testcase_create' project.pk %}">Add test cases</a> first.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const boxes = () => [...document.querySelectorAll('.tc-check')];
+const update = () => document.getElementById('selCount').textContent = boxes().filter(b => b.checked).length + ' selected';
+document.addEventListener('change', e => {
+  if (e.target.classList.contains('module-check')) {
+    e.target.closest('.tc-group').querySelectorAll('.tc-check').forEach(b => { if (b.closest('.tc-item').style.display !== 'none') b.checked = e.target.checked; });
+  }
+  update();
+});
+document.getElementById('selectAll').addEventListener('change', e => {
+  boxes().forEach(b => { if (b.closest('.tc-item').style.display !== 'none') b.checked = e.target.checked; });
+  update();
+});
+document.getElementById('tcSearch').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase().replace('#', '');
+  document.querySelectorAll('.tc-item').forEach(i => i.style.display = i.dataset.search.includes(q) ? '' : 'none');
+});
+update();
+</script>
+{% endblock %}

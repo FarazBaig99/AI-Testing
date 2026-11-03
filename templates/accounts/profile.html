@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}My Profile{% endblock %}
+{% block content %}
+<h4 class="fw-bold"><i class="bi bi-person-badge"></i> My Profile</h4>
+<p class="text-muted small">Account, assigned work and password</p>
+
+<div class="card p-3 mb-3 d-flex flex-row align-items-center gap-3">
+  <span class="avatar" style="width:56px;height:56px;font-size:1.4rem">{{ user.username|first|upper }}</span>
+  <div><h5 class="mb-0">{{ user.username }}</h5><small class="text-muted">{{ user.email }}</small></div>
+  <div class="ms-auto text-end small text-muted">Joined {{ user.date_joined|date:"M d, Y" }}<br>Capacity: {{ user.profile.capacity_hours }}h / week</div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card p-3 h-100">
+      <h6 class="fw-bold"><i class="bi bi-card-text"></i> Profile Details</h6>
+      <form method="post">{% csrf_token %}
+        {% for field in profile_form %}
+          <div class="mb-3"><label class="form-label small">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>
+        {% endfor %}
+        <button name="save_profile" class="btn btn-dark btn-sm"><i class="bi bi-check"></i> Save Details</button>
+      </form>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-3 h-100">
+      <h6 class="fw-bold"><i class="bi bi-key"></i> Change Password</h6>
+      <form method="post">{% csrf_token %}
+        {% for field in password_form %}
+          <div class="mb-3"><label class="form-label small">{{ field.label }}</label>{{ field }}<div class="text-danger small">{{ field.errors|join:" " }}</div></div>
+        {% endfor %}
+        <button name="change_password" class="btn btn-dark btn-sm"><i class="bi bi-key"></i> Change Password</button>
+      </form>
+    </div>
+  </div>
+  <div class="col-12">
+    <div class="card p-3">
+      <h6 class="fw-bold"><i class="bi bi-list-task"></i> My Work</h6>
+      {% for r in my_runners %}
+        <div class="d-flex justify-content-between border-bottom py-2">
+          <a href="{% url 'runner_execute' r.project_id r.pk %}">{{ r.name }}</a>
+          <span class="small text-muted">{{ r.project.name }} · <span class="st-badge st-{{ r.status|slugify }}">{{ r.status }}</span></span>
+        </div>
+      {% empty %}<p class="text-muted small mb-0">No test runners assigned to you yet.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

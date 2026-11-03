@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="hero mb-4">
+  <h3 class="fw-bold">Good day, {{ user.username }}!</h3>
+  <p class="mb-3 opacity-75">You have {{ my_runner_count }} test runner(s) assigned to you.</p>
+  <a href="{% url 'project_list' %}" class="btn btn-sm btn-light"><i class="bi bi-folder2"></i> Projects</a>
+  <a href="{% url 'my_tasks' %}" class="btn btn-sm btn-outline-light"><i class="bi bi-clipboard-check"></i> My Tasks</a>
+</div>
+
+<h6 class="fw-bold"><i class="bi bi-grid text-success"></i> Workspace overview</h6>
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="stat" style="background:#1d2f4f"><b>{{ project_count }}</b>Total Projects</div></div>
+  <div class="col-md-3"><div class="stat" style="background:#059669"><b>{{ module_count }}</b>Modules</div></div>
+  <div class="col-md-3"><div class="stat" style="background:#e11d48"><b>{{ case_count }}</b>Total Test Cases</div></div>
+  <div class="col-md-3"><div class="stat" style="background:#2563eb"><b>{{ automatable_count }}</b>Automatable Tests</div></div>
+</div>
+
+<h6 class="fw-bold"><i class="bi bi-play-circle text-success"></i> Execution summary</h6>
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4">{{ runner_count }}</b><span class="text-muted">Test Runners</span></div></div>
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-success">{{ pass_count }}</b><span class="text-muted">Passed</span></div></div>
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-danger">{{ fail_count }}</b><span class="text-muted">Failed</span></div></div>
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-secondary">{{ pending_count }}</b><span class="text-muted">Pending</span></div></div>
+</div>
+
+<div class="card p-3">
+  <h6 class="fw-bold">Recent test runners</h6>
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Runner</th><th>Project</th><th>Release</th><th style="width:25%">Progress</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for r in recent_runners %}{% with c=r.counts %}
+      <tr>
+        <td><a href="{% url 'runner_execute' r.project_id r.pk %}">{{ r.name }}</a></td>
+        <td>{{ r.project.name }}</td><td>{{ r.release|default:"-" }}</td>
+        <td><div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:{{ c.progress }}%"></div></div><small>{{ c.progress }}%</small></td>
+        <td><span class="st-badge st-{{ r.status|slugify }}">{{ r.status }}</span></td>
+      </tr>
+    {% endwith %}{% empty %}
+      <tr><td colspan="5" class="text-muted">No runners yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

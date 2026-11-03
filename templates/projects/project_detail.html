@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / <a href="{% url 'project_list' %}">Projects</a> / {{ project.name }}</nav>
+
+<div class="card p-3 mb-3">
+  <div class="d-flex align-items-start">
+    <div>
+      <h3 class="fw-bold mb-0">{{ project.name }}</h3>
+      <small class="text-muted">Created {{ project.created_at|date:"M d, Y" }} • Updated {{ project.updated_at|date:"M d, Y" }}</small>
+      <div class="mt-2 small">
+        <span class="badge text-bg-light border">{{ stats.modules }} parent modules · {{ stats.submodules }} submodules</span>
+        <span class="badge text-bg-light border">{{ stats.cases }} test cases</span>
+        <span class="badge text-bg-light border">{{ stats.automatable }} automatable</span>
+        <span class="badge text-bg-light border">{{ stats.releases }} releases</span>
+      </div>
+    </div>
+    <div class="ms-auto d-flex gap-2 flex-wrap">
+      <a href="{% url 'runner_list' project.pk %}" class="btn btn-success btn-sm"><i class="bi bi-play-circle"></i> Test Runners</a>
+      <a href="{% url 'testcase_create' project.pk %}" class="btn btn-dark btn-sm"><i class="bi bi-plus"></i> New Test Case</a>
+      <a href="{% url 'project_edit' project.pk %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i> Edit</a>
+    </div>
+  </div>
+  {% if project.description %}<hr><p class="mb-0 text-muted">{{ project.description }}</p>{% endif %}
+</div>
+
+<ul class="nav nav-pills mb-3">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-overview">Overview</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-releases">Releases <span class="badge text-bg-secondary">{{ stats.releases }}</span></button></li>
+</ul>
+
+<div class="tab-content">
+<div class="tab-pane fade show active" id="tab-overview">
+  <div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card p-3 text-center"><b class="fs-3">{{ stats.cases }}</b>Total Test Cases</div></div>
+    <div class="col-md-3"><div class="card p-3 text-center" style="background:#ecfdf5"><b class="fs-3 text-success">{{ stats.automatable }}</b>Automatable</div></div>
+    <div class="col-md-3"><div class="card p-3 text-center" style="background:#fefce8"><b class="fs-3 text-warning">{{ stats.manual }}</b>Manual Only</div></div>
+    <div class="col-md-3"><div class="card p-3 text-center"><b class="fs-3">{{ stats.runners }}</b>Test Runners</div></div>
+  </div>
+  <div class="row g-3 mb-3">
+    <div class="col-md-6"><div class="card p-3 h-100">
+      <h6 class="fw-bold">Execution Summary</h6>
+      <div class="d-flex gap-4">
+        <div><b class="fs-3">{{ stats.pass_rate }}%</b><br><small>Pass Rate</small></div>
+        <div><b class="fs-3 text-success">{{ stats.passed }}</b><br><small>Passed</small></div>
+        <div><b class="fs-3 text-danger">{{ stats.failed }}</b><br><small>Failed</small></div>
+        <div><b class="fs-3 text-secondary">{{ stats.pending }}</b><br><small>Pending</small></div>
+      </div>
+    </div></div>
+    <div class="col-md-6"><div class="card p-3 h-100">
+      <h6 class="fw-bold">Label Distribution</h6>
+      {% for l in labels %}<span class="badge text-bg-light border me-1 mb-1">{{ l.case_type }} · {{ l.n }}</span>{% empty %}<small class="text-muted">No test cases yet.</small>{% endfor %}
+    </div></div>
+  </div>
+
+  <div class="card p-3">
+    <div class="d-flex align-items-center mb-3 gap-2 flex-wrap">
+      <h6 class="fw-bold mb-0">Modules</h6>
+      <a href="{% url 'module_create' project.pk %}" class="btn btn-sm btn-outline-dark"><i class="bi bi-plus"></i> Add Module</a>
+      <button class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('.module-body').forEach(e=>e.classList.add('show'))">Expand All</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('.module-body').forEach(e=>e.classList.remove('show'))">Collapse All</button>
+      <form class="ms-auto d-flex gap-1">
+        <input name="search" value="{{ search }}" class="form-control form-control-sm" placeholder="Search by #ID, title or module">
+        <button class="btn btn-sm btn-dark">Search</button>
+        {% if search %}<a href="?" class="btn btn-sm btn-outline-secondary">Clear</a>{% endif %}
+      </form>
+    </div>
+
+    {% if matches is not None %}
+      <p class="small text-muted">{{ matches|length }} match(es) for "{{ search }}"</p>
+      {% for tc in matches %}{% include "projects/_tc_row.html" %}{% empty %}<p class="text-muted">No test cases match.</p>{% endfor %}
+    {% else %}
+      {% for m in root_modules %}
+      <div class="border rounded mb-2">
+        <div class="module-head d-flex align-items-center p-2" role="button" data-bs-toggle="collapse" data-bs-target="#mod{{ m.pk }}">
+          <i class="bi bi-folder-fill text-warning me-2"></i><b>{{ m.name }}</b>
+          <small class="text-muted ms-2">{{ m.test_cases.count }} test cases • {{ m.children.count }} submodules</small>
+          <div class="ms-auto" onclick="event.stopPropagation()">
+            <a href="{% url 'testcase_create' project.pk %}?module={{ m.pk }}" class="btn btn-sm btn-link" title="Add test case"><i class="bi bi-file-plus"></i></a>
+            <a href="{% url 'module_create' project.pk %}?parent={{ m.pk }}" class="btn btn-sm btn-link" title="Add submodule"><i class="bi bi-folder-plus"></i></a>
+            <a href="{% url 'module_edit' project.pk m.pk %}" class="btn btn-sm btn-link" title="Edit"><i class="bi bi-pencil"></i></a>
+            <a href="{% url 'module_delete' project.pk m.pk %}" class="btn btn-sm btn-link text-danger" title="Delete"><i class="bi bi-trash"></i></a>
+          </div>
+        </div>
+        <div class="collapse module-body" id="mod{{ m.pk }}">
+          <div class="p-2">
+            {% for tc in m.test_cases.all %}{% include "projects/_tc_row.html" %}{% endfor %}
+            {% for sub in m.children.all %}
+              <div class="border rounded ms-3 mb-2">
+                <div class="module-head d-flex align-items-center p-2">
+                  <i class="bi bi-folder2 text-primary me-2"></i><b>{{ sub.name }}</b><small class="text-muted ms-2">{{ sub.test_cases.count }} test cases</small>
+                  <div class="ms-auto">
+                    <a href="{% url 'testcase_create' project.pk %}?module={{ sub.pk }}" class="btn btn-sm btn-link" title="Add test case"><i class="bi bi-file-plus"></i></a>
+                    <a href="{% url 'module_edit' project.pk sub.pk %}" class="btn btn-sm btn-link" title="Edit"><i class="bi bi-pencil"></i></a>
+                    <a href="{% url 'module_delete' project.pk sub.pk %}" class="btn btn-sm btn-link text-danger" title="Delete"><i class="bi bi-trash"></i></a>
+                  </div>
+                </div>
+                <div class="p-2">{% for tc in sub.test_cases.all %}{% include "projects/_tc_row.html" %}{% empty %}<small class="text-muted">No test cases.</small>{% endfor %}</div>
+              </div>
+            {% endfor %}
+            {% if not m.test_cases.all and not m.children.all %}<small class="text-muted">Empty module.</small>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% empty %}
+        <p class="text-muted mb-0">No modules yet. <a href="{% url 'module_create' project.pk %}">Add the first module</a>, then add test cases inside it.</p>
+      {% endfor %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="tab-pane fade" id="tab-releases">
+  <div class="card p-3">
+    <div class="d-flex mb-2"><h6 class="fw-bold">Releases</h6>
+      <a href="{% url 'release_create' project.pk %}" class="btn btn-sm btn-dark ms-auto"><i class="bi bi-plus"></i> New Release</a></div>
+    <table class="table table-sm mb-0">
+      <thead><tr><th>Name</th><th>Release Date</th><th>Description</th><th>Runners</th><th></th></tr></thead>
+      <tbody>
+      {% for r in releases %}
+        <tr><td><b>{{ r.name }}</b></td><td>{{ r.release_date|date:"M d, Y"|default:"-" }}</td><td>{{ r.description|default:"-" }}</td>
+          <td><a href="{% url 'runner_list' project.pk %}?release={{ r.pk }}">{{ r.n }}</a></td>
+          <td><a href="{% url 'release_edit' project.pk r.pk %}"><i class="bi bi-pencil"></i></a></td></tr>
+      {% empty %}<tr><td colspan="5" class="text-muted">No releases yet. Add one (e.g. v1.0.0) so test runners can be linked to it.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+{% endblock %}

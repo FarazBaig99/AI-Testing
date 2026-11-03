@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ runner.name }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'runner_list' project.pk %}">Test Runners</a> / {{ runner.name }}</nav>
+
+<div class="d-flex align-items-start mb-3">
+  <div>
+    <h4 class="fw-bold mb-1">{{ runner.name }}</h4>
+    <small class="text-muted">{{ runner.execution_date|date:"M d, Y"|default:"-" }} · <i class="bi bi-person"></i> {{ runner.assigned_to|default:"Unassigned" }}
+      · <span class="st-badge st-{{ runner.status|slugify }}">{{ runner.status }}</span>
+      {% if runner.release %}· <i class="bi bi-tag"></i> Release {{ runner.release }}{% endif %}
+      {% if runner.due_date %}· Due {{ runner.due_date|date:"M d, Y" }}{% endif %}</small>
+    {% if runner.description %}<p class="small mt-1 mb-0">{{ runner.description }}</p>{% endif %}
+  </div>
+  <a href="{% url 'runner_delete' project.pk runner.pk %}" class="btn btn-sm btn-outline-danger ms-auto"><i class="bi bi-trash"></i> Delete</a>
+</div>
+
+<div class="card p-3 mb-3">
+  <h6 class="fw-bold">Execution Progress</h6>
+  <div class="d-flex align-items-center gap-4 flex-wrap">
+    <div class="text-center"><b class="fs-2">{{ counts.progress }}%</b><br><small>{{ counts.total }} total test cases</small></div>
+    <div class="text-center"><b class="fs-4">{{ counts.Pending }}</b><br><small>PENDING</small></div>
+    <div class="text-center text-success"><b class="fs-4">{{ counts.Pass }}</b><br><small>PASSED</small></div>
+    <div class="text-center text-danger"><b class="fs-4">{{ counts.Fail }}</b><br><small>FAILED</small></div>
+    <div class="text-center text-warning"><b class="fs-4">{{ counts.Blocked }}</b><br><small>BLOCKED</small></div>
+    <div class="text-center" style="color:#6d28d9"><b class="fs-4">{{ counts.on_hold }}</b><br><small>ON HOLD</small></div>
+    <div class="text-center text-info"><b class="fs-4">{{ counts.partial }}</b><br><small>PARTIAL PASS</small></div>
+  </div>
+  <div class="progress mt-2" style="height:8px"><div class="progress-bar bg-success" style="width:{{ counts.progress }}%"></div></div>
+</div>
+
+<div class="card p-2 mb-3 d-flex flex-row flex-wrap gap-1 align-items-center">
+  <a href="?status=All" class="btn btn-sm {% if status_filter == 'All' %}btn-dark{% else %}btn-outline-dark{% endif %}">All</a>
+  {% for s in status_choices %}
+    <a href="?status={{ s }}" class="btn btn-sm {% if status_filter == s %}btn-dark{% else %}btn-outline-dark{% endif %}">{{ s }}</a>
+  {% endfor %}
+  <small class="ms-auto text-muted me-2">Shortcuts: click a row, then <kbd>P</kbd> Pass · <kbd>F</kbd> Fail · <kbd>B</kbd> Blocked · <kbd>H</kbd> On Hold · <kbd>S</kbd> Save All</small>
+</div>
+
+<form method="post" id="execForm">{% csrf_token %}
+  {% for module, results in groups.items %}
+  <div class="card mb-3">
+    <div class="module-head p-2 rounded-top"><i class="bi bi-box"></i> <b>{{ module }}</b> <span class="badge text-bg-secondary">{{ results|length }}</span></div>
+    {% for r in results %}
+    <div class="tc-row exec-row border-top p-2" tabindex="0">
+      <div class="d-flex align-items-center gap-2">
+        <a class="text-muted small" data-bs-toggle="collapse" href="#steps{{ r.pk }}"><i class="bi bi-chevron-down"></i></a>
+        <span class="text-muted small">#{{ r.test_case.pk }}</span>
+        <span class="flex-fill">{{ r.test_case.title }} <span class="badge text-bg-light border">{{ r.test_case.case_type }}</span></span>
+        {% if r.executed_by %}<small class="text-muted">{{ r.executed_at|date:"M d, H:i" }} by {{ r.executed_by }}</small>{% endif %}
+        <input name="comment_{{ r.pk }}" value="{{ r.comment }}" class="form-control form-control-sm" style="max-width:240px" placeholder="Comment / bug id">
+        <select name="status_{{ r.pk }}" class="form-select form-select-sm status-select st-{{ r.status|slugify }}" style="max-width:140px">
+          {% for s in status_choices %}<option {% if s == r.status %}selected{% endif %}>{{ s }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="collapse small mt-2 ms-4" id="steps{{ r.pk }}">
+        {% if r.test_case.preconditions %}<b>Preconditions:</b> {{ r.test_case.preconditions|linebreaksbr }}<br>{% endif %}
+        <b>Steps:</b><br>{{ r.test_case.steps|linebreaksbr }}<br>
+        <b>Expected:</b> {{ r.test_case.expected_result|linebreaksbr }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% empty %}
+  <div class="card p-4 text-center text-muted">No test cases for this filter.</div>
+  {% endfor %}
+  {% if groups %}
+  <div class="position-sticky bottom-0 bg-white p-2 border rounded shadow-sm text-end">
+    <button class="btn btn-success"><i class="bi bi-save"></i> Save All Results</button>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const keys = {p: 'Pass', f: 'Fail', b: 'Blocked', h: 'On Hold'};
+document.querySelectorAll('.status-select').forEach(sel => sel.addEventListener('change', () => {
+  sel.className = sel.className.replace(/st-[\w-]+/, 'st-' + sel.value.toLowerCase().replace(' ', '-'));
+}));
+document.addEventListener('keydown', e => {
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k === 's') { document.getElementById('execForm').submit(); return; }
+  const row = e.target.closest && e.target.closest('.exec-row');
+  if (row && keys[k]) {
+    const sel = row.querySelector('.status-select');
+    sel.value = keys[k];
+    sel.dispatchEvent(new Event('change'));
+    const next = row.nextElementSibling || row.closest('.card').nextElementSibling?.querySelector('.exec-row');
+    if (next && next.classList.contains('exec-row')) next.focus();
+  }
+});
+</script>
+{% endblock %}

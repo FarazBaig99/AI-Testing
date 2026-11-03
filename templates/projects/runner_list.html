@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Test Runners - {{ project.name }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / <a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / Test Runners</nav>
+<div class="d-flex align-items-center mb-3">
+  <div><h4 class="fw-bold mb-0"><i class="bi bi-play-circle text-success"></i> Test Runners</h4><small class="text-muted">Execute and track test cases for <b>{{ project.name }}</b></small></div>
+  <a href="{% url 'runner_create' project.pk %}" class="btn btn-dark ms-auto"><i class="bi bi-plus"></i> New Test Runner</a>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4">{{ stats.total }}</b>TOTAL RUNNERS</div></div>
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-success">{{ stats.completed }}</b>COMPLETED</div></div>
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-primary">{{ stats.in_progress }}</b>IN PROGRESS</div></div>
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-secondary">{{ stats.pending }}</b>PENDING</div></div>
+</div>
+<form class="card p-3 mb-3 row g-2 flex-row mx-0">
+  <div class="col-md-4"><label class="small">Search</label><input name="search" value="{{ search }}" class="form-control" placeholder="Search by runner name..."></div>
+  <div class="col-md-3"><label class="small">Status</label>
+    <select name="status" class="form-select">
+      <option value="">All Statuses</option>
+      <option {% if status == 'Pending' %}selected{% endif %}>Pending</option>
+      <option {% if status == 'In Progress' %}selected{% endif %}>In Progress</option>
+      <option {% if status == 'Completed' %}selected{% endif %}>Completed</option>
+    </select></div>
+  <div class="col-md-3"><label class="small">Release</label>
+    <select name="release" class="form-select">
+      <option value="">All Releases</option>
+      {% for r in releases %}<option value="{{ r.pk }}" {% if release == r.pk|stringformat:"s" %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-2 d-flex align-items-end"><button class="btn btn-dark w-100"><i class="bi bi-funnel"></i> Filter</button></div>
+</form>
+
+<p class="fw-semibold"><i class="bi bi-list"></i> {{ runners|length }} test runners</p>
+{% for r in runners %}{% with c=r.counts %}
+<div class="card p-3 mb-2 border-start border-4 border-success">
+  <div class="d-flex align-items-start">
+    <div>
+      <h6 class="fw-bold mb-1">{{ r.name }}</h6>
+      <small class="text-muted"><i class="bi bi-calendar"></i> {{ r.execution_date|date:"M d, Y"|default:"-" }} · <i class="bi bi-person"></i> {{ r.assigned_to|default:r.created_by }}
+        {% if r.release %}· <i class="bi bi-tag"></i> {{ r.release }}{% endif %}
+        {% if r.due_date %}· <span class="text-danger">Due {{ r.due_date|date:"M d, Y" }}</span>{% endif %}</small>
+    </div>
+    <span class="st-badge st-{{ r.status|slugify }} ms-auto me-2">{{ r.status }}</span>
+    <a href="{% url 'runner_execute' project.pk r.pk %}" class="btn btn-sm btn-dark">{% if r.status == 'Completed' %}<i class="bi bi-eye"></i> View Results{% else %}<i class="bi bi-play-fill"></i> Execute{% endif %}</a>
+    <a href="{% url 'runner_delete' project.pk r.pk %}" class="btn btn-sm btn-outline-danger ms-1"><i class="bi bi-trash"></i></a>
+  </div>
+  <div class="d-flex justify-content-between small mt-2"><span class="text-muted">Execution progress</span><b>{{ c.progress }}%</b></div>
+  <div class="progress mb-2" style="height:6px"><div class="progress-bar bg-success" style="width:{{ c.progress }}%"></div></div>
+  <div class="small d-flex gap-2 flex-wrap">
+    <span class="st-badge st-pending">{{ c.total }} Total</span>
+    <span class="st-badge st-pending">{{ c.Pending }} Pending</span>
+    <span class="st-badge st-pass">{{ c.Pass }} Pass</span>
+    <span class="st-badge st-fail">{{ c.Fail }} Fail</span>
+    <span class="st-badge st-blocked">{{ c.Blocked }} Blocked</span>
+    <span class="st-badge st-on-hold">{{ c.on_hold }} On Hold</span>
+    <span class="st-badge st-partial-pass">{{ c.partial }} Partial Pass</span>
+    <span class="st-badge st-in-progress">{{ c.pass_rate }}% pass rate</span>
+  </div>
+</div>
+{% endwith %}{% empty %}
+<div class="card p-5 text-center text-muted">No test runners yet. <a href="{% url 'runner_create' project.pk %}">Create one</a>.</div>
+{% endfor %}
+{% endblock %}

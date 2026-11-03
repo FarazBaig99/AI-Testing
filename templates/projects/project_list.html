@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}My Projects{% endblock %}
+{% block content %}
+<div class="hero mb-3 d-flex justify-content-between align-items-start">
+  <div>
+    <h3 class="fw-bold"><i class="bi bi-folder2-open"></i> My Projects</h3>
+    <p class="opacity-75">Manage and organize all your testing projects in one place.</p>
+    <span class="chip"><b>{{ projects|length }}</b>Projects</span>
+    <span class="chip"><b>{{ total_modules }}</b>Modules</span>
+    <span class="chip"><b>{{ total_cases }}</b>Test Cases</span>
+  </div>
+  <a href="{% url 'project_create' %}" class="btn btn-light"><i class="bi bi-plus"></i> New Project</a>
+</div>
+<form class="card p-3 mb-3 d-flex flex-row gap-2">
+  <input name="search" value="{{ search }}" class="form-control" placeholder="Search projects...">
+  <button class="btn btn-dark px-4"><i class="bi bi-search"></i> Search</button>
+</form>
+<div class="row g-3">
+  {% for p in projects %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card h-100 overflow-hidden">
+      <div style="background:linear-gradient(120deg,#1d2f4f,#6d7ee0);height:70px" class="p-2 text-end text-white small"><i class="bi bi-calendar"></i> {{ p.created_at|date:"M d, Y" }}</div>
+      <div class="p-3">
+        <h5 class="fw-bold mb-0"><a class="text-decoration-none text-dark" href="{% url 'project_detail' p.pk %}">{{ p.name }}</a></h5>
+        <p class="text-muted small">{{ p.description|truncatechars:80|default:"No description" }}</p>
+        <div class="d-flex gap-3 small text-muted mb-3">
+          <span><i class="bi bi-diagram-3"></i> {{ p.num_modules }} modules</span>
+          <span><i class="bi bi-file-text"></i> {{ p.num_cases }} tests</span>
+          <span><i class="bi bi-play-circle"></i> {{ p.num_runners }} runs</span>
+        </div>
+        <div class="d-flex align-items-center">
+          <small class="text-muted"><i class="bi bi-person"></i> {{ p.created_by|default:"-" }}</small>
+          <a href="{% url 'project_detail' p.pk %}" class="btn btn-sm btn-dark ms-auto">Open <i class="bi bi-arrow-right"></i></a>
+          <a href="{% url 'project_edit' p.pk %}" class="btn btn-sm btn-outline-secondary ms-1" title="Edit"><i class="bi bi-pencil"></i></a>
+          <a href="{% url 'project_delete' p.pk %}" class="btn btn-sm btn-outline-danger ms-1" title="Delete"><i class="bi bi-trash"></i></a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="col-12"><div class="card p-5 text-center text-muted">No projects yet. <a href="{% url 'project_create' %}">Create your first project</a>.</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

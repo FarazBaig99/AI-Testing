@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}#{{ case.pk }} {{ case.title }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / Test Case #{{ case.pk }}</nav>
+<div class="card p-4 mb-3">
+  <div class="d-flex">
+    <div>
+      <h4 class="fw-bold">#{{ case.pk }} {{ case.title }}</h4>
+      <div class="small">
+        <span class="badge text-bg-light border"><i class="bi bi-folder"></i> {{ case.module }}</span>
+        <span class="badge text-bg-light border">{{ case.case_type }}</span>
+        <span class="badge text-bg-secondary">{{ case.priority }}</span>
+        {% if case.automatable %}<span class="badge text-bg-success">Automatable</span>{% endif %}
+      </div>
+    </div>
+    <div class="ms-auto">
+      <a href="{% url 'testcase_edit' project.pk case.pk %}" class="btn btn-sm btn-outline-dark"><i class="bi bi-pencil"></i> Edit</a>
+      <a href="{% url 'testcase_delete' project.pk case.pk %}" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete</a>
+    </div>
+  </div>
+  <hr>
+  {% if case.description %}<h6 class="fw-bold">Description</h6><p>{{ case.description|linebreaksbr }}</p>{% endif %}
+  {% if case.preconditions %}<h6 class="fw-bold">Preconditions</h6><p>{{ case.preconditions|linebreaksbr }}</p>{% endif %}
+  <h6 class="fw-bold">Steps</h6>
+  <ol>{% for s in steps %}<li>{{ s }}</li>{% endfor %}</ol>
+  <h6 class="fw-bold">Expected Result</h6>
+  <p>{{ case.expected_result|linebreaksbr }}</p>
+  <small class="text-muted">Created by {{ case.created_by|default:"-" }} on {{ case.created_at|date:"M d, Y H:i" }}</small>
+</div>
+<div class="card p-3">
+  <h6 class="fw-bold"><i class="bi bi-clock-history"></i> Execution History</h6>
+  <table class="table table-sm mb-0">
+    <thead><tr><th>Runner</th><th>Status</th><th>Comment</th><th>By</th><th>When</th></tr></thead>
+    <tbody>
+    {% for h in history %}
+      <tr><td><a href="{% url 'runner_execute' project.pk h.runner_id %}">{{ h.runner.name }}</a></td>
+        <td><span class="st-badge st-{{ h.status|slugify }}">{{ h.status }}</span></td>
+        <td>{{ h.comment|default:"-" }}</td><td>{{ h.executed_by|default:"-" }}</td><td>{{ h.executed_at|date:"M d, H:i" }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="text-muted">Not executed yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

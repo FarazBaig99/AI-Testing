@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Delete{% endblock %}
+{% block content %}
+<div class="card p-4" style="max-width:600px">
+  <h5 class="fw-bold text-danger"><i class="bi bi-exclamation-triangle"></i> Confirm delete</h5>
+  <p>Are you sure you want to delete <b>{{ object }}</b>? Everything inside it will also be deleted. This cannot be undone.</p>
+  <form method="post">{% csrf_token %}
+    <button class="btn btn-danger"><i class="bi bi-trash"></i> Yes, delete</button>
+    <a href="{{ back_url }}" class="btn btn-link">Cancel</a>
+  </form>
+</div>
+{% endblock %}

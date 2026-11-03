@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a>{% if project %} / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a>{% endif %} / {{ title }}</nav>
+<div class="card p-4" style="max-width:820px">
+  <h5 class="fw-bold mb-3">{{ title }}</h5>
+  <form method="post">{% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form %}
+      {% if field.field.widget.input_type == 'checkbox' %}
+        <div class="form-check mb-3">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div>
+      {% else %}
+        <div class="mb-3">
+          <label class="form-label fw-semibold small" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>
+          {{ field }}
+          {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+          <div class="text-danger small">{{ field.errors|join:" " }}</div>
+        </div>
+      {% endif %}
+    {% endfor %}
+    <button class="btn btn-dark"><i class="bi bi-check"></i> Save</button>
+    {% if save_add %}<button name="save_add" class="btn btn-outline-dark"><i class="bi bi-plus"></i> Save &amp; Add Another</button>{% endif %}
+    <a href="{{ back_url }}" class="btn btn-link">Cancel</a>
+  </form>
+</div>
+{% endblock %}

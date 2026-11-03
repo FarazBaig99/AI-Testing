@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}My Tasks{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / My Tasks</nav>
+<h4 class="fw-bold">My Tasks</h4>
+<p class="text-muted small">Test runners assigned to you</p>
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="stat" style="background:#1d2f4f"><b>{{ stats.total }}</b>Total Assigned</div></div>
+  <div class="col-md-3"><div class="stat" style="background:#f59e0b"><b>{{ stats.pending }}</b>Pending</div></div>
+  <div class="col-md-3"><div class="stat" style="background:#2563eb"><b>{{ stats.in_progress }}</b>In Progress</div></div>
+  <div class="col-md-3"><div class="stat" style="background:#16a34a"><b>{{ stats.completed }}</b>Completed</div></div>
+</div>
+<div class="card p-3 mb-3">
+  <div>Filter by Status:
+    <div class="btn-group btn-group-sm ms-2">
+      <a href="?status=All" class="btn {% if status_filter == 'All' %}btn-dark{% else %}btn-outline-dark{% endif %}">All</a>
+      <a href="?status=Pending" class="btn {% if status_filter == 'Pending' %}btn-dark{% else %}btn-outline-dark{% endif %}">Pending</a>
+      <a href="?status=In Progress" class="btn {% if status_filter == 'In Progress' %}btn-dark{% else %}btn-outline-dark{% endif %}">In Progress</a>
+      <a href="?status=Completed" class="btn {% if status_filter == 'Completed' %}btn-dark{% else %}btn-outline-dark{% endif %}">Completed</a>
+    </div>
+  </div>
+</div>
+<div class="card p-3">
+  <h6 class="fw-bold"><i class="bi bi-list-ul"></i> Assigned Test Runners</h6>
+  <table class="table align-middle mb-0">
+    <thead><tr><th>Test Runner</th><th>Project</th><th>Release</th><th style="width:20%">Progress</th><th>Status</th><th>Due Date</th><th>Assigned By</th><th></th></tr></thead>
+    <tbody>
+    {% for r in runners %}{% with c=r.counts %}
+      <tr>
+        <td>{{ r.name }}<br><small class="text-muted">{{ c.total }} test cases</small></td>
+        <td>{{ r.project.name }}</td><td>{{ r.release|default:"-" }}</td>
+        <td><div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:{{ c.progress }}%"></div></div><small>{{ c.progress }}%</small></td>
+        <td><span class="st-badge st-{{ r.status|slugify }}">{{ r.status }}</span></td>
+        <td>{{ r.due_date|date:"M d, Y"|default:"-" }}</td>
+        <td>{{ r.created_by|default:"-" }}</td>
+        <td><a class="btn btn-sm btn-dark" href="{% url 'runner_execute' r.project_id r.pk %}"><i class="bi bi-play-fill"></i> Execute</a></td>
+      </tr>
+    {% endwith %}{% empty %}
+      <tr><td colspan="8" class="text-muted">No test runners found.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

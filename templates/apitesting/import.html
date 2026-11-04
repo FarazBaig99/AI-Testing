@@ -4,8 +4,9 @@
 <nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / Import API Collection</nav>
 <div class="card p-3 mb-3">
   <h4 class="fw-bold mb-0"><i class="bi bi-upload text-success"></i> Import API Collection</h4>
-  <small class="text-muted">Upload a collection file or import via live URL (Scalar, OpenAPI, Swagger, Postman) to auto-generate modules and test cases for project: <b>{{ project.name }}</b></small>
+  <small class="text-muted">Upload a collection file, import via live URL (Scalar, OpenAPI, Swagger, Postman) or insert a cURL — APIs are saved into project <b>{{ project.name }}</b>, environment <b>{{ env.name }}</b>.</small>
 </div>
+{% include "apitesting/_env_bar.html" with keep_tab=tab %}
 
 <div class="card p-4" style="max-width:760px">
   <ul class="nav nav-pills nav-fill bg-light rounded p-1 mb-4">

@@ -15,8 +15,28 @@
   <a href="{% url 'runner_delete' project.pk runner.pk %}" class="btn btn-sm btn-outline-danger ms-auto"><i class="bi bi-trash"></i> Delete</a>
 </div>
 
+{% if env_tabs %}
+<div class="card p-3 mb-3 border-start border-4 border-primary">
+  <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+    <label class="fw-semibold text-nowrap" for="envSelect"><i class="bi bi-hdd-network text-primary"></i> Environment:</label>
+    <div style="min-width:300px">
+      <select name="env" id="envSelect" class="form-select searchable" data-placeholder="Search environment..." onchange="this.form.submit()">
+        {% for t in env_tabs %}
+          <option value="{{ t.env.pk }}" {% if t.env.pk == env.pk %}selected{% endif %}>
+            {{ t.env.name }} — {% if t.row %}{{ t.row.counts.progress }}% · {{ t.row.status }}{% else %}not started{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <span class="small text-muted text-break">Base URL: <code>{{ env.base_url }}</code></span>
+    <a href="{% url 'api_environments' project.pk %}" class="btn btn-sm btn-link ms-auto"><i class="bi bi-gear"></i> Manage Environments</a>
+  </form>
+  <div class="small text-muted mt-2">Select an environment to execute this runner's test cases on it. Results are saved separately per environment — changing the environment never touches the others' results.</div>
+</div>
+{% endif %}
+
 <div class="card p-3 mb-3">
-  <h6 class="fw-bold">Execution Progress</h6>
+  <h6 class="fw-bold">Execution Progress{% if env %} — <span class="text-primary">{{ env.name }}</span>{% endif %}</h6>
   <div class="d-flex align-items-center gap-4 flex-wrap">
     <div class="text-center"><b class="fs-2">{{ counts.progress }}%</b><br><small>{{ counts.total }} total test cases</small></div>
     <div class="text-center"><b class="fs-4">{{ counts.Pending }}</b><br><small>PENDING</small></div>
@@ -30,14 +50,15 @@
 </div>
 
 <div class="card p-2 mb-3 d-flex flex-row flex-wrap gap-1 align-items-center">
-  <a href="?status=All" class="btn btn-sm {% if status_filter == 'All' %}btn-dark{% else %}btn-outline-dark{% endif %}">All</a>
+  <a href="?status=All{{ env_query }}" class="btn btn-sm {% if status_filter == 'All' %}btn-dark{% else %}btn-outline-dark{% endif %}">All</a>
   {% for s in status_choices %}
-    <a href="?status={{ s }}" class="btn btn-sm {% if status_filter == s %}btn-dark{% else %}btn-outline-dark{% endif %}">{{ s }}</a>
+    <a href="?status={{ s }}{{ env_query }}" class="btn btn-sm {% if status_filter == s %}btn-dark{% else %}btn-outline-dark{% endif %}">{{ s }}</a>
   {% endfor %}
   <small class="ms-auto text-muted me-2">Shortcuts: click a row, then <kbd>P</kbd> Pass · <kbd>F</kbd> Fail · <kbd>B</kbd> Blocked · <kbd>H</kbd> On Hold · <kbd>S</kbd> Save All</small>
 </div>
 
 <form method="post" id="execForm">{% csrf_token %}
+  {% if env %}<input type="hidden" name="env" value="{{ env.pk }}">{% endif %}
   {% for module, results in groups.items %}
   <div class="card mb-3">
     <div class="module-head p-2 rounded-top"><i class="bi bi-box"></i> <b>{{ module }}</b> <span class="badge text-bg-secondary">{{ results|length }}</span></div>

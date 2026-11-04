@@ -13,6 +13,9 @@
       <div class="mb-2"><label class="form-label small fw-semibold">Runner Name *</label>{{ form.name }}<div class="text-danger small">{{ form.name.errors|join:" " }}</div></div>
       <div class="mb-2"><label class="form-label small fw-semibold">Release</label>{{ form.release }}
         <div class="form-text">No release? <a href="{% url 'release_create' project.pk %}">Create one</a></div></div>
+      <div class="mb-2"><label class="form-label small fw-semibold">Environment{% if form.environment.field.required %} *{% endif %}</label>{{ form.environment }}
+        <div class="form-text">{% if form.environment.field.required %}{{ form.environment.help_text }}{% else %}No environments yet. <a href="{% url 'api_environments' project.pk %}">Add one</a> to run per environment.{% endif %}</div>
+        <div class="text-danger small">{{ form.environment.errors|join:" " }}</div></div>
       <div class="row">
         <div class="col-6 mb-2"><label class="form-label small fw-semibold">Execution Date</label>{{ form.execution_date }}</div>
         <div class="col-6 mb-2"><label class="form-label small fw-semibold">Due Date</label>{{ form.due_date }}</div>

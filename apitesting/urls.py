@@ -4,6 +4,9 @@ from . import views
 
 urlpatterns = [
     path('', views.api_home, name='api_home'),
+    path('environments/', views.api_environments, name='api_environments'),
+    path('environments/<int:env_id>/edit/', views.api_environment_edit, name='api_environment_edit'),
+    path('environments/<int:env_id>/delete/', views.api_environment_delete, name='api_environment_delete'),
     path('import/', views.api_import, name='api_import'),
     path('import/review/<uuid:session_id>/', views.api_review, name='api_review'),
     path('sync/', views.api_sync, name='api_sync'),

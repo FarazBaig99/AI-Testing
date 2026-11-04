@@ -1,0 +1,13 @@
+<div class="card p-3 mb-3 border-start border-4 border-primary">
+  <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+    {% if keep_tab %}<input type="hidden" name="tab" value="{{ keep_tab }}">{% endif %}
+    <label class="fw-semibold text-nowrap"><i class="bi bi-hdd-network text-primary"></i> Environment:</label>
+    <div style="min-width:240px">
+      <select name="env" class="form-select searchable" data-placeholder="Search environment..." onchange="this.form.submit()">
+        {% for e in environments %}<option value="{{ e.pk }}" {% if e.pk == env.pk %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <span class="small text-muted text-break">Base URL: <code>{{ env.base_url }}</code></span>
+    <a href="{% url 'api_environments' project.pk %}" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-gear"></i> Manage Environments</a>
+  </form>
+</div>

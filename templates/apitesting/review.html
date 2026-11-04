@@ -5,7 +5,7 @@
 <div class="card p-3 mb-3 d-flex flex-row align-items-start">
   <div>
     <h4 class="fw-bold mb-0"><i class="bi bi-arrow-left-right text-success"></i> Collection Comparison &amp; Review</h4>
-    <small class="text-muted">Review detected changes between <code>{{ session.source_label }}</code> and project: <b>{{ project.name }}</b></small>
+    <small class="text-muted">Review detected changes between <code>{{ session.source_label }}</code> and project <b>{{ project.name }}</b>, environment <span class="badge text-bg-primary">{{ env.name }}</span></small>
   </div>
   <div class="ms-auto d-flex gap-2">
     <a href="{% url 'api_import' project.pk %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Re-import Collection</a>
@@ -13,6 +13,12 @@
   </div>
 </div>
 
+{% if other_host %}
+<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i>
+  {{ other_host }} API(s) don't start with the <b>{{ env.name }}</b> base URL (<code>{{ env.base_url }}</code>), so they keep their own host.
+  If this collection belongs to another environment, <a href="{% url 'api_environments' project.pk %}">select or create that environment</a> and import again.
+</div>
+{% endif %}
 <div class="row g-3 mb-3">
   <div class="col-md-3"><a href="?filter=new" class="card p-3 text-decoration-none"><small class="text-muted">NEW APIS</small><b class="fs-4 text-success">{{ counts.new }}</b></a></div>
   <div class="col-md-3"><a href="?filter=updated" class="card p-3 text-decoration-none"><small class="text-muted">UPDATED APIS</small><b class="fs-4 text-primary">{{ counts.updated }}</b></a></div>
@@ -50,11 +56,11 @@
         </td>
       </tr>
       {% for r in g.rows %}
-      <tr class="api-row collapse show grp-body grp-{{ forloop.parentloop.counter }}" data-search="{{ r.method|lower }} {{ r.name|lower }} {{ r.url|lower }}">
+      <tr class="api-row collapse show grp-body grp-{{ forloop.parentloop.counter }}" data-search="{{ r.method|lower }} {{ r.name|lower }} {{ r.display_url|lower }}">
         <td><input type="checkbox" class="form-check-input api-check" name="k" value="{{ r.key }}" {% if r.change != 'unchanged' %}checked{% else %}disabled{% endif %}></td>
         <td><span class="badge {% if r.change == 'new' %}text-bg-success{% elif r.change == 'updated' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ r.change|upper }}</span></td>
         <td class="small text-muted">{{ project.name }} → {{ r.folder }} → {{ r.name }}</td>
-        <td>{% include "apitesting/_method.html" with method=r.method %} <b class="small">{{ r.name }}</b><br><small class="text-muted text-break">{{ r.url }}</small></td>
+        <td>{% include "apitesting/_method.html" with method=r.method %} <b class="small">{{ r.name }}</b><br><small class="text-muted text-break">{{ r.display_url }}</small></td>
         <td class="small {% if r.change == 'new' %}text-success{% elif r.change == 'updated' %}text-primary{% else %}text-muted{% endif %}">{{ r.diff }}</td>
       </tr>
       {% endfor %}

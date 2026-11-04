@@ -4,7 +4,8 @@
 <nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / <a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / Test Runners</nav>
 <div class="d-flex align-items-center mb-3">
   <div><h4 class="fw-bold mb-0"><i class="bi bi-play-circle text-success"></i> Test Runners</h4><small class="text-muted">Execute and track test cases for <b>{{ project.name }}</b></small></div>
-  <a href="{% url 'runner_create' project.pk %}" class="btn btn-dark ms-auto"><i class="bi bi-plus"></i> New Test Runner</a>
+  <a href="{% url 'api_environments' project.pk %}" class="btn btn-outline-primary ms-auto me-2"><i class="bi bi-hdd-network"></i> Manage Environments</a>
+  <a href="{% url 'runner_create' project.pk %}" class="btn btn-dark"><i class="bi bi-plus"></i> New Test Runner</a>
 </div>
 <div class="row g-3 mb-3">
   <div class="col-md-3"><div class="card p-3"><b class="fs-4">{{ stats.total }}</b>TOTAL RUNNERS</div></div>
@@ -55,6 +56,16 @@
     <span class="st-badge st-partial-pass">{{ c.partial }} Partial Pass</span>
     <span class="st-badge st-in-progress">{{ c.pass_rate }}% pass rate</span>
   </div>
+  {% with progress=r.environment_progress %}{% if progress|length > 1 or progress.0.environment %}
+  <div class="small d-flex gap-2 flex-wrap mt-2 align-items-center">
+    <span class="text-muted"><i class="bi bi-hdd-network"></i> By environment:</span>
+    {% for row in progress %}
+      <a href="{% url 'runner_execute' project.pk r.pk %}{% if row.environment %}?env={{ row.environment.pk }}{% endif %}"
+         class="badge border text-decoration-none st-{{ row.status|slugify }}" title="{{ row.counts.Pass }} pass · {{ row.counts.Fail }} fail · {{ row.counts.Pending }} pending">
+        {{ row.environment|default:"No environment" }} · {{ row.counts.progress }}% · {{ row.status }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}{% endwith %}
 </div>
 {% endwith %}{% empty %}
 <div class="card p-5 text-center text-muted">No test runners yet. <a href="{% url 'runner_create' project.pk %}">Create one</a>.</div>

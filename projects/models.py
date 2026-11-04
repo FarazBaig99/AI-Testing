@@ -83,6 +83,10 @@ class TestRunner(models.Model):
     execution_date = models.DateField(null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)
     assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_runners')
+    test_cases = models.ManyToManyField(TestCase, blank=True, related_name='runners')
+    # environment the execution starts on; results are kept separately per environment
+    environment = models.ForeignKey('apitesting.Environment', on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='runners')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_runners')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -92,9 +96,10 @@ class TestRunner(models.Model):
     def __str__(self):
         return self.name
 
-    def counts(self):
+    def counts(self, results=None):
+        """Status counts for the given results (default: all environments together)."""
         data = {s: 0 for s, _ in TestResult.STATUS_CHOICES}
-        for r in self.results.all():
+        for r in (self.results.all() if results is None else results):
             data[r.status] += 1
         data['total'] = sum(data[s] for s, _ in TestResult.STATUS_CHOICES)
         # template-friendly aliases (keys with spaces can't be used in templates)
@@ -105,14 +110,28 @@ class TestRunner(models.Model):
         data['pass_rate'] = round(data['Pass'] * 100 / data['total']) if data['total'] else 0
         return data
 
-    @property
-    def status(self):
-        c = self.counts()
+    @staticmethod
+    def status_of(c):
         if c['total'] == 0 or c['Pending'] == c['total']:
             return 'Pending'
         if c['Pending'] == 0:
             return 'Completed'
         return 'In Progress'
+
+    @property
+    def status(self):
+        return self.status_of(self.counts())
+
+    def environment_progress(self):
+        """[{'environment', 'counts', 'status'}] for every environment this runner was executed on."""
+        by_env = {}
+        for r in self.results.all():
+            by_env.setdefault(r.environment_id, []).append(r)
+        rows = []
+        for results in by_env.values():
+            c = self.counts(results)
+            rows.append({'environment': results[0].environment, 'counts': c, 'status': self.status_of(c)})
+        return sorted(rows, key=lambda row: row['environment'].name if row['environment'] else '')
 
 
 class TestResult(models.Model):
@@ -123,6 +142,8 @@ class TestResult(models.Model):
 
     runner = models.ForeignKey(TestRunner, on_delete=models.CASCADE, related_name='results')
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE, related_name='results')
+    environment = models.ForeignKey('apitesting.Environment', on_delete=models.CASCADE, null=True, blank=True,
+                                    related_name='test_results')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
     comment = models.TextField(blank=True)
     executed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -130,7 +151,7 @@ class TestResult(models.Model):
 
     class Meta:
         ordering = ['test_case__module__name', 'test_case__id']
-        unique_together = ('runner', 'test_case')
+        unique_together = ('runner', 'test_case', 'environment')
 
     def __str__(self):
-        return f'{self.runner} - {self.test_case} - {self.status}'
+        return f'{self.runner} - {self.test_case} - {self.environment} - {self.status}'

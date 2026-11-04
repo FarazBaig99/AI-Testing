@@ -3,10 +3,30 @@
 {% block content %}
 <nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / API Testing</nav>
 
+{% if not env %}
+<!-- No environment yet: create the first one right here -->
+<div class="card p-4" style="max-width:640px">
+  <h4 class="fw-bold"><i class="bi bi-hdd-network text-primary"></i> Create your first environment</h4>
+  <p class="text-muted small">APIs are kept per environment (QA, UAT, Production...). Add an environment with its base URL, then import APIs into it.</p>
+  <form method="post" action="{% url 'api_environments' project.pk %}">{% csrf_token %}
+    {% for field in env_form %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold small">{{ field.label }} *</label>{{ field }}
+        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    <button class="btn btn-primary"><i class="bi bi-plus"></i> Add Environment</button>
+    <a href="{% url 'project_detail' project.pk %}" class="btn btn-outline-secondary">Cancel</a>
+  </form>
+</div>
+{% else %}
+
+{% include "apitesting/_env_bar.html" %}
+
 <div class="card p-3 mb-3">
   <div class="d-flex align-items-start flex-wrap gap-2">
     <div>
-      <h4 class="fw-bold mb-0"><i class="bi bi-cloud-arrow-up text-success"></i> API Testing</h4>
+      <h4 class="fw-bold mb-0"><i class="bi bi-cloud-arrow-up text-success"></i> API Testing <span class="badge text-bg-primary fs-6 align-middle">{{ env.name }}</span></h4>
       <small class="text-muted">{{ project.name }} • {{ folders|length }} modules • {{ case_count }} test cases</small>
       {% if active_source %}
         <div class="small mt-1"><i class="bi bi-link-45deg"></i> Collection URL: <code>{{ active_source.url }}</code>
@@ -41,7 +61,7 @@
       </tr>
     {% empty %}
       <tr><td colspan="4" class="text-center text-muted py-4">
-        No APIs yet. <a href="{% url 'api_import' project.pk %}">Import an API collection</a> (Postman, OpenAPI/Swagger file or a Scalar / Swagger URL).
+        No APIs in <b>{{ env.name }}</b> yet. <a href="{% url 'api_import' project.pk %}">Import an API collection</a> (file, Scalar / Swagger URL or a cURL).
       </td></tr>
     {% endfor %}
     </tbody>
@@ -50,9 +70,10 @@
 
 {% if folders %}
 <form method="post" class="card p-3 mt-3 d-flex flex-row align-items-center">{% csrf_token %}
-  <span class="text-muted small"><i class="bi bi-check-circle-fill text-success"></i> {{ case_count }} API test cases in {{ folders|length }} modules</span>
+  <span class="text-muted small"><i class="bi bi-check-circle-fill text-success"></i> {{ case_count }} API test cases in {{ folders|length }} modules ({{ env.name }})</span>
   <a href="{% url 'project_detail' project.pk %}" class="btn btn-outline-secondary ms-auto me-2">Cancel</a>
   <button class="btn btn-success"><i class="bi bi-save"></i> Save APIs</button>
 </form>
+{% endif %}
 {% endif %}
 {% endblock %}

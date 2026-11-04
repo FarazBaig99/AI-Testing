@@ -92,10 +92,16 @@ class TestRunnerForm(StyledForm):
         self.make_searchable('assigned_to', placeholder='Search user...')
         self.fields['test_cases'].queryset = TestCase.objects.filter(project=project).select_related('module')
         self.fields['test_cases'].widget.attrs = {}
+        envs = project.api_environments.all()
+        self.fields['environment'].queryset = envs
+        self.fields['environment'].required = envs.exists()
+        self.fields['environment'].empty_label = None if envs.exists() else '-- No environments --'
+        self.fields['environment'].help_text = 'Execution starts on this environment; switch it later on the execute page.'
+        self.make_searchable('environment', placeholder='Search environment...')
 
     class Meta:
         model = TestRunner
-        fields = ['name', 'release', 'execution_date', 'due_date', 'assigned_to', 'description']
+        fields = ['name', 'release', 'environment', 'execution_date', 'due_date', 'assigned_to', 'description']
         widgets = {
             'name': forms.TextInput(attrs={'placeholder': 'e.g., Sprint 1 Regression'}),
             'execution_date': forms.DateInput(attrs={'type': 'date'}),

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Environments - {{ project.name }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / Environments</nav>
+<div class="card p-3 mb-3 d-flex flex-row align-items-start">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-hdd-network text-primary"></i> Environments</h4>
+    <small class="text-muted">Each environment of <b>{{ project.name }}</b> has its own base URL, APIs and test runner results.</small>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{% url 'project_detail' project.pk %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Project</a>
+    <a href="{% url 'runner_list' project.pk %}" class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle"></i> Test Runners</a>
+    <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-outline-primary"><i class="bi bi-cloud-arrow-up"></i> API Testing</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card p-3">
+      <table class="table align-middle mb-0">
+        <thead><tr><th>Name</th><th>Base URL</th><th class="text-center">Modules</th><th class="text-center">APIs</th><th></th></tr></thead>
+        <tbody>
+        {% for e in environments %}
+          <tr>
+            <td><b>{{ e.name }}</b> {% if current and e.pk == current.pk %}<span class="badge text-bg-primary">Selected</span>{% endif %}</td>
+            <td class="small font-monospace text-break">{{ e.base_url }}</td>
+            <td class="text-center">{{ e.n_folders }}</td>
+            <td class="text-center">{{ e.n_cases }}</td>
+            <td class="text-end text-nowrap">
+              <a href="{% url 'api_home' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-outline-primary">Open</a>
+              <a href="{% url 'api_environment_edit' project.pk e.pk %}" class="btn btn-sm btn-link" title="Edit"><i class="bi bi-pencil"></i></a>
+              <a href="{% url 'api_environment_delete' project.pk e.pk %}" class="btn btn-sm btn-link text-danger" title="Delete"><i class="bi bi-trash"></i></a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-4">No environments yet. Add one on the right.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-3">
+      <h6 class="fw-bold"><i class="bi bi-plus-circle"></i> Add Environment</h6>
+      <form method="post">{% csrf_token %}
+        {% for field in form %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">{{ field.label }} *</label>{{ field }}
+            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+            <div class="text-danger small">{{ field.errors|join:" " }}</div>
+          </div>
+        {% endfor %}
+        <button class="btn btn-primary w-100"><i class="bi bi-plus"></i> Add Environment</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

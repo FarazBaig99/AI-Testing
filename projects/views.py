@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 
 from .forms import ModuleForm, ProjectForm, ReleaseForm, TestCaseForm, TestRunnerForm
@@ -209,7 +210,7 @@ def testcase_form(request, pk, case_id=None):
 @login_required
 def testcase_detail(request, pk, case_id):
     case = get_object_or_404(TestCase.objects.select_related('project', 'module'), pk=case_id, project_id=pk)
-    history = case.results.select_related('runner', 'executed_by').exclude(status='Pending').order_by('-executed_at')
+    history = case.results.select_related('runner', 'executed_by', 'environment').exclude(status='Pending').order_by('-executed_at')
     return render(request, 'projects/testcase_detail.html', {
         'case': case, 'project': case.project, 'steps': [s for s in case.steps.splitlines() if s.strip()],
         'history': history,
@@ -231,7 +232,8 @@ def testcase_delete(request, pk, case_id):
 @login_required
 def runner_list(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    runners = list(project.runners.select_related('release', 'assigned_to', 'created_by').prefetch_related('results'))
+    runners = list(project.runners.select_related('release', 'assigned_to', 'created_by')
+                   .prefetch_related('results__environment'))
     search = request.GET.get('search', '')
     status = request.GET.get('status', '')
     release = request.GET.get('release', '')
@@ -264,21 +266,43 @@ def runner_create(request, pk):
         runner.project = project
         runner.created_by = request.user
         runner.save()
-        TestResult.objects.bulk_create(
-            [TestResult(runner=runner, test_case=tc) for tc in form.cleaned_data['test_cases']])
-        messages.success(request, f'Test runner "{runner.name}" created with {runner.results.count()} test cases.')
+        runner.test_cases.set(form.cleaned_data['test_cases'])
+        _ensure_results(runner, runner.environment)
+        env_note = f' on {runner.environment}' if runner.environment else ''
+        messages.success(request, f'Test runner "{runner.name}" created with {runner.test_cases.count()} test cases{env_note}.')
         return redirect('runner_execute', pk=pk, runner_id=runner.pk)
     modules = project.modules.filter(parent__isnull=True).prefetch_related('test_cases', 'children__test_cases')
     return render(request, 'projects/runner_create.html', {'form': form, 'project': project, 'modules': modules})
 
 
+def _ensure_results(runner, environment):
+    """Every test case of the runner gets a Pending result the first time it runs on an environment."""
+    have = set(runner.results.filter(environment=environment).values_list('test_case_id', flat=True))
+    TestResult.objects.bulk_create([TestResult(runner=runner, test_case_id=tc_id, environment=environment)
+                                    for tc_id in runner.test_cases.values_list('id', flat=True)
+                                    if tc_id not in have])
+
+
+def _runner_env(request, runner):
+    """?env=<id>, else the runner's starting environment, else the project's first environment (None if none)."""
+    envs = runner.project.api_environments.all()
+    env_id = request.GET.get('env') or request.POST.get('env')
+    env = envs.filter(pk=env_id).first() if str(env_id or '').isdigit() else None
+    return env or runner.environment or envs.first()
+
+
 @login_required
 def runner_execute(request, pk, runner_id):
-    runner = get_object_or_404(TestRunner.objects.select_related('project', 'release', 'assigned_to'),
+    runner = get_object_or_404(TestRunner.objects.select_related('project', 'release', 'assigned_to', 'environment'),
                                pk=runner_id, project_id=pk)
+    env = _runner_env(request, runner)
+    _ensure_results(runner, env)
+    env_results = runner.results.filter(environment=env)
+    env_query = f'?env={env.pk}' if env else ''
+
     if request.method == 'POST':
         changed = 0
-        for result in runner.results.all():
+        for result in env_results:
             status = request.POST.get(f'status_{result.pk}')
             comment = request.POST.get(f'comment_{result.pk}', '').strip()
             if status and (status != result.status or comment != result.comment):
@@ -288,19 +312,22 @@ def runner_execute(request, pk, runner_id):
                 result.executed_at = timezone.now()
                 result.save()
                 changed += 1
-        messages.success(request, f'{changed} result(s) saved.')
-        return redirect('runner_execute', pk=pk, runner_id=runner_id)
+        messages.success(request, f'{changed} result(s) saved' + (f' for {env}.' if env else '.'))
+        return redirect(reverse('runner_execute', args=[pk, runner_id]) + env_query)
 
     status_filter = request.GET.get('status', 'All')
-    results = runner.results.select_related('test_case__module', 'executed_by')
+    results = env_results.select_related('test_case__module__parent', 'executed_by')
     if status_filter != 'All':
         results = results.filter(status=status_filter)
     groups = {}
     for r in results:
         groups.setdefault(str(r.test_case.module), []).append(r)
     groups = dict(sorted(groups.items()))
+    progress = {row['environment'].pk: row for row in runner.environment_progress() if row['environment']}
     return render(request, 'projects/runner_execute.html', {
-        'runner': runner, 'project': runner.project, 'groups': groups, 'counts': runner.counts(),
+        'runner': runner, 'project': runner.project, 'groups': groups, 'counts': runner.counts(env_results),
+        'env': env, 'env_query': env_query.replace('?', '&'),
+        'env_tabs': [{'env': e, 'row': progress.get(e.pk)} for e in runner.project.api_environments.all()],
         'status_choices': [s for s, _ in TestResult.STATUS_CHOICES], 'status_filter': status_filter,
     })
 

@@ -9,13 +9,14 @@
 
 <div class="card p-4" style="max-width:760px">
   <ul class="nav nav-pills nav-fill bg-light rounded p-1 mb-4">
-    <li class="nav-item"><button class="nav-link {% if tab != 'link' %}active{% endif %}" data-bs-toggle="pill" data-bs-target="#tab-upload"><i class="bi bi-cloud-upload"></i> Upload File</button></li>
+    <li class="nav-item"><button class="nav-link {% if tab != 'link' and tab != 'manual' %}active{% endif %}" data-bs-toggle="pill" data-bs-target="#tab-upload"><i class="bi bi-cloud-upload"></i> Upload File</button></li>
     <li class="nav-item"><button class="nav-link {% if tab == 'link' %}active{% endif %}" data-bs-toggle="pill" data-bs-target="#tab-link"><i class="bi bi-link-45deg"></i> Import via Link / URL</button></li>
+    <li class="nav-item"><button class="nav-link {% if tab == 'manual' %}active{% endif %}" data-bs-toggle="pill" data-bs-target="#tab-manual"><i class="bi bi-pencil-square"></i> Manual Insert API</button></li>
   </ul>
 
   <div class="tab-content">
     <!-- Upload File -->
-    <div class="tab-pane fade {% if tab != 'link' %}show active{% endif %}" id="tab-upload">
+    <div class="tab-pane fade {% if tab != 'link' and tab != 'manual' %}show active{% endif %}" id="tab-upload">
       <form method="post" enctype="multipart/form-data">{% csrf_token %}
         <input type="hidden" name="action" value="upload">
         <label class="fw-semibold">1. Select API Collection file *</label>
@@ -83,6 +84,59 @@
         <a href="{% url 'api_home' project.pk %}" class="btn btn-outline-secondary">Cancel</a>
       </form>
     </div>
+
+    <!-- Manual Insert API -->
+    <div class="tab-pane fade {% if tab == 'manual' %}show active{% endif %}" id="tab-manual">
+      <form method="post" id="manualForm">{% csrf_token %}
+        <input type="hidden" name="action" value="manual">
+        <label class="fw-semibold">1. Module *</label>
+        <div class="form-text mb-2">Create a new module for this API, or put it in an existing module.</div>
+        <div class="d-flex gap-4 mb-2">
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="module_mode" id="modeNew" value="new" {% if manual.module_mode != 'existing' %}checked{% endif %}>
+            <label class="form-check-label" for="modeNew">Add new module</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="module_mode" id="modeExisting" value="existing" {% if manual.module_mode == 'existing' %}checked{% endif %}>
+            <label class="form-check-label" for="modeExisting">Select existing module</label>
+          </div>
+        </div>
+        <input name="new_module" id="newModule" value="{{ manual.new_module }}" class="form-control mb-4" placeholder="e.g., Holiday Management · Writes">
+        <div id="existingModule" class="mb-4">
+          <select name="module_id" class="form-select searchable" {% if not folders %}disabled{% endif %}
+                  data-placeholder="{% if folders %}Search or select a module ({{ folders|length }})...{% else %}No modules yet{% endif %}">
+            <option value=""></option>
+            {% for f in folders %}
+              <option value="{{ f.pk }}" {% if manual.module_id == f.pk|stringformat:"s" %}selected{% endif %}>{{ f.name }}</option>
+            {% endfor %}
+          </select>
+          {% if not folders %}<div class="form-text">This project has no modules yet. Use "Add new module".</div>{% endif %}
+        </div>
+
+        <label class="fw-semibold">2. cURL Command *</label>
+        <div class="form-text mb-2">Paste the API's cURL (from Postman, Scalar, Swagger or the browser's "Copy as cURL"). Method, URL, headers, query params and body are read from it.</div>
+        <textarea name="curl" rows="7" class="form-control font-monospace small mb-4" placeholder="curl -X POST 'https://example.com/api/v1/items' -H 'Content-Type: application/json' --data-raw '{&quot;name&quot;: &quot;test&quot;}'">{{ manual.curl }}</textarea>
+
+        <label class="fw-semibold">3. API Name *</label>
+        <div class="form-text mb-2">The name this API's test case is saved with.</div>
+        <input name="api_name" value="{{ manual.api_name }}" class="form-control mb-4" placeholder="e.g., Verify create holiday">
+
+        <button class="btn btn-success"><i class="bi bi-check-lg"></i> Submit</button>
+        <a href="{% url 'api_home' project.pk %}" class="btn btn-outline-secondary">Cancel</a>
+      </form>
+    </div>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+const modeNew = document.getElementById('modeNew'), modeExisting = document.getElementById('modeExisting');
+const newModule = document.getElementById('newModule'), existingModule = document.getElementById('existingModule');
+function toggleModule() {
+  newModule.style.display = modeNew.checked ? '' : 'none';
+  existingModule.style.display = modeExisting.checked ? '' : 'none';
+}
+[modeNew, modeExisting].forEach(r => r.addEventListener('change', toggleModule));
+toggleModule();
+</script>
 {% endblock %}

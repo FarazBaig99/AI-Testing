@@ -10,6 +10,7 @@ class ApiTestCaseForm(StyledForm):
         super().__init__(*args, **kwargs)
         self.fields['folder'].queryset = self.instance.project.api_folders.all()
         self.fields['folder'].label = 'Module'
+        self.make_searchable('folder', placeholder='Search module...')
         for name in ('headers', 'path_params', 'query_params'):
             self.fields[name].help_text = 'JSON object, e.g. {"Authorization": "Bearer ..."}'
 

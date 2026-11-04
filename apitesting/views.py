@@ -11,7 +11,8 @@ from projects.models import Project
 
 from .forms import ApiTestCaseForm
 from .models import ApiFolder, ApiTestCase, CollectionSource, ImportSession
-from .parsers import CollectionError, load_document, load_from_url, parse_collection, parse_environment
+from .parsers import (CollectionError, load_document, load_from_url, parse_collection, parse_curl,
+                      parse_environment)
 
 COMPARED_FIELDS = [('folder', 'Module'), ('method', 'Method'), ('url', 'URL'), ('content_type', 'Content-Type'),
                    ('headers', 'Headers'), ('query_params', 'Query params'), ('body', 'Body')]
@@ -46,6 +47,11 @@ def _sync_source(request, project, source, env_text=''):
 @login_required
 def api_home(request, pk):
     project = get_object_or_404(Project, pk=pk)
+    if request.method == 'POST':
+        # "Save APIs": APIs are already stored on import; this confirms and returns to the project
+        count = project.api_test_cases.count()
+        messages.success(request, f'{count} API test cases saved to {project.name}.')
+        return redirect('project_detail', pk=pk)
     folders = project.api_folders.annotate(n=Count('test_cases'))
     return render(request, 'apitesting/home.html', {
         'project': project, 'folders': folders,
@@ -59,9 +65,18 @@ def api_import(request, pk):
     project = get_object_or_404(Project, pk=pk)
     sources = project.api_sources.all()
     tab = request.GET.get('tab', 'upload')
+    manual = {}
 
     if request.method == 'POST':
         action = request.POST.get('action')
+        if action == 'manual':
+            manual = request.POST
+            saved = _manual_insert(request, project)
+            if saved:
+                messages.success(request, f'API "{saved.name}" saved to module "{saved.folder.name}".')
+                return redirect('api_home', pk=pk)
+            tab = 'manual'
+
         if action == 'upload':
             collection = request.FILES.get('collection')
             if not collection:
@@ -122,7 +137,61 @@ def api_import(request, pk):
     return render(request, 'apitesting/import.html', {
         'project': project, 'sources': sources, 'tab': tab,
         'active_source': sources.filter(is_active=True).first(),
+        'folders': project.api_folders.all(), 'manual': manual,
     })
+
+
+def _manual_insert(request, project):
+    """Manual Insert API tab: save one API from a pasted cURL into a new or existing module.
+
+    Returns the saved ApiTestCase, or None after adding error messages.
+    """
+    mode = request.POST.get('module_mode', 'new')
+    new_module = request.POST.get('new_module', '').strip()
+    module_id = request.POST.get('module_id', '')
+    name = request.POST.get('api_name', '').strip()
+    curl = request.POST.get('curl', '').strip()
+
+    errors = []
+    folder = None
+    if mode == 'existing':
+        folder = project.api_folders.filter(pk=module_id).first() if module_id.isdigit() else None
+        if folder is None:
+            errors.append('Select an existing module.')
+    elif not new_module:
+        errors.append('Enter a name for the new module.')
+    elif project.api_folders.filter(name__iexact=new_module).exists():
+        errors.append(f'Module "{new_module}" already exists. Choose "Select existing module" instead.')
+    if not curl:
+        errors.append('Paste the cURL command of the API.')
+    if not name:
+        errors.append('Enter the API name.')
+
+    parsed = None
+    if curl:
+        try:
+            parsed = parse_curl(curl)
+        except CollectionError as exc:
+            errors.append(str(exc))
+    if parsed:
+        key = f'{parsed["method"]} {parsed["path"]}'
+        duplicate = project.api_test_cases.select_related('folder').filter(endpoint_key=key).first()
+        if duplicate:
+            errors.append(f'{key} already exists as {duplicate.code} in module "{duplicate.folder.name}".')
+    if errors:
+        for e in errors:
+            messages.error(request, e)
+        return None
+
+    with transaction.atomic():
+        if folder is None:
+            folder = ApiFolder.objects.create(project=project, name=new_module)
+        case = ApiTestCase(project=project, folder=folder, endpoint_key=key, name=name, created_by=request.user,
+                           method=parsed['method'], path=parsed['path'], url=parsed['url'],
+                           content_type=parsed['content_type'], headers=parsed['headers'],
+                           query_params=parsed['query_params'], body=parsed['body'])
+        case.save()
+    return case
 
 
 @login_required

@@ -4,12 +4,15 @@ Every endpoint is a plain dict so it can be stored in ImportSession.endpoints (J
     folder, key, name, summary, method, path, url, content_type,
     headers, path_params, query_params, body, expected_status
 """
+import base64
 import hashlib
 import json
+import os
 import re
+import shlex
 import urllib.error
 import urllib.request
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote_plus, urljoin, urlparse
 
 import yaml
 
@@ -384,6 +387,109 @@ def parse_postman(doc, env):
 
     walk(doc.get('item', []), [])
     return endpoints
+
+
+# ---------- cURL (Manual Insert API) ----------
+
+def _curl_tokens(command):
+    text = command.strip()
+    # Windows "Copy as cURL (cmd)": ^ escapes and ^ line continuations
+    if '^"' in text or re.search(r'\^\s*\n', text):
+        text = re.sub(r'\^(.)', r'\1', re.sub(r'\^\s*\n', ' ', text))
+    text = re.sub(r'\\\s*\n', ' ', text)                 # bash line continuations
+    text = re.sub(r"\$'((?:[^'\\]|\\.)*)'", lambda m: "'" + m.group(1).replace("\\'", "'\"'\"'") + "'", text)
+    try:
+        return shlex.split(text, posix=True)
+    except ValueError as exc:
+        raise CollectionError(f'Could not read the cURL command: {exc}')
+
+
+def parse_curl(command):
+    """'curl -X POST https://host/api/x?a=1 -H "k: v" --data-raw '{..}'' -> request parts."""
+    tokens = _curl_tokens(command)
+    if not tokens or os.path.basename(tokens[0]).lower() not in ('curl', 'curl.exe'):
+        raise CollectionError('Paste a cURL command that starts with "curl".')
+    method, url, headers, data, force_get = None, None, {}, [], False
+    with_value = {'-X', '--request', '-H', '--header', '-d', '--data', '--data-raw', '--data-binary',
+                  '--data-ascii', '--data-urlencode', '--json', '-u', '--user', '--url', '-A', '--user-agent',
+                  '-b', '--cookie', '-e', '--referer', '-F', '--form', '-o', '--output', '-m', '--max-time',
+                  '--connect-timeout', '-x', '--proxy'}
+    i = 1
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.startswith('--') and '=' in tok:
+            tok, value = tok.split('=', 1)
+            tokens[i + 1:i + 1] = [value]
+        if tok in with_value:
+            value = tokens[i + 1] if i + 1 < len(tokens) else ''
+            i += 2
+            if tok in ('-X', '--request'):
+                method = value.upper()
+            elif tok in ('-H', '--header'):
+                name, _, val = value.partition(':')
+                if name.strip():
+                    headers[name.strip()] = val.strip()
+            elif tok in ('-d', '--data', '--data-raw', '--data-binary', '--data-ascii', '--data-urlencode'):
+                data.append(value)
+            elif tok == '--json':
+                data.append(value)
+                headers.setdefault('Content-Type', 'application/json')
+                headers.setdefault('Accept', 'application/json')
+            elif tok in ('-F', '--form'):
+                data.append(value)
+                headers.setdefault('Content-Type', 'multipart/form-data')
+            elif tok in ('-u', '--user'):
+                headers['Authorization'] = 'Basic ' + base64.b64encode(value.encode()).decode()
+            elif tok in ('-A', '--user-agent'):
+                headers['User-Agent'] = value
+            elif tok in ('-b', '--cookie'):
+                headers['Cookie'] = value
+            elif tok in ('-e', '--referer'):
+                headers['Referer'] = value
+            elif tok == '--url':
+                url = value
+            continue
+        if tok in ('-G', '--get'):
+            force_get = True
+        elif not tok.startswith('-') and url is None:
+            url = tok
+        i += 1
+
+    if not url:
+        raise CollectionError('No URL was found in the cURL command.')
+    if not re.match(r'^[a-z]+://', url, re.IGNORECASE) and not url.startswith('{{'):
+        url = 'https://' + url
+    body = '&'.join(data)
+    parsed = urlparse(url)
+    query = {}
+    for pair in filter(None, parsed.query.split('&')):
+        key, _, value = pair.partition('=')
+        query[unquote_plus(key)] = unquote_plus(value)
+    if force_get and body:
+        for pair in body.split('&'):
+            key, _, value = pair.partition('=')
+            query[unquote_plus(key)] = unquote_plus(value)
+        body = ''
+    method = 'GET' if force_get else (method or ('POST' if body else 'GET'))
+    content_type = next((v for k, v in headers.items() if k.lower() == 'content-type'), '')
+    if body and not content_type:
+        content_type = 'application/json' if body.lstrip().startswith(('{', '[')) else 'application/x-www-form-urlencoded'
+        headers['Content-Type'] = content_type
+    if content_type.startswith('application/json') and body:
+        try:
+            body = json.dumps(json.loads(body), indent=2)
+        except ValueError:
+            pass
+    base = url.split('?', 1)[0].split('#', 1)[0]
+    return {
+        'method': method,
+        'url': base,
+        'path': parsed.path or '/',
+        'headers': headers,
+        'query_params': query,
+        'body': body,
+        'content_type': content_type,
+    }
 
 
 # ---------- entry point ----------

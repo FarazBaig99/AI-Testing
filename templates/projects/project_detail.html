@@ -13,6 +13,7 @@
         <span class="badge text-bg-light border">{{ stats.cases }} test cases</span>
         <span class="badge text-bg-light border">{{ stats.automatable }} automatable</span>
         <span class="badge text-bg-light border">{{ stats.releases }} releases</span>
+        <a href="{% url 'api_home' project.pk %}" class="badge text-bg-primary text-decoration-none"><i class="bi bi-cloud-arrow-up"></i> {{ stats.api_cases }} API test cases</a>
       </div>
       <div class="mt-2 small">
         <i class="bi bi-link-45deg"></i> Linked projects:

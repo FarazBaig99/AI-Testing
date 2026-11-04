@@ -118,6 +118,7 @@ def project_detail(request, pk):
             'submodules': project.modules.filter(parent__isnull=False).count(),
             'runners': project.runners.count(),
             'releases': project.releases.count(),
+            'api_cases': project.api_test_cases.count(),
             'passed': pass_count,
             'failed': results.filter(status='Fail').count(),
             'pending': results.filter(status='Pending').count(),

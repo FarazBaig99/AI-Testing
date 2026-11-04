@@ -13,6 +13,11 @@ class StyledForm(forms.ModelForm):
                 css = 'form-select'
             field.widget.attrs.setdefault('class', css)
 
+    def make_searchable(self, *names, placeholder='Search...'):
+        """Turn these dropdowns into type-to-search selects (see base.html)."""
+        for name in names:
+            self.fields[name].widget.attrs.update({'class': 'form-select searchable', 'data-placeholder': placeholder})
+
 
 class ProjectForm(StyledForm):
     def __init__(self, *args, **kwargs):
@@ -48,6 +53,7 @@ class ModuleForm(StyledForm):
         super().__init__(*args, **kwargs)
         self.fields['parent'].queryset = Module.objects.filter(project=project, parent__isnull=True)
         self.fields['parent'].empty_label = '-- Root module --'
+        self.make_searchable('parent', placeholder='Search parent module...')
 
     class Meta:
         model = Module
@@ -58,7 +64,8 @@ class ModuleForm(StyledForm):
 class TestCaseForm(StyledForm):
     def __init__(self, *args, project=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['module'].queryset = Module.objects.filter(project=project)
+        self.fields['module'].queryset = Module.objects.filter(project=project).select_related('parent')
+        self.make_searchable('module', placeholder='Search module...')
 
     class Meta:
         model = TestCase
@@ -82,6 +89,7 @@ class TestRunnerForm(StyledForm):
         self.fields['release'].empty_label = '-- Select Release --'
         self.fields['assigned_to'].queryset = User.objects.order_by('username')
         self.fields['assigned_to'].empty_label = '-- Select User (Optional) --'
+        self.make_searchable('assigned_to', placeholder='Search user...')
         self.fields['test_cases'].queryset = TestCase.objects.filter(project=project).select_related('module')
         self.fields['test_cases'].widget.attrs = {}
 

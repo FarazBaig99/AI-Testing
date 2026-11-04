@@ -47,4 +47,12 @@
     </tbody>
   </table>
 </div>
+
+{% if folders %}
+<form method="post" class="card p-3 mt-3 d-flex flex-row align-items-center">{% csrf_token %}
+  <span class="text-muted small"><i class="bi bi-check-circle-fill text-success"></i> {{ case_count }} API test cases in {{ folders|length }} modules</span>
+  <a href="{% url 'project_detail' project.pk %}" class="btn btn-outline-secondary ms-auto me-2">Cancel</a>
+  <button class="btn btn-success"><i class="bi bi-save"></i> Save APIs</button>
+</form>
+{% endif %}
 {% endblock %}

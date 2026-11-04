@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}API Testing - {{ project.name }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / API Testing</nav>
+
+<div class="card p-3 mb-3">
+  <div class="d-flex align-items-start flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-0"><i class="bi bi-cloud-arrow-up text-success"></i> API Testing</h4>
+      <small class="text-muted">{{ project.name }} • {{ folders|length }} modules • {{ case_count }} test cases</small>
+      {% if active_source %}
+        <div class="small mt-1"><i class="bi bi-link-45deg"></i> Collection URL: <code>{{ active_source.url }}</code>
+          {% if active_source.last_synced_at %}<span class="text-muted">· last synced {{ active_source.last_synced_at|date:"M d, Y H:i" }}</span>{% endif %}</div>
+      {% endif %}
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      {% if active_source %}
+      <form method="post" action="{% url 'api_sync' project.pk %}">{% csrf_token %}
+        <button class="btn btn-outline-success btn-sm" title="Fetch the active URL again and review changes"><i class="bi bi-arrow-repeat"></i> Sync Collection</button>
+      </form>
+      {% endif %}
+      <a href="{% url 'api_import' project.pk %}" class="btn btn-success btn-sm"><i class="bi bi-upload"></i> Import API Collection</a>
+    </div>
+  </div>
+</div>
+
+<div class="card p-3">
+  <h6 class="fw-bold">Modules</h6>
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Name</th><th class="text-center">Test Cases</th><th class="text-center">Not Run</th><th></th></tr></thead>
+    <tbody>
+    {% for f in folders %}
+      <tr>
+        <td><i class="bi bi-folder-fill text-warning"></i> <a href="{% url 'api_folder' project.pk f.pk %}" class="text-decoration-none">{{ f.name }}</a></td>
+        <td class="text-center">{{ f.n }}</td>
+        <td class="text-center text-muted">{{ f.n }}</td>
+        <td class="text-end">
+          <a href="{% url 'api_folder' project.pk f.pk %}" class="btn btn-sm btn-link" title="View"><i class="bi bi-eye"></i></a>
+          <a href="{% url 'api_folder_delete' project.pk f.pk %}" class="btn btn-sm btn-link text-danger" title="Delete"><i class="bi bi-trash"></i></a>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4" class="text-center text-muted py-4">
+        No APIs yet. <a href="{% url 'api_import' project.pk %}">Import an API collection</a> (Postman, OpenAPI/Swagger file or a Scalar / Swagger URL).
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

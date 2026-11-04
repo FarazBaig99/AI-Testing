@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ case.code }} {{ case.name }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / <a href="{% url 'api_folder' project.pk case.folder_id %}">{{ case.folder.name }}</a> / {{ case.code }}</nav>
+<div class="card p-4">
+  <div class="d-flex align-items-start mb-1">
+    <div>
+      <h5 class="fw-bold mb-0">Request Details: {{ case.name }}</h5>
+      <small class="text-muted">{{ case.code }}{% if case.summary %} · {{ case.summary }}{% endif %} · Parsed view of the API request configured for this test case.</small>
+    </div>
+    <div class="ms-auto text-nowrap">
+      <a href="{% url 'api_case_edit' project.pk case.pk %}" class="btn btn-sm btn-outline-dark"><i class="bi bi-pencil"></i> Edit</a>
+      <a href="{% url 'api_case_delete' project.pk case.pk %}" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></a>
+      <a href="{% url 'api_folder' project.pk case.folder_id %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
+  </div>
+
+  <div class="row g-3 my-2">
+    <div class="col-md-4"><div class="border rounded p-3 bg-light h-100"><small class="text-muted">HTTP METHOD</small><div>{% include "apitesting/_method.html" with method=case.method %}</div></div></div>
+    <div class="col-md-8"><div class="border rounded p-3 bg-light h-100"><small class="text-muted">REQUEST URL</small><div class="font-monospace small text-break">{{ full_url }}</div></div></div>
+    <div class="col-md-6"><div class="border rounded p-3 bg-light h-100"><small class="text-muted">CONTENT-TYPE</small><div class="font-monospace small">{{ case.content_type|default:"Not specified" }}</div></div></div>
+    <div class="col-md-6"><div class="border rounded p-3 bg-light h-100"><small class="text-muted">VALIDATION</small><div class="small">Match Status Code: Yes<br>Expected Status: <b>{{ case.expected_status }}</b></div></div></div>
+  </div>
+
+  <h6 class="fw-bold mt-3">Request Headers</h6>
+  {% include "apitesting/_kv.html" with data=case.headers empty="No headers configured." %}
+  <h6 class="fw-bold mt-3">Path Parameters (Detected)</h6>
+  {% include "apitesting/_kv.html" with data=case.path_params empty="No path parameters detected." %}
+  <h6 class="fw-bold mt-3">Query Parameters</h6>
+  {% include "apitesting/_kv.html" with data=case.query_params empty="No query parameters configured." %}
+
+  <h6 class="fw-bold mt-3">Request Payload / Body</h6>
+  {% if case.body %}<pre class="bg-dark text-light p-3 rounded small mb-0">{{ case.body }}</pre>{% else %}<p class="text-muted small fst-italic">No request body.</p>{% endif %}
+
+  <div class="d-flex align-items-center mt-3"><h6 class="fw-bold mb-0">Raw cURL Command</h6>
+    <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="navigator.clipboard.writeText(document.getElementById('curl').innerText); this.innerText='Copied'"><i class="bi bi-clipboard"></i> Copy</button></div>
+  <pre id="curl" class="bg-dark text-light p-3 rounded small mt-2 mb-0" style="white-space:pre-wrap">{{ curl }}</pre>
+</div>
+{% endblock %}

@@ -5,6 +5,8 @@ from django.db import models
 class Project(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    # symmetrical: linking A -> B also shows A as linked on B
+    linked_projects = models.ManyToManyField('self', blank=True, symmetrical=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_projects')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

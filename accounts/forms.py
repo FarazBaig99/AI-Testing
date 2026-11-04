@@ -29,7 +29,7 @@ class RegisterForm(UserCreationForm):
         super().__init__(*args, **kwargs)
         _style(self)
         self.fields['username'].widget.attrs['placeholder'] = 'Choose a unique username'
-        self.fields['email'].widget.attrs['placeholder'] = 'your.name@psw.gov.pk'
+        self.fields['email'].widget.attrs['placeholder'] = 'your.name@example.com'
         self.fields['password1'].widget.attrs['placeholder'] = 'Create a strong password'
         self.fields['password2'].widget.attrs['placeholder'] = 'Re-enter your password'
 

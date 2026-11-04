@@ -28,6 +28,11 @@
           <span><i class="bi bi-file-text"></i> {{ p.num_cases }} tests</span>
           <span><i class="bi bi-play-circle"></i> {{ p.num_runners }} runs</span>
         </div>
+        {% if p.linked_projects.all %}
+        <div class="small mb-3"><i class="bi bi-link-45deg"></i>
+          {% for lp in p.linked_projects.all %}<span class="badge text-bg-light border">{{ lp.name }}</span> {% endfor %}
+        </div>
+        {% endif %}
         <div class="d-flex align-items-center">
           <small class="text-muted"><i class="bi bi-person"></i> {{ p.created_by|default:"-" }}</small>
           <a href="{% url 'project_detail' p.pk %}" class="btn btn-sm btn-dark ms-auto">Open <i class="bi bi-arrow-right"></i></a>

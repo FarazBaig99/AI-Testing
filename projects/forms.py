@@ -15,10 +15,22 @@ class StyledForm(forms.ModelForm):
 
 
 class ProjectForm(StyledForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        others = Project.objects.order_by('name')
+        if self.instance.pk:
+            others = others.exclude(pk=self.instance.pk)
+        self.fields['linked_projects'].queryset = others
+        self.fields['linked_projects'].label = 'Link Parent Project'
+        self.fields['linked_projects'].help_text = 'Select one or more existing projects to link with this project.'
+
     class Meta:
         model = Project
-        fields = ['name', 'description']
-        widgets = {'description': forms.Textarea(attrs={'rows': 3})}
+        fields = ['name', 'description', 'linked_projects']
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 3}),
+            'linked_projects': forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'}),
+        }
 
 
 class ReleaseForm(StyledForm):

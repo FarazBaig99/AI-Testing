@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'accounts',
     'projects',
+    'apitesting',
 ]
 
 MIDDLEWARE = [
@@ -132,3 +133,5 @@ LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'login'
 TIME_ZONE = 'Asia/Karachi'
+# API collection review posts one checkbox per endpoint
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 20000

@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from . import views
 
@@ -27,4 +27,6 @@ urlpatterns = [
     path('<int:pk>/runners/create/', views.runner_create, name='runner_create'),
     path('<int:pk>/runners/<int:runner_id>/', views.runner_execute, name='runner_execute'),
     path('<int:pk>/runners/<int:runner_id>/delete/', views.runner_delete, name='runner_delete'),
+
+    path('<int:pk>/api/', include('apitesting.urls')),
 ]

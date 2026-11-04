@@ -1,0 +1,5 @@
+{% if data %}
+<table class="table table-sm table-bordered small mb-0" style="max-width:760px">
+  <tbody>{% for k, v in data.items %}<tr><td class="font-monospace" style="width:35%">{{ k }}</td><td class="font-monospace text-break">{{ v|default:"—" }}</td></tr>{% endfor %}</tbody>
+</table>
+{% else %}<p class="text-muted small fst-italic mb-0">{{ empty }}</p>{% endif %}

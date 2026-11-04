@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Collection Review{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / Collection Comparison &amp; Review</nav>
+<div class="card p-3 mb-3 d-flex flex-row align-items-start">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-arrow-left-right text-success"></i> Collection Comparison &amp; Review</h4>
+    <small class="text-muted">Review detected changes between <code>{{ session.source_label }}</code> and project: <b>{{ project.name }}</b></small>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{% url 'api_import' project.pk %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Re-import Collection</a>
+    <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-outline-secondary">Back to Project</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><a href="?filter=new" class="card p-3 text-decoration-none"><small class="text-muted">NEW APIS</small><b class="fs-4 text-success">{{ counts.new }}</b></a></div>
+  <div class="col-md-3"><a href="?filter=updated" class="card p-3 text-decoration-none"><small class="text-muted">UPDATED APIS</small><b class="fs-4 text-primary">{{ counts.updated }}</b></a></div>
+  <div class="col-md-3"><a href="?filter=folders" class="card p-3 text-decoration-none"><small class="text-muted">NEW FOLDERS</small><b class="fs-4 text-warning">{{ counts.folders }}</b></a></div>
+  <div class="col-md-3"><a href="?filter=unchanged" class="card p-3 text-decoration-none"><small class="text-muted">UNCHANGED</small><b class="fs-4 text-secondary">{{ counts.unchanged }}</b></a></div>
+</div>
+
+<div class="card p-2 mb-3 d-flex flex-row flex-wrap gap-1 align-items-center">
+  <a href="?filter=all" class="btn btn-sm {% if filter == 'all' %}btn-success{% else %}btn-outline-secondary{% endif %}">All Changes ({{ counts.all }})</a>
+  <a href="?filter=new" class="btn btn-sm {% if filter == 'new' %}btn-success{% else %}btn-outline-secondary{% endif %}">New APIs ({{ counts.new }})</a>
+  <a href="?filter=updated" class="btn btn-sm {% if filter == 'updated' %}btn-success{% else %}btn-outline-secondary{% endif %}">Updated APIs ({{ counts.updated }})</a>
+  <a href="?filter=folders" class="btn btn-sm {% if filter == 'folders' %}btn-success{% else %}btn-outline-secondary{% endif %}">New Folders ({{ counts.folders }})</a>
+  <a href="?filter=unchanged" class="btn btn-sm {% if filter == 'unchanged' %}btn-success{% else %}btn-outline-secondary{% endif %}">Unchanged ({{ counts.unchanged }})</a>
+  <input id="apiSearch" class="form-control form-control-sm ms-auto" style="max-width:280px" placeholder="Search by name, method, URL...">
+</div>
+
+<form method="post" id="reviewForm">{% csrf_token %}
+<div class="card p-2 mb-5">
+  <div class="d-flex gap-1 mb-2">
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setAll(true)">Select All</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setAll(false)">Deselect All</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('.grp-body').forEach(e=>e.classList.remove('show'))">Collapse All</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('.grp-body').forEach(e=>e.classList.add('show'))">Expand All</button>
+  </div>
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th style="width:30px"></th><th>Change Type</th><th>Hierarchy Breadcrumb</th><th>API Details</th><th>Change Summary / Diff</th></tr></thead>
+    {% for g in groups %}
+    <tbody class="grp">
+      <tr class="table-light">
+        <td><input type="checkbox" class="form-check-input grp-check"></td>
+        <td colspan="4" role="button" data-bs-toggle="collapse" data-bs-target=".grp-{{ forloop.counter }}">
+          <i class="bi bi-folder-fill text-warning"></i> <b>{{ g.name }}</b>
+          {% if g.is_new %}<span class="badge text-bg-success ms-1">NEW FOLDER</span>{% endif %}
+          <small class="text-muted ms-1 grp-count"></small>
+        </td>
+      </tr>
+      {% for r in g.rows %}
+      <tr class="api-row collapse show grp-body grp-{{ forloop.parentloop.counter }}" data-search="{{ r.method|lower }} {{ r.name|lower }} {{ r.url|lower }}">
+        <td><input type="checkbox" class="form-check-input api-check" name="k" value="{{ r.key }}" {% if r.change != 'unchanged' %}checked{% else %}disabled{% endif %}></td>
+        <td><span class="badge {% if r.change == 'new' %}text-bg-success{% elif r.change == 'updated' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ r.change|upper }}</span></td>
+        <td class="small text-muted">{{ project.name }} → {{ r.folder }} → {{ r.name }}</td>
+        <td>{% include "apitesting/_method.html" with method=r.method %} <b class="small">{{ r.name }}</b><br><small class="text-muted text-break">{{ r.url }}</small></td>
+        <td class="small {% if r.change == 'new' %}text-success{% elif r.change == 'updated' %}text-primary{% else %}text-muted{% endif %}">{{ r.diff }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% empty %}
+    <tbody><tr><td colspan="5" class="text-center text-muted py-4">Nothing to show for this filter.</td></tr></tbody>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="position-fixed bottom-0 end-0 p-3" style="left:230px">
+  <div class="card shadow p-3 d-flex flex-row align-items-center gap-3">
+    <i class="bi bi-check-circle-fill text-success fs-4"></i>
+    <div><b><span id="selCount">0</span> changes selected for synchronization</b><br><small class="text-muted">Selected endpoints will be imported into project modules</small></div>
+    <button name="discard" value="1" class="btn btn-outline-secondary ms-auto" formnovalidate>Discard &amp; Cancel</button>
+    <button class="btn btn-success"><i class="bi bi-save"></i> Apply &amp; Save Test Cases</button>
+  </div>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const checks = () => [...document.querySelectorAll('.api-check:not(:disabled)')];
+function refresh() {
+  document.getElementById('selCount').textContent = checks().filter(c => c.checked).length;
+  document.querySelectorAll('.grp').forEach(g => {
+    const all = [...g.querySelectorAll('.api-check:not(:disabled)')];
+    const on = all.filter(c => c.checked).length;
+    g.querySelector('.grp-count').textContent = `(${on}/${all.length} selected)`;
+    g.querySelector('.grp-check').checked = all.length > 0 && on === all.length;
+  });
+}
+function setAll(v) { checks().forEach(c => { if (c.closest('tr').style.display !== 'none') c.checked = v; }); refresh(); }
+document.addEventListener('change', e => {
+  if (e.target.classList.contains('grp-check'))
+    e.target.closest('.grp').querySelectorAll('.api-check:not(:disabled)').forEach(c => c.checked = e.target.checked);
+  refresh();
+});
+document.getElementById('apiSearch').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('.api-row').forEach(r => r.style.display = r.dataset.search.includes(q) ? '' : 'none');
+});
+refresh();
+</script>
+{% endblock %}

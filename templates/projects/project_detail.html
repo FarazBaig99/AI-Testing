@@ -14,9 +14,16 @@
         <span class="badge text-bg-light border">{{ stats.automatable }} automatable</span>
         <span class="badge text-bg-light border">{{ stats.releases }} releases</span>
       </div>
+      <div class="mt-2 small">
+        <i class="bi bi-link-45deg"></i> Linked projects:
+        {% for lp in project.linked_projects.all %}
+          <a href="{% url 'project_detail' lp.pk %}" class="badge text-bg-primary text-decoration-none">{{ lp.name }}</a>
+        {% empty %}<span class="text-muted">None</span> <a href="{% url 'project_edit' project.pk %}">(link one)</a>{% endfor %}
+      </div>
     </div>
     <div class="ms-auto d-flex gap-2 flex-wrap">
       <a href="{% url 'runner_list' project.pk %}" class="btn btn-success btn-sm"><i class="bi bi-play-circle"></i> Test Runners</a>
+      <a href="{% url 'api_home' project.pk %}" class="btn btn-primary btn-sm"><i class="bi bi-cloud-arrow-up"></i> API Testing</a>
       <a href="{% url 'testcase_create' project.pk %}" class="btn btn-dark btn-sm"><i class="bi bi-plus"></i> New Test Case</a>
       <a href="{% url 'project_edit' project.pk %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i> Edit</a>
     </div>

@@ -53,7 +53,7 @@ def project_list(request):
         num_modules=Count('modules', filter=Q(modules__parent__isnull=True), distinct=True),
         num_cases=Count('test_cases', distinct=True),
         num_runners=Count('runners', distinct=True),
-    ).select_related('created_by')
+    ).select_related('created_by').prefetch_related('linked_projects')
     if search:
         projects = projects.filter(Q(name__icontains=search) | Q(description__icontains=search))
     return render(request, 'projects/project_list.html', {
@@ -71,6 +71,7 @@ def project_form(request, pk=None):
         if not pk:
             obj.created_by = request.user
         obj.save()
+        form.save_m2m()
         messages.success(request, f'Project "{obj.name}" saved.')
         return redirect('project_detail', pk=obj.pk)
     return render(request, 'projects/form.html', {

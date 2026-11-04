@@ -1,6 +1,6 @@
-# Test Manager (Python / Django)
+# BaigNova TestManager (Python / Django)
 
-A simple test management app modelled on PSW TestManager Pro.
+A simple test management app: projects, modules, test cases, releases and test runners.
 
 ## Features
 - **Accounts**: Register, Login, Logout, Profile (job title, department, capacity, change password)
@@ -13,6 +13,13 @@ A simple test management app modelled on PSW TestManager Pro.
 - **Test Runners**: pick release, dates, assignee and test cases → execute each case as
   Pass / Fail / Blocked / On Hold / Partial Pass with comments; progress and pass rate shown
   (keyboard shortcuts P / F / B / H / S on the execute page)
+
+- **API Testing** (project → API Testing): Import API Collection
+  - *Upload File*: Postman v2.0/v2.1 or OpenAPI/Swagger 2.0/3.x (JSON/YAML) + optional Postman environment
+  - *Import via Link / URL*: Scalar / Swagger UI / OpenAPI / Postman links, one active URL, optional auth header
+  - *Collection Comparison & Review*: New / Updated / Unchanged APIs and New Folders, select what to import
+  - One module per tag/folder, one test case per API (`Verify METHOD /path`) with request details and cURL
+  - *Sync Collection* re-fetches the active URL and shows only what changed
 
 ## Run
 ```bash

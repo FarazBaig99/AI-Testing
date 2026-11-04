@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ folder.name }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / {{ folder.name }}</nav>
+<div class="card p-3 mb-3 d-flex flex-row align-items-start">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-folder-fill text-warning"></i> {{ folder.name }}</h4>
+    <small class="text-muted">Auto-imported module for folder: {{ folder.name }} • {{ cases|length }} test cases</small>
+  </div>
+  <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-outline-secondary ms-auto"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+<form method="post" class="card p-3">{% csrf_token %}
+  <div class="d-flex mb-2"><h6 class="fw-bold mb-0">Test Cases</h6>
+    <button class="btn btn-sm btn-outline-danger ms-auto" onclick="return confirmDelete()"><i class="bi bi-trash"></i> Delete Selected (<span id="n">0</span>)</button></div>
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th style="width:30px"><input type="checkbox" class="form-check-input" id="all"></th><th>ID</th><th>Name</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for c in cases %}
+      <tr>
+        <td><input type="checkbox" class="form-check-input case" name="case" value="{{ c.pk }}"></td>
+        <td><span class="badge text-bg-light border text-success">{{ c.code }}</span></td>
+        <td><a href="{% url 'api_case' project.pk c.pk %}" class="text-decoration-none">{{ c.name }}</a>{% if c.summary %}<br><small class="text-muted">{{ c.summary }}</small>{% endif %}</td>
+        <td><span class="st-badge st-pending">{{ c.status }}</span></td>
+        <td class="text-end text-nowrap">
+          <a href="{% url 'api_case' project.pk c.pk %}" class="btn btn-sm btn-link" title="View Request"><i class="bi bi-eye"></i></a>
+          <a href="{% url 'api_case_edit' project.pk c.pk %}" class="btn btn-sm btn-link" title="Edit"><i class="bi bi-pencil"></i></a>
+        </td>
+      </tr>
+    {% empty %}<tr><td colspan="5" class="text-muted">No test cases.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const boxes = [...document.querySelectorAll('.case')];
+const count = () => document.getElementById('n').textContent = boxes.filter(b => b.checked).length;
+document.getElementById('all').addEventListener('change', e => { boxes.forEach(b => b.checked = e.target.checked); count(); });
+boxes.forEach(b => b.addEventListener('change', count));
+function confirmDelete() {
+  const n = boxes.filter(b => b.checked).length;
+  return n > 0 && window.confirm(`Delete ${n} test case(s)?`);
+}
+</script>
+{% endblock %}

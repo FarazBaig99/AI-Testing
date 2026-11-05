@@ -80,7 +80,9 @@
     if (!window.TomSelect) return;
     new TomSelect(sel, {
       create: false, maxOptions: null, allowEmptyOption: false,
-      plugins: ['dropdown_input', 'clear_button'],
+      plugins: sel.multiple ? ['remove_button', 'clear_button'] : ['dropdown_input', 'clear_button'],
+      // multi-select: clear the typed search after picking, so the next one can be searched right away
+      onItemAdd() { if (sel.multiple) { this.setTextboxValue(''); this.refreshOptions(); } },
       placeholder: sel.dataset.placeholder || 'Search...',
       render: { no_results: () => '<div class="no-results">No matching results</div>' },
     });

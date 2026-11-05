@@ -8,7 +8,7 @@
       <h4 class="fw-bold">#{{ case.pk }} {{ case.title }}</h4>
       <div class="small">
         <span class="badge text-bg-light border"><i class="bi bi-folder"></i> {{ case.module }}</span>
-        <span class="badge text-bg-light border">{{ case.case_type }}</span>
+        {% include "projects/_types.html" %}
         <span class="badge text-bg-secondary">{{ case.priority }}</span>
         {% if case.automatable %}<span class="badge text-bg-success">Automatable</span>{% endif %}
       </div>
@@ -19,6 +19,11 @@
     </div>
   </div>
   <hr>
+  {% if case.rtm_requirement %}
+    <h6 class="fw-bold"><i class="bi bi-diagram-3"></i> RTM Requirement</h6>
+    <div class="p-2 mb-3 rounded border bg-light"><b class="text-primary">{{ case.rtm_requirement }}</b>
+      {% if case.rtm_details %}<div class="small text-muted">{{ case.rtm_details|linebreaksbr }}</div>{% endif %}</div>
+  {% endif %}
   {% if case.description %}<h6 class="fw-bold">Description</h6><p>{{ case.description|linebreaksbr }}</p>{% endif %}
   {% if case.preconditions %}<h6 class="fw-bold">Preconditions</h6><p>{{ case.preconditions|linebreaksbr }}</p>{% endif %}
   <h6 class="fw-bold">Steps</h6>

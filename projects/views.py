@@ -1,12 +1,17 @@
+from collections import Counter
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from .forms import ModuleForm, ProjectForm, ReleaseForm, TestCaseForm, TestRunnerForm
-from .models import Module, Project, Release, TestCase, TestResult, TestRunner
+from .models import (Module, Project, Release, ResultAttachment, ResultHistory, ResultVideo, TestCase, TestResult,
+                     TestRunner)
 
 
 @login_required
@@ -125,7 +130,7 @@ def project_detail(request, pk):
             'pending': results.filter(status='Pending').count(),
             'pass_rate': round(pass_count * 100 / total_results, 1) if total_results else 0,
         },
-        'labels': cases.values('case_type').annotate(n=Count('id')).order_by('-n'),
+        'labels': Counter(t for types in cases.values_list('case_types', flat=True) for t in types).most_common(),
         'releases': project.releases.annotate(n=Count('runners')),
     }
     return render(request, 'projects/project_detail.html', context)
@@ -301,24 +306,24 @@ def runner_execute(request, pk, runner_id):
     env_query = f'?env={env.pk}' if env else ''
 
     if request.method == 'POST':
-        changed = 0
-        for result in env_results:
-            status = request.POST.get(f'status_{result.pk}')
-            comment = request.POST.get(f'comment_{result.pk}', '').strip()
-            if status and (status != result.status or comment != result.comment):
-                result.status = status
-                result.comment = comment
-                result.executed_by = request.user
-                result.executed_at = timezone.now()
-                result.save()
-                changed += 1
-        messages.success(request, f'{changed} result(s) saved' + (f' for {env}.' if env else '.'))
-        return redirect(reverse('runner_execute', args=[pk, runner_id]) + env_query)
+        # the form posts to the current URL, so filters / env / search survive the redirect
+        back = request.get_full_path()
+        if request.POST.get('action') == 'bulk':
+            return _bulk_update(request, env_results, back)
+        result = get_object_or_404(env_results, pk=request.POST.get('result'))
+        return _update_result(request, result, back)
 
     status_filter = request.GET.get('status', 'All')
-    results = env_results.select_related('test_case__module__parent', 'executed_by')
+    search = request.GET.get('q', '').strip()
+    results = (env_results.select_related('test_case__module__parent', 'executed_by')
+               .prefetch_related('attachments', 'history__changed_by', 'videos__recorded_by'))
     if status_filter != 'All':
         results = results.filter(status=status_filter)
+    if search:
+        query = Q(test_case__title__icontains=search) | Q(test_case__rtm_requirement__icontains=search)
+        if search.lstrip('#').isdigit():
+            query |= Q(test_case_id=int(search.lstrip('#')))
+        results = results.filter(query)
     groups = {}
     for r in results:
         groups.setdefault(str(r.test_case.module), []).append(r)
@@ -326,9 +331,140 @@ def runner_execute(request, pk, runner_id):
     progress = {row['environment'].pk: row for row in runner.environment_progress() if row['environment']}
     return render(request, 'projects/runner_execute.html', {
         'runner': runner, 'project': runner.project, 'groups': groups, 'counts': runner.counts(env_results),
-        'env': env, 'env_query': env_query.replace('?', '&'),
+        'env': env, 'env_query': env_query.replace('?', '&'), 'search': search,
         'env_tabs': [{'env': e, 'row': progress.get(e.pk)} for e in runner.project.api_environments.all()],
         'status_choices': [s for s, _ in TestResult.STATUS_CHOICES], 'status_filter': status_filter,
+        'quick_statuses': QUICK_STATUSES, 'reason_required': TestResult.REASON_REQUIRED,
+        'anomaly_types': TestResult.ANOMALY_TYPES, 'severities': TestResult.SEVERITIES,
+        'phases': TestResult.PHASES, 'resolution_codes': TestResult.RESOLUTION_CODES,
+    })
+
+
+# (status, css key, icon, shortcut) for the round quick-action buttons of an execution row
+QUICK_STATUSES = [
+    ('Pass', 'pass', 'bi-check-lg', 'P'), ('Fail', 'fail', 'bi-x-lg', 'F'),
+    ('Blocked', 'blocked', 'bi-slash-lg', 'B'), ('On Hold', 'on-hold', 'bi-pause-fill', 'H'),
+    ('Partial Pass', 'partial-pass', 'bi-dash-lg', 'A'),
+]
+DETAIL_FIELDS = ['bug_id', 'failure_description', 'evidence_notes', 'reason', 'comment']
+CHOICE_FIELDS = {'anomaly_type': TestResult.ANOMALY_TYPES, 'severity': TestResult.SEVERITIES,
+                 'origin_phase': TestResult.PHASES, 'detection_phase': TestResult.PHASES,
+                 'resolution_code': TestResult.RESOLUTION_CODES}
+MAX_EVIDENCE_FILES, MAX_EVIDENCE_SIZE = 10, 10 * 1024 * 1024
+
+
+def _record(result, old_status, user, note):
+    now = timezone.now()
+    result.executed_by, result.executed_at = user, now
+    result.save()
+    ResultHistory.objects.create(result=result, old_status=old_status, new_status=result.status,
+                                 note=note, changed_by=user, changed_at=now)
+
+
+def _update_result(request, result, back):
+    """One row: a round quick-action button (status only) or 'Save Changes' of the expanded details."""
+    statuses = [s for s, _ in TestResult.STATUS_CHOICES]
+    quick = request.POST.get('quick')
+    status = quick or request.POST.get('status', result.status)
+    if status not in statuses:
+        status = result.status
+    old_status = result.status
+    for name in DETAIL_FIELDS:
+        if name in request.POST:
+            setattr(result, name, request.POST[name].strip())
+    for name, choices in CHOICE_FIELDS.items():
+        if name in request.POST:
+            value = request.POST[name]
+            setattr(result, name, value if value in choices else '')
+
+    files = request.FILES.getlist('evidence')
+    if len(files) + result.attachments.count() > MAX_EVIDENCE_FILES:
+        messages.error(request, f'#{result.test_case_id}: max {MAX_EVIDENCE_FILES} evidence files per result.')
+        return redirect(f'{back}#open-{result.pk}')
+    too_big = [f.name for f in files if f.size > MAX_EVIDENCE_SIZE]
+    if too_big:
+        messages.error(request, f'#{result.test_case_id}: files over 10 MB: {", ".join(too_big)}')
+        return redirect(f'{back}#open-{result.pk}')
+    if status in TestResult.REASON_REQUIRED and not result.reason:
+        messages.error(request, f'#{result.test_case_id}: Reason is required when the result is {status}.')
+        return redirect(f'{back}#open-{result.pk}')
+
+    result.status = status
+    _record(result, old_status, request.user, 'Inline single update' if quick else 'Detailed update')
+    for f in files:
+        ResultAttachment.objects.create(result=result, file=f, uploaded_by=request.user)
+    messages.success(request, f'#{result.test_case_id} {result.test_case.title}: {status}.')
+    return redirect(f'{back}#r{result.pk}' if quick else f'{back}#open-{result.pk}')
+
+
+def _bulk_update(request, env_results, back):
+    status = request.POST.get('status')
+    reason = request.POST.get('reason', '').strip()
+    selected = env_results.filter(pk__in=[i for i in request.POST.getlist('selected') if i.isdigit()])
+    if status not in [s for s, _ in TestResult.STATUS_CHOICES] or not selected:
+        messages.error(request, 'Select test cases and a status first.')
+        return redirect(back)
+    if status in TestResult.REASON_REQUIRED and not reason:
+        messages.error(request, f'Reason is required to mark test cases {status}.')
+        return redirect(back)
+    for result in selected:
+        old_status = result.status
+        result.status = status
+        if reason:
+            result.reason = reason
+        _record(result, old_status, request.user, 'Bulk update')
+    messages.success(request, f'{len(selected)} test case(s) marked {status}.')
+    return redirect(back)
+
+
+# ---------- Video steps (screen recordings of an execution) ----------
+
+MAX_VIDEO_SIZE = 300 * 1024 * 1024
+
+
+@login_required
+@require_POST
+def result_video_upload(request, pk, runner_id, result_id):
+    """The recorder on the execution page posts the finished recording here (fetch + FormData)."""
+    result = get_object_or_404(TestResult, pk=result_id, runner_id=runner_id, runner__project_id=pk)
+    video = request.FILES.get('video')
+    if not video or not (video.content_type or '').startswith('video/'):
+        return JsonResponse({'error': 'No video received.'}, status=400)
+    if video.size > MAX_VIDEO_SIZE:
+        return JsonResponse({'error': 'Video is larger than 300 MB.'}, status=400)
+    source = 'desktop' if request.POST.get('source') == 'desktop' else 'web'
+    start_url = request.POST.get('start_url', '').strip()[:1000]
+    duration = request.POST.get('duration', '0')
+    obj = ResultVideo.objects.create(
+        result=result, file=video, recorded_by=request.user, source=source,
+        start_url=start_url if source == 'web' and start_url.startswith(('http://', 'https://')) else '',
+        app_name=request.POST.get('app_name', '').strip()[:200] if source == 'desktop' else '',
+        duration=int(duration) if duration.isdigit() else 0)
+    return JsonResponse({'id': obj.pk, 'link': request.build_absolute_uri(reverse('video_watch', args=[pk, obj.pk]))})
+
+
+@login_required
+@require_POST
+def result_video_delete(request, pk, video_id):
+    video = get_object_or_404(ResultVideo.objects.select_related('result'), pk=video_id, result__runner__project_id=pk)
+    result = video.result
+    try:
+        video.file.delete(save=False)
+    except OSError:
+        pass  # file still open (e.g. being streamed on Windows) - the record goes, the orphan file is harmless
+    video.delete()
+    messages.success(request, 'Video deleted.')
+    env = f'?env={result.environment_id}' if result.environment_id else ''
+    return redirect(reverse('runner_execute', args=[pk, result.runner_id]) + f'{env}#open-{result.pk}')
+
+
+@login_required
+def video_watch(request, pk, video_id):
+    video = get_object_or_404(ResultVideo.objects.select_related(
+        'result__test_case__module', 'result__runner__project', 'result__environment', 'recorded_by'),
+        pk=video_id, result__runner__project_id=pk)
+    return render(request, 'projects/video_watch.html', {
+        'video': video, 'result': video.result, 'case': video.result.test_case, 'project': video.result.runner.project,
     })
 
 

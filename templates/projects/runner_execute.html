@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 {% block title %}{{ runner.name }}{% endblock %}
 {% block content %}
+<style>
+  .exec-row { border: 1px solid #e2e8f0; border-radius: 10px; margin: 8px; background: #fff; outline: none; }
+  .exec-row:focus-within, .exec-row:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+  .exec-head { cursor: pointer; padding: 10px 12px; }
+  .st-icon { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .75rem; color: #fff; flex-shrink: 0; }
+  .st-icon.pending { background: #fff; border: 2px solid #cbd5e1; }
+  .st-icon.pass { background: #16a34a; } .st-icon.fail { background: #dc2626; } .st-icon.blocked { background: #d97706; }
+  .st-icon.on-hold { background: #6d28d9; } .st-icon.partial-pass { background: #0891b2; }
+  .qbtn { width: 30px; height: 30px; border-radius: 50%; border: 2px solid; background: #fff; display: inline-flex; align-items: center; justify-content: center; padding: 0; font-size: .85rem; transition: .1s; }
+  .qbtn.q-pass { border-color: #16a34a; color: #16a34a; } .qbtn.q-pass.active, .qbtn.q-pass:hover { background: #16a34a; color: #fff; }
+  .qbtn.q-fail { border-color: #dc2626; color: #dc2626; } .qbtn.q-fail.active, .qbtn.q-fail:hover { background: #dc2626; color: #fff; }
+  .qbtn.q-blocked { border-color: #d97706; color: #d97706; } .qbtn.q-blocked.active, .qbtn.q-blocked:hover { background: #d97706; color: #fff; }
+  .qbtn.q-on-hold { border-color: #6d28d9; color: #6d28d9; } .qbtn.q-on-hold.active, .qbtn.q-on-hold:hover { background: #6d28d9; color: #fff; }
+  .qbtn.q-partial-pass { border-color: #0891b2; color: #0891b2; } .qbtn.q-partial-pass.active, .qbtn.q-partial-pass:hover { background: #0891b2; color: #fff; }
+  .chip-rtm { background: #dbeafe; color: #1d4ed8; border-radius: 6px; padding: 1px 8px; font-size: .72rem; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+  .sec-title { font-size: .78rem; font-weight: 600; color: #475569; margin-bottom: 4px; }
+  .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; font-size: .82rem; }
+  .steps-box { max-height: 260px; overflow: auto; }
+  .steps-box li { margin-bottom: 6px; }
+  .steps-box .exp { color: #64748b; font-size: .75rem; }
+  .exec-detail .form-control, .exec-detail .form-select { font-size: .82rem; background: #f8fafc; }
+  .chev { transition: transform .2s; } .exec-row.open .chev { transform: rotate(180deg); }
+  kbd { background: #1e293b; font-size: .68rem; }
+</style>
+
 <nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'runner_list' project.pk %}">Test Runners</a> / {{ runner.name }}</nav>
 
 <div class="d-flex align-items-start mb-3">
@@ -49,67 +74,464 @@
   <div class="progress mt-2" style="height:8px"><div class="progress-bar bg-success" style="width:{{ counts.progress }}%"></div></div>
 </div>
 
-<div class="card p-2 mb-3 d-flex flex-row flex-wrap gap-1 align-items-center">
-  <a href="?status=All{{ env_query }}" class="btn btn-sm {% if status_filter == 'All' %}btn-dark{% else %}btn-outline-dark{% endif %}">All</a>
-  {% for s in status_choices %}
-    <a href="?status={{ s }}{{ env_query }}" class="btn btn-sm {% if status_filter == s %}btn-dark{% else %}btn-outline-dark{% endif %}">{{ s }}</a>
-  {% endfor %}
-  <small class="ms-auto text-muted me-2">Shortcuts: click a row, then <kbd>P</kbd> Pass · <kbd>F</kbd> Fail · <kbd>B</kbd> Blocked · <kbd>H</kbd> On Hold · <kbd>S</kbd> Save All</small>
+{# filters + bulk actions #}
+<div class="card p-2 mb-2">
+  <div class="d-flex flex-wrap gap-1 align-items-center">
+    <div class="form-check me-2 ms-1 mb-0"><input class="form-check-input" type="checkbox" id="selectAll"> <label class="form-check-label small" for="selectAll">Select All</label></div>
+    <a href="?status=All{{ env_query }}{% if search %}&q={{ search|urlencode }}{% endif %}" class="btn btn-sm rounded-pill {% if status_filter == 'All' %}btn-dark{% else %}btn-outline-secondary{% endif %}">All</a>
+    {% for s in status_choices %}
+      <a href="?status={{ s|urlencode }}{{ env_query }}{% if search %}&q={{ search|urlencode }}{% endif %}" class="btn btn-sm rounded-pill {% if status_filter == s %}btn-dark{% else %}btn-outline-secondary{% endif %}">{{ s }}</a>
+    {% endfor %}
+    <form method="get" class="ms-auto d-flex gap-1">
+      {% if env %}<input type="hidden" name="env" value="{{ env.pk }}">{% endif %}
+      <input type="hidden" name="status" value="{{ status_filter }}">
+      <input name="q" value="{{ search }}" class="form-control form-control-sm" style="width:220px" placeholder="Search test cases...">
+      <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+      {% if search %}<a href="?status={{ status_filter|urlencode }}{{ env_query }}" class="btn btn-sm btn-link">Clear</a>{% endif %}
+    </form>
+  </div>
+  <form method="post" id="bulkForm" class="d-none align-items-center gap-2 mt-2 p-2 rounded" style="background:#eff6ff">{% csrf_token %}
+    <input type="hidden" name="action" value="bulk">
+    <b class="small"><span id="selCount">0</span> selected</b>
+    <select name="status" class="form-select form-select-sm" style="width:160px" required>
+      <option value="">Mark as...</option>
+      {% for s in status_choices %}<option>{{ s }}</option>{% endfor %}
+    </select>
+    <input name="reason" class="form-control form-control-sm" style="max-width:320px" placeholder="Reason (required for Blocked / On Hold / Partial Pass)">
+    <button class="btn btn-sm btn-primary"><i class="bi bi-check2-all"></i> Apply</button>
+  </form>
+</div>
+<div class="card p-2 mb-3 small text-muted">
+  <div><i class="bi bi-keyboard"></i> Shortcuts: <kbd>P</kbd> Pass · <kbd>F</kbd> Fail · <kbd>B</kbd> Blocked · <kbd>H</kbd> On Hold · <kbd>A</kbd> Partial Pass · <kbd>Space</kbd> Select · <kbd>↑</kbd><kbd>↓</kbd> Navigate · <kbd>Enter</kbd> Expand · <kbd>S</kbd> Save</div>
 </div>
 
-<form method="post" id="execForm">{% csrf_token %}
-  {% if env %}<input type="hidden" name="env" value="{{ env.pk }}">{% endif %}
-  {% for module, results in groups.items %}
-  <div class="card mb-3">
-    <div class="module-head p-2 rounded-top"><i class="bi bi-box"></i> <b>{{ module }}</b> <span class="badge text-bg-secondary">{{ results|length }}</span></div>
-    {% for r in results %}
-    <div class="tc-row exec-row border-top p-2" tabindex="0">
-      <div class="d-flex align-items-center gap-2">
-        <a class="text-muted small" data-bs-toggle="collapse" href="#steps{{ r.pk }}"><i class="bi bi-chevron-down"></i></a>
-        <span class="text-muted small">#{{ r.test_case.pk }}</span>
-        <span class="flex-fill">{{ r.test_case.title }} <span class="badge text-bg-light border">{{ r.test_case.case_type }}</span></span>
-        {% if r.executed_by %}<small class="text-muted">{{ r.executed_at|date:"M d, H:i" }} by {{ r.executed_by }}</small>{% endif %}
-        <input name="comment_{{ r.pk }}" value="{{ r.comment }}" class="form-control form-control-sm" style="max-width:240px" placeholder="Comment / bug id">
-        <select name="status_{{ r.pk }}" class="form-select form-select-sm status-select st-{{ r.status|slugify }}" style="max-width:140px">
-          {% for s in status_choices %}<option {% if s == r.status %}selected{% endif %}>{{ s }}</option>{% endfor %}
-        </select>
+{% for module, results in groups.items %}
+<div class="card mb-3">
+  <div class="module-head p-2 rounded-top d-flex align-items-center">
+    <span><i class="bi bi-box"></i> <b>{{ module }}</b> <span class="badge text-bg-secondary">{{ results|length }}</span></span>
+  </div>
+  {% for r in results %}
+  <div class="exec-row" id="r{{ r.pk }}" tabindex="0" data-id="{{ r.pk }}">
+    <form method="post" enctype="multipart/form-data" class="exec-form">{% csrf_token %}
+      <input type="hidden" name="result" value="{{ r.pk }}">
+      <div class="exec-head d-flex align-items-center gap-2">
+        <input class="form-check-input sel mt-0" type="checkbox" name="selected" value="{{ r.pk }}" form="bulkForm" title="Select">
+        <span class="st-icon {{ r.status|slugify }}">
+          {% for s, key, icon, k in quick_statuses %}{% if s == r.status %}<i class="bi {{ icon }}"></i>{% endif %}{% endfor %}
+        </span>
+        <div class="flex-fill">
+          <div class="fw-semibold">{{ r.test_case.title }} <span class="text-muted small fw-normal">#{{ r.test_case.pk }}</span></div>
+          <div class="small text-muted d-flex flex-wrap gap-2 align-items-center">
+            {% if r.test_case.rtm_requirement %}<span class="chip-rtm" title="{{ r.test_case.rtm_requirement }}"><i class="bi bi-diagram-3"></i> {{ r.test_case.rtm_requirement }}</span>{% endif %}
+            {% include "projects/_types.html" with case=r.test_case %}
+            {% if r.executed_by %}<span><i class="bi bi-clock"></i> {{ r.executed_at|date:"M d, H:i" }} by {{ r.executed_by }}</span>{% else %}<span>Not executed</span>{% endif %}
+            {% if r.bug_id %}<span class="badge text-bg-danger"><i class="bi bi-bug"></i> {{ r.bug_id }}</span>{% endif %}
+            {% if r.attachments.all %}<span><i class="bi bi-paperclip"></i> {{ r.attachments.all|length }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="d-flex gap-1 align-items-center">
+          {% for s, key, icon, k in quick_statuses %}
+            <button type="submit" name="quick" value="{{ s }}" class="qbtn q-{{ key }} {% if s == r.status %}active{% endif %}" title="{{ s }} ({{ k }})" data-key="{{ k|lower }}"><i class="bi {{ icon }}"></i></button>
+          {% endfor %}
+          <span class="mx-1 text-muted">|</span>
+          <span class="st-badge st-{{ r.status|slugify }}">{{ r.status }}</span>
+          <a class="text-muted ms-1 toggle" href="#" title="Expand (Enter)"><i class="bi bi-chevron-down chev"></i></a>
+        </div>
       </div>
-      <div class="collapse small mt-2 ms-4" id="steps{{ r.pk }}">
-        {% if r.test_case.preconditions %}<b>Preconditions:</b> {{ r.test_case.preconditions|linebreaksbr }}<br>{% endif %}
-        <b>Steps:</b><br>{{ r.test_case.steps|linebreaksbr }}<br>
-        <b>Expected:</b> {{ r.test_case.expected_result|linebreaksbr }}
+
+      <div class="collapse" id="d{{ r.pk }}">
+        <div class="exec-detail row g-3 px-3 pb-3 pt-1 border-top mx-0">
+          <div class="col-lg-6">
+            <div class="sec-title mt-2"><i class="bi bi-diagram-3"></i> RTM Requirements</div>
+            <div class="box mb-3">
+              {% if r.test_case.rtm_requirement %}
+                <div class="fw-semibold text-primary">{{ r.test_case.rtm_requirement }}</div>
+                {% if r.test_case.rtm_details %}<div class="text-muted">{{ r.test_case.rtm_details|linebreaksbr }}</div>{% endif %}
+              {% else %}<span class="text-muted">No RTM requirement linked. <a href="{% url 'testcase_edit' project.pk r.test_case.pk %}">Add one</a></span>{% endif %}
+            </div>
+            <div class="sec-title"><i class="bi bi-file-text"></i> Test Case Details</div>
+            <div class="small mb-2">{{ r.test_case.description|default:"-"|linebreaksbr }}</div>
+            {% if r.test_case.preconditions %}<div class="small mb-2"><b>Preconditions:</b> {{ r.test_case.preconditions|linebreaksbr }}</div>{% endif %}
+            <div class="box steps-box">
+              <b>Execution Steps:</b>
+              <ol class="mb-1 mt-1 ps-3">
+                {% for step, expected in r.test_case.step_list %}
+                  <li>{{ step }}{% if expected %}<div class="exp">→ Expected: {{ expected }}</div>{% endif %}</li>
+                {% endfor %}
+              </ol>
+              <b>Expected Result:</b> {{ r.test_case.expected_result|linebreaksbr }}
+            </div>
+
+            <div class="sec-title mt-3"><i class="bi bi-camera-video"></i> Video Steps</div>
+            <div class="box">
+              {% for v in r.videos.all %}
+                <div class="d-flex align-items-center gap-2 py-1 {% if not forloop.last %}border-bottom{% endif %}">
+                  <i class="bi bi-play-circle-fill text-danger fs-5"></i>
+                  <div class="flex-fill small">
+                    <a href="{% url 'video_watch' project.pk v.pk %}" target="_blank" class="fw-semibold">Video #{{ v.pk }}</a>
+                    <span class="badge text-bg-light border"><i class="bi {% if v.source == 'desktop' %}bi-pc-display{% else %}bi-globe{% endif %}"></i> {{ v.get_source_display }}</span>
+                    <span class="text-muted">· {{ v.duration_display }} · {{ v.recorded_at|date:"M d, H:i" }} by {{ v.recorded_by|default:"-" }}</span>
+                    {% if v.start_url or v.app_name %}<div class="text-muted text-truncate" style="max-width:380px">{{ v.start_url|default:v.app_name }}</div>{% endif %}
+                  </div>
+                  <button type="button" class="btn btn-sm btn-link p-0 copy-link" data-link="{{ request.scheme }}://{{ request.get_host }}{% url 'video_watch' project.pk v.pk %}" title="Copy link"><i class="bi bi-link-45deg"></i></button>
+                  <button type="submit" class="btn btn-sm btn-link text-danger p-0 skip-check" formaction="{% url 'result_video_delete' project.pk v.pk %}" formnovalidate title="Delete video"
+                          onclick="return confirm('Delete this video?')"><i class="bi bi-trash"></i></button>
+                </div>
+              {% empty %}<div class="small text-muted mb-1">No video recorded yet.</div>{% endfor %}
+              <button type="button" class="btn btn-sm btn-danger mt-2 record-btn" data-result="{{ r.pk }}"
+                      data-upload="{% url 'result_video_upload' project.pk runner.pk r.pk %}" data-title="#{{ r.test_case.pk }} {{ r.test_case.title }}">
+                <i class="bi bi-record-circle"></i> Record Video Steps
+              </button>
+            </div>
+          </div>
+
+          <div class="col-lg-6">
+            <div class="sec-title mt-2"><i class="bi bi-pencil-square"></i> Execution Details</div>
+            <div class="row g-2 mb-2">
+              <div class="col-sm-5">
+                <label class="small fw-semibold">Result</label>
+                <select name="status" class="form-select form-select-sm status-select">
+                  {% for s in status_choices %}<option {% if s == r.status %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-sm-7">
+                <label class="small fw-semibold"><i class="bi bi-bug"></i> Bug/Defect ID</label>
+                <input name="bug_id" value="{{ r.bug_id }}" class="form-control form-control-sm" placeholder="Bug / ClickUp / Jira task ID">
+              </div>
+            </div>
+            <label class="small fw-semibold">Failure Description</label>
+            <textarea name="failure_description" rows="2" class="form-control mb-2" placeholder="Describe the failure...">{{ r.failure_description }}</textarea>
+
+            <label class="small fw-semibold">IEEE 1044 - Type / Severity</label>
+            <div class="row g-2 mb-2">
+              <div class="col-6"><select name="anomaly_type" class="form-select form-select-sm"><option value="">Anomaly Type...</option>{% for c in anomaly_types %}<option {% if c == r.anomaly_type %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+              <div class="col-6"><select name="severity" class="form-select form-select-sm"><option value="">Severity...</option>{% for c in severities %}<option {% if c == r.severity %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+              <div class="col-6"><select name="origin_phase" class="form-select form-select-sm"><option value="">Origin Phase...</option>{% for c in phases %}<option {% if c == r.origin_phase %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+              <div class="col-6"><select name="detection_phase" class="form-select form-select-sm"><option value="">Detection Phase...</option>{% for c in phases %}<option {% if c == r.detection_phase %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+              <div class="col-12"><select name="resolution_code" class="form-select form-select-sm"><option value="">Resolution Code...</option>{% for c in resolution_codes %}<option {% if c == r.resolution_code %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+            </div>
+
+            <label class="small fw-semibold">Evidence Notes</label>
+            <textarea name="evidence_notes" rows="2" class="form-control mb-2" placeholder="Add notes about the evidence...">{{ r.evidence_notes }}</textarea>
+
+            <label class="small fw-semibold"><i class="bi bi-paperclip"></i> Evidence Attachment</label>
+            <input type="file" name="evidence" multiple class="form-control form-control-sm">
+            <div class="form-text mt-0 mb-1">You can select multiple files (screenshots, logs, PDF). Max 10 files, 10 MB each.</div>
+            {% if r.attachments.all %}
+              <div class="mb-2 d-flex flex-wrap gap-1">
+                {% for a in r.attachments.all %}<a href="{{ a.file.url }}" target="_blank" class="badge text-bg-light border text-decoration-none"><i class="bi bi-file-earmark"></i> {{ a.name }}</a>{% endfor %}
+              </div>
+            {% endif %}
+
+            <label class="small fw-semibold">Reason <span class="text-danger">*</span></label>
+            <textarea name="reason" rows="2" class="form-control reason" placeholder="Explain why this result was chosen...">{{ r.reason }}</textarea>
+            <div class="form-text mt-0 mb-2 reason-hint">Required when the result is Blocked, On Hold, or Partial Pass.</div>
+
+            <label class="small fw-semibold">Additional Details</label>
+            <textarea name="comment" rows="2" class="form-control mb-2" placeholder="Any additional notes...">{{ r.comment }}</textarea>
+
+            <div class="d-flex gap-2 mb-2">
+              <button type="submit" name="save" value="1" class="btn btn-sm btn-dark save-btn"><i class="bi bi-check2"></i> Save Changes</button>
+              <a href="{% url 'testcase_edit' project.pk r.test_case.pk %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-up-right"></i> Full Edit</a>
+            </div>
+
+            <div class="box">
+              <div class="sec-title mb-1"><i class="bi bi-clock-history"></i> Execution Timeline</div>
+              {% for h in r.history.all %}
+                <div class="small">{{ h.changed_at|date:"Y-m-d H:i" }} • {{ h.old_status|lower }} → <b>{{ h.new_status|lower }}</b> • By {{ h.changed_by|default:"-" }} • <span class="text-muted">{{ h.note }}</span></div>
+              {% empty %}<div class="small text-muted">No activity yet.</div>{% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% empty %}
+<div class="card p-4 text-center text-muted">No test cases for this filter.</div>
+{% endfor %}
+{{ reason_required|json_script:"reasonRequired" }}
+
+{# Video Steps recorder: opens the app in its own browser window and records that window while the steps are performed #}
+<div class="modal fade" id="recorder" data-bs-backdrop="static" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title fw-bold"><i class="bi bi-camera-video text-danger"></i> Record Video Steps — <span id="recTitle"></span></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-5">
+            <div class="sec-title">Steps to perform</div>
+            <div class="box steps-box" id="recSteps"></div>
+          </div>
+          <div class="col-md-7">
+            <div id="recSetup">
+              <label class="small fw-semibold d-block">What are you testing?</label>
+              <div class="btn-group btn-group-sm w-100 mb-2" role="group">
+                <input type="radio" class="btn-check" name="recSource" id="srcWeb" value="web" checked>
+                <label class="btn btn-outline-primary" for="srcWeb"><i class="bi bi-globe"></i> Website</label>
+                <input type="radio" class="btn-check" name="recSource" id="srcDesktop" value="desktop">
+                <label class="btn btn-outline-primary" for="srcDesktop"><i class="bi bi-pc-display"></i> Desktop Software</label>
+              </div>
+              <div class="src-web">
+                <label class="small fw-semibold">Start URL</label>
+                <input id="recUrl" class="form-control form-control-sm mb-2" placeholder="e.g. www.google.com">
+                <ol class="small ps-3 mb-2">
+                  <li><b>Open Browser</b> — the URL opens in a new browser window.</li>
+                  <li><b>Start Recording</b> — in the popup choose the <b>Window</b> / <b>Tab</b> that opened, then click <b>Share</b>.</li>
+                  <li>Perform the steps in that window, come back here and click <b>Stop</b>.</li>
+                </ol>
+              </div>
+              <div class="src-desktop d-none">
+                <label class="small fw-semibold">Software / application name</label>
+                <input id="recApp" class="form-control form-control-sm mb-2" placeholder="e.g. Tally ERP, SAP GUI, MyApp.exe">
+                <ol class="small ps-3 mb-2">
+                  <li>Open the desktop software on this computer.</li>
+                  <li><b>Start Recording</b> — in the popup open the <b>Window</b> tab and choose the software's window
+                      (or <b>Entire Screen</b> if the steps use several programs / dialogs), then click <b>Share</b>.</li>
+                  <li>Perform the steps in the software, come back here and click <b>Stop</b>.</li>
+                </ol>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary src-web" id="recOpen"><i class="bi bi-window"></i> 1. Open Browser</button>
+                <button type="button" class="btn btn-sm btn-danger" id="recStart"><i class="bi bi-record-circle"></i> <span class="src-web">2. </span>Start Recording</button>
+              </div>
+            </div>
+            <div id="recLive" class="d-none text-center py-3">
+              <div class="fs-4 text-danger fw-bold"><i class="bi bi-record-fill"></i> Recording <span id="recTime">0:00</span></div>
+              <div class="small text-muted mb-3">Perform the steps in the shared window. Click Stop when done.</div>
+              <button type="button" class="btn btn-sm btn-outline-primary src-web" id="recOpen2"><i class="bi bi-window"></i> Open Browser again</button>
+              <button type="button" class="btn btn-sm btn-dark" id="recStop"><i class="bi bi-stop-fill"></i> Stop</button>
+            </div>
+            <div id="recDone" class="d-none">
+              <video id="recPreview" controls class="w-100 rounded border mb-2" style="max-height:260px;background:#000"></video>
+              <div class="d-flex gap-2 align-items-center">
+                <button type="button" class="btn btn-sm btn-success" id="recSave"><i class="bi bi-cloud-upload"></i> Save Video</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="recAgain"><i class="bi bi-arrow-counterclockwise"></i> Record again</button>
+                <span class="small text-muted ms-auto" id="recInfo"></span>
+              </div>
+              <div class="progress mt-2 d-none" id="recProgress" style="height:6px"><div class="progress-bar bg-success"></div></div>
+            </div>
+            <div class="alert alert-danger py-1 px-2 small mt-2 d-none" id="recError"></div>
+          </div>
+        </div>
       </div>
     </div>
-    {% endfor %}
   </div>
-  {% empty %}
-  <div class="card p-4 text-center text-muted">No test cases for this filter.</div>
-  {% endfor %}
-  {% if groups %}
-  <div class="position-sticky bottom-0 bg-white p-2 border rounded shadow-sm text-end">
-    <button class="btn btn-success"><i class="bi bi-save"></i> Save All Results</button>
-  </div>
-  {% endif %}
-</form>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
-const keys = {p: 'Pass', f: 'Fail', b: 'Blocked', h: 'On Hold'};
-document.querySelectorAll('.status-select').forEach(sel => sel.addEventListener('change', () => {
-  sel.className = sel.className.replace(/st-[\w-]+/, 'st-' + sel.value.toLowerCase().replace(' ', '-'));
-}));
+const REASON_REQUIRED = JSON.parse(document.getElementById('reasonRequired').textContent);
+const rows = [...document.querySelectorAll('.exec-row')];
+const panel = row => bootstrap.Collapse.getOrCreateInstance(row.querySelector('.collapse'), {toggle: false});
+
+rows.forEach(row => {
+  const detail = row.querySelector('.collapse');
+  detail.addEventListener('show.bs.collapse', () => row.classList.add('open'));
+  detail.addEventListener('hide.bs.collapse', () => row.classList.remove('open'));
+  // clicking the header (not its buttons / checkbox) expands the row
+  row.querySelector('.exec-head').addEventListener('click', e => {
+    if (e.target.closest('button, input, .qbtn') && !e.target.closest('.toggle')) return;
+    e.preventDefault();
+    panel(row).toggle();
+  });
+  // Reason is mandatory for Blocked / On Hold / Partial Pass - open the details instead of submitting
+  row.querySelector('.exec-form').addEventListener('submit', e => {
+    const btn = e.submitter;
+    if (btn && btn.classList.contains('skip-check')) return;
+    const status = btn && btn.name === 'quick' ? btn.value : row.querySelector('.status-select').value;
+    const reason = row.querySelector('.reason');
+    if (REASON_REQUIRED.includes(status) && !reason.value.trim()) {
+      e.preventDefault();
+      row.querySelector('.status-select').value = status;
+      panel(row).show();
+      reason.classList.add('is-invalid');
+      const hint = row.querySelector('.reason-hint');
+      hint.classList.add('text-danger');
+      hint.textContent = `Reason is required to mark this test case ${status}. Write it, then click Save Changes.`;
+      setTimeout(() => reason.focus(), 250);
+    }
+  });
+  row.querySelector('.reason').addEventListener('input', e => e.target.classList.remove('is-invalid'));
+});
+
+// selection + bulk bar
+const bulk = document.getElementById('bulkForm');
+const sels = [...document.querySelectorAll('.sel')];
+const refreshBulk = () => {
+  const n = sels.filter(c => c.checked).length;
+  document.getElementById('selCount').textContent = n;
+  bulk.classList.toggle('d-none', !n);
+  bulk.classList.toggle('d-flex', !!n);
+  document.getElementById('selectAll').checked = n && n === sels.length;
+};
+sels.forEach(c => c.addEventListener('change', refreshBulk));
+document.getElementById('selectAll').addEventListener('change', e => { sels.forEach(c => c.checked = e.target.checked); refreshBulk(); });
+
+// keyboard shortcuts on the focused row
 document.addEventListener('keydown', e => {
-  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
-  const k = e.key.toLowerCase();
-  if (k === 's') { document.getElementById('execForm').submit(); return; }
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || e.ctrlKey || e.altKey || e.metaKey) return;
   const row = e.target.closest && e.target.closest('.exec-row');
-  if (row && keys[k]) {
-    const sel = row.querySelector('.status-select');
-    sel.value = keys[k];
-    sel.dispatchEvent(new Event('change'));
-    const next = row.nextElementSibling || row.closest('.card').nextElementSibling?.querySelector('.exec-row');
-    if (next && next.classList.contains('exec-row')) next.focus();
+  if (!row) return;
+  const k = e.key.toLowerCase();
+  const i = rows.indexOf(row);
+  if (k === 'arrowdown' || k === 'arrowup') {
+    e.preventDefault();
+    const next = rows[i + (k === 'arrowdown' ? 1 : -1)];
+    if (next) { next.focus(); next.scrollIntoView({block: 'nearest'}); }
+  } else if (k === 'enter') {
+    e.preventDefault(); panel(row).toggle();
+  } else if (k === ' ') {
+    e.preventDefault();
+    const c = row.querySelector('.sel'); c.checked = !c.checked; refreshBulk();
+  } else if (k === 's') {
+    e.preventDefault(); row.querySelector('.save-btn').click();
+  } else {
+    const btn = row.querySelector(`.qbtn[data-key="${k}"]`);
+    if (btn) { e.preventDefault(); btn.click(); }
   }
+});
+
+// after saving, come back to the same row (#r12) or with its details open (#open-12)
+const hash = location.hash.match(/^#(open-|r)(\d+)$/);
+if (hash) {
+  const row = document.getElementById('r' + hash[2]);
+  if (row) {
+    if (hash[1] === 'open-') panel(row).show();
+    row.scrollIntoView({block: 'center'});
+    row.focus({preventScroll: true});
+  }
+}
+
+document.querySelectorAll('.copy-link').forEach(btn => btn.addEventListener('click', () => {
+  navigator.clipboard.writeText(btn.dataset.link).then(() => {
+    btn.innerHTML = '<i class="bi bi-check2 text-success"></i>';
+    setTimeout(() => btn.innerHTML = '<i class="bi bi-link-45deg"></i>', 1500);
+  });
+}));
+
+// ---------- Video Steps recorder ----------
+const rec = {modal: null, upload: '', row: null, stream: null, recorder: null, chunks: [], blob: null, started: 0, timer: null, duration: 0};
+const $ = id => document.getElementById(id);
+const show = which => ['recSetup', 'recLive', 'recDone'].forEach(id => $(id).classList.toggle('d-none', id !== which));
+const recError = msg => { $('recError').textContent = msg || ''; $('recError').classList.toggle('d-none', !msg); };
+const normUrl = u => { u = u.trim(); return !u ? '' : (/^https?:\/\//i.test(u) ? u : 'https://' + u); };
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const recSource = () => document.querySelector('[name=recSource]:checked').value;
+// Website: open the URL in its own window and record it; Desktop Software: record any application window / the screen
+const applySource = () => {
+  const web = recSource() === 'web';
+  $('recorder').querySelectorAll('.src-web').forEach(el => el.classList.toggle('d-none', !web));
+  $('recorder').querySelectorAll('.src-desktop').forEach(el => el.classList.toggle('d-none', web));
+  recError();
+};
+document.querySelectorAll('[name=recSource]').forEach(r => r.addEventListener('change', applySource));
+
+document.querySelectorAll('.record-btn').forEach(btn => btn.addEventListener('click', () => {
+  rec.row = btn.closest('.exec-row');
+  rec.upload = btn.dataset.upload;
+  $('recTitle').textContent = btn.dataset.title;
+  const steps = rec.row.querySelector('.steps-box');
+  $('recSteps').innerHTML = steps.innerHTML;
+  const url = steps.textContent.match(/(https?:\/\/|www\.)[^\s,]+/i);
+  $('recUrl').value = url ? url[0] : '';
+  rec.blob = null;
+  $('recSave').disabled = false;
+  $('recProgress').classList.add('d-none');
+  applySource();
+  show('recSetup');
+  bootstrap.Modal.getOrCreateInstance($('recorder')).show();
+}));
+
+const openBrowser = () => {
+  const url = normUrl($('recUrl').value);
+  if (!url) { recError('Enter the Start URL first.'); $('recUrl').focus(); return; }
+  recError();
+  const win = window.open(url, 'videoSteps', 'width=1280,height=800,left=60,top=40');
+  if (!win) recError('The browser blocked the new window - allow pop-ups for this site and try again.');
+};
+$('recOpen').addEventListener('click', openBrowser);
+$('recOpen2').addEventListener('click', openBrowser);
+
+$('recStart').addEventListener('click', async () => {
+  recError();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    recError('Screen recording is not available here. Use Chrome / Edge on http://127.0.0.1:8000 or an HTTPS address.');
+    return;
+  }
+  const desktop = recSource() === 'desktop';
+  if (desktop && !$('recApp').value.trim()) {
+    recError('Enter the software / application name first.');
+    $('recApp').focus();
+    return;
+  }
+  try {
+    // displaySurface only pre-selects the picker's tab: 'window' lists every open application window
+    rec.stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {frameRate: 15, displaySurface: desktop ? 'window' : 'browser'}, audio: false,
+      selfBrowserSurface: 'exclude', surfaceSwitching: 'include'});
+  } catch (err) {
+    recError('Recording was not started - no window was shared.');
+    return;
+  }
+  const type = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+  rec.chunks = [];
+  rec.recorder = new MediaRecorder(rec.stream, type ? {mimeType: type} : {});
+  rec.recorder.ondataavailable = e => { if (e.data.size) rec.chunks.push(e.data); };
+  rec.recorder.onstop = () => {
+    clearInterval(rec.timer);
+    rec.stream.getTracks().forEach(t => t.stop());
+    rec.duration = Math.round((Date.now() - rec.started) / 1000);
+    rec.blob = new Blob(rec.chunks, {type: 'video/webm'});
+    $('recPreview').src = URL.createObjectURL(rec.blob);
+    $('recInfo').textContent = `${fmt(rec.duration)} · ${(rec.blob.size / 1048576).toFixed(1)} MB`;
+    show('recDone');
+  };
+  // the browser's own "Stop sharing" button ends the recording too
+  rec.stream.getVideoTracks()[0].addEventListener('ended', () => { if (rec.recorder.state !== 'inactive') rec.recorder.stop(); });
+  rec.recorder.start(1000);
+  rec.started = Date.now();
+  $('recTime').textContent = '0:00';
+  rec.timer = setInterval(() => $('recTime').textContent = fmt(Math.round((Date.now() - rec.started) / 1000)), 1000);
+  show('recLive');
+});
+$('recStop').addEventListener('click', () => { if (rec.recorder && rec.recorder.state !== 'inactive') rec.recorder.stop(); });
+$('recAgain').addEventListener('click', () => { rec.blob = null; show('recSetup'); });
+// closing the dialog while recording stops the recording
+$('recorder').addEventListener('hide.bs.modal', () => { if (rec.recorder && rec.recorder.state !== 'inactive') rec.recorder.stop(); });
+
+$('recSave').addEventListener('click', () => {
+  if (!rec.blob) return;
+  const data = new FormData();
+  data.append('video', rec.blob, 'video-steps.webm');
+  data.append('source', recSource());
+  data.append('start_url', normUrl($('recUrl').value));
+  data.append('app_name', $('recApp').value.trim());
+  data.append('duration', rec.duration);
+  const xhr = new XMLHttpRequest();
+  const bar = $('recProgress');
+  const failed = msg => { bar.classList.add('d-none'); $('recSave').disabled = false; recError(msg); };
+  xhr.open('POST', rec.upload);
+  xhr.setRequestHeader('X-CSRFToken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+  xhr.upload.onprogress = e => { if (e.lengthComputable) bar.firstElementChild.style.width = (e.loaded * 100 / e.total) + '%'; };
+  xhr.onload = () => {
+    if (xhr.status === 200) {
+      location.hash = 'open-' + rec.row.dataset.id;
+      location.reload();
+      return;
+    }
+    let msg = 'Upload failed.';
+    try { msg = JSON.parse(xhr.responseText).error || msg; } catch (err) { /* not JSON */ }
+    failed(msg);
+  };
+  xhr.onerror = () => failed('Upload failed - check the connection and try again.');
+  bar.classList.remove('d-none');
+  $('recSave').disabled = true;
+  xhr.send(data);
 });
 </script>
 {% endblock %}

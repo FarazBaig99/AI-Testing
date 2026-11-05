@@ -58,7 +58,7 @@
     </div></div>
     <div class="col-md-6"><div class="card p-3 h-100">
       <h6 class="fw-bold">Label Distribution</h6>
-      {% for l in labels %}<span class="badge text-bg-light border me-1 mb-1">{{ l.case_type }} · {{ l.n }}</span>{% empty %}<small class="text-muted">No test cases yet.</small>{% endfor %}
+      {% for name, n in labels %}<span class="badge text-bg-light border me-1 mb-1">{{ name }} · {{ n }}</span>{% empty %}<small class="text-muted">No test cases yet.</small>{% endfor %}
     </div></div>
   </div>
 

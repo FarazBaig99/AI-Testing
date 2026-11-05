@@ -66,15 +66,21 @@ class TestCaseForm(StyledForm):
         super().__init__(*args, **kwargs)
         self.fields['module'].queryset = Module.objects.filter(project=project).select_related('parent')
         self.make_searchable('module', placeholder='Search module...')
+        self.make_searchable('case_types', placeholder='Select one or more types...')
+
+    # several types at once, e.g. Functional + Smoke, Functional + API
+    case_types = forms.MultipleChoiceField(label='Label / Type', choices=TestCase.TYPE_CHOICES,
+                                           help_text='Select one or more types.')
 
     class Meta:
         model = TestCase
-        fields = ['module', 'title', 'description', 'preconditions', 'steps', 'expected_result',
-                  'priority', 'case_type', 'automatable']
+        fields = ['module', 'title', 'rtm_requirement', 'rtm_details', 'description', 'preconditions', 'steps',
+                  'expected_result', 'priority', 'case_types', 'automatable']
         widgets = {
+            'rtm_details': forms.Textarea(attrs={'rows': 2}),
             'description': forms.Textarea(attrs={'rows': 2}),
             'preconditions': forms.Textarea(attrs={'rows': 2}),
-            'steps': forms.Textarea(attrs={'rows': 4, 'placeholder': '1. Open login page\n2. Enter credentials\n3. Click Login'}),
+            'steps': forms.Textarea(attrs={'rows': 4, 'placeholder': '1. Open login page -> Login page is displayed\n2. Enter credentials\n3. Click Login -> Dashboard opens'}),
             'expected_result': forms.Textarea(attrs={'rows': 2}),
         }
 

@@ -1,5 +1,5 @@
 <div class="form-check tc-item small" data-search="{{ tc.pk }} {{ tc.title|lower }} {{ tc.module.name|lower }}">
   <input type="checkbox" class="form-check-input tc-check" name="test_cases" value="{{ tc.pk }}" id="tc{{ tc.pk }}"
          {% if tc.pk|stringformat:"s" in form.test_cases.value or tc.pk in form.test_cases.value %}checked{% endif %}>
-  <label class="form-check-label" for="tc{{ tc.pk }}"><span class="text-muted">#{{ tc.pk }}</span> {{ tc.title }} <span class="badge text-bg-light border">{{ tc.case_type }}</span></label>
+  <label class="form-check-label" for="tc{{ tc.pk }}"><span class="text-muted">#{{ tc.pk }}</span> {{ tc.title }} {% include "projects/_types.html" with case=tc %}</label>
 </div>

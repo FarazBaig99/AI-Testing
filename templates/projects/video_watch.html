@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Video #{{ video.pk }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'runner_execute' project.pk result.runner_id %}{% if result.environment_id %}?env={{ result.environment_id }}{% endif %}#open-{{ result.pk }}">{{ result.runner.name }}</a> / Video #{{ video.pk }}</nav>
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card p-2">
+      <video src="{{ video.file.url }}" controls autoplay class="w-100 rounded" style="max-height:75vh;background:#000"></video>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-3">
+      <h6 class="fw-bold mb-1"><i class="bi bi-camera-video text-danger"></i> Video Steps #{{ video.pk }}</h6>
+      <div class="small text-muted mb-2">{{ video.duration_display }} · recorded {{ video.recorded_at|date:"M d, Y H:i" }} by {{ video.recorded_by|default:"-" }}</div>
+      <div class="small mb-1"><b>Test case:</b> <a href="{% url 'testcase_detail' project.pk case.pk %}">#{{ case.pk }} {{ case.title }}</a></div>
+      <div class="small mb-1"><b>Module:</b> {{ case.module }}</div>
+      <div class="small mb-1"><b>Runner:</b> {{ result.runner.name }}{% if result.environment %} · <span class="badge text-bg-primary">{{ result.environment.name }}</span>{% endif %}</div>
+      <div class="small mb-1"><b>Result:</b> <span class="st-badge st-{{ result.status|slugify }}">{{ result.status }}</span></div>
+      <div class="small mb-1"><b>Recorded on:</b> <i class="bi {% if video.source == 'desktop' %}bi-pc-display{% else %}bi-globe{% endif %}"></i> {{ video.get_source_display }}</div>
+      {% if video.app_name %}<div class="small mb-1"><b>Software:</b> {{ video.app_name }}</div>{% endif %}
+      {% if video.start_url %}<div class="small mb-2 text-break"><b>Start URL:</b> <a href="{{ video.start_url }}" target="_blank" rel="noopener">{{ video.start_url }}</a></div>{% endif %}
+      <ol class="small ps-3 mb-2">
+        {% for step, expected in case.step_list %}<li>{{ step }}{% if expected %}<div class="text-muted">→ Expected: {{ expected }}</div>{% endif %}</li>{% endfor %}
+      </ol>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-primary" onclick="navigator.clipboard.writeText(location.href).then(() => this.innerHTML = '<i class=\'bi bi-check2\'></i> Link copied')"><i class="bi bi-link-45deg"></i> Copy Link</button>
+        <a href="{{ video.file.url }}" download class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i> Download</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -42,7 +42,7 @@ class Command(BaseCommand):
             (cart, 'Remove product from cart', 'Functional', 'Medium', False,
              '1. Open cart\n2. Click Remove on an item', 'Item is removed and total is updated'),
         ]
-        objs = [TestCase.objects.create(project=project, module=m, title=t, case_type=ct, priority=p, automatable=a,
+        objs = [TestCase.objects.create(project=project, module=m, title=t, case_types=[ct], priority=p, automatable=a,
                                         steps=s, expected_result=e, created_by=user)
                 for m, t, ct, p, a, s, e in cases]
 

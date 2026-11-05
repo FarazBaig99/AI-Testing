@@ -27,6 +27,10 @@ urlpatterns = [
     path('<int:pk>/runners/create/', views.runner_create, name='runner_create'),
     path('<int:pk>/runners/<int:runner_id>/', views.runner_execute, name='runner_execute'),
     path('<int:pk>/runners/<int:runner_id>/delete/', views.runner_delete, name='runner_delete'),
+    path('<int:pk>/runners/<int:runner_id>/results/<int:result_id>/videos/', views.result_video_upload,
+         name='result_video_upload'),
+    path('<int:pk>/videos/<int:video_id>/', views.video_watch, name='video_watch'),
+    path('<int:pk>/videos/<int:video_id>/delete/', views.result_video_delete, name='result_video_delete'),
 
     path('<int:pk>/api/', include('apitesting.urls')),
 ]

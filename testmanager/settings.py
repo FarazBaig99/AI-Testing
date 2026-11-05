@@ -135,3 +135,8 @@ LOGOUT_REDIRECT_URL = 'login'
 TIME_ZONE = 'Asia/Karachi'
 # API collection review posts one checkbox per endpoint
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 20000
+
+
+# Uploaded files (execution evidence attachments)
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'

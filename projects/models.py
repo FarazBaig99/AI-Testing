@@ -4,9 +4,54 @@ from django.contrib.auth.models import User
 from django.db import models
 
 
+def _lines(text):
+    return [line.strip(' -*\t') for line in text.splitlines() if line.strip(' -*\t')]
+
+
 class Project(models.Model):
+    TYPES = ['Web', 'Mobile', 'API / Backend', 'Desktop', 'Hybrid', 'Data / ETL']
+    STATUSES = ['Draft', 'Pending Approval', 'Active', 'On Hold', 'Completed', 'Closed', 'Archived']
+    # lifecycle state machine: status -> statuses it may move to (every move needs a reason)
+    TRANSITIONS = {
+        'Draft': ['Pending Approval', 'Active', 'Archived'],
+        'Pending Approval': ['Active', 'Draft'],
+        'Active': ['On Hold', 'Completed'],
+        'On Hold': ['Active', 'Closed'],
+        'Completed': ['Closed', 'Active'],
+        'Closed': ['Archived', 'Active'],
+        'Archived': ['Active'],
+    }
+    CRITICALITIES = ['Critical', 'High', 'Medium', 'Low']
+    VISIBILITIES = [('restricted', 'Restricted (assigned team only)'), ('organization', 'Organization-wide')]
+    DELIVERY_MODELS = ['Agile Scrum', 'Kanban', 'Waterfall', 'Hybrid']
+
     name = models.CharField(max_length=200)
+    key = models.CharField('Unique Project Key', max_length=12, unique=True,
+                           help_text='2-12 capital letters or digits, e.g. ACS, PSW')
     description = models.TextField(blank=True)
+    project_type = models.CharField('Project Type', max_length=20, choices=[(t, t) for t in TYPES], default='Web')
+    status = models.CharField('Lifecycle Status', max_length=20, choices=[(s, s) for s in STATUSES], default='Draft')
+    criticality = models.CharField('Business Criticality', max_length=10,
+                                   choices=[(c, c) for c in CRITICALITIES], default='Medium')
+    visibility = models.CharField(max_length=20, choices=VISIBILITIES, default='restricted')
+    tags = models.CharField('Tags / Tech Stack', max_length=300, blank=True, help_text='Comma separated')
+    delivery_model = models.CharField(max_length=20, choices=[(d, d) for d in DELIVERY_MODELS],
+                                      default='Agile Scrum')
+    start_date = models.DateField(null=True, blank=True)
+    target_date = models.DateField('Target completion', null=True, blank=True)
+    sponsor = models.CharField('Business Owner / Sponsor', max_length=200, blank=True)
+    manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='managed_projects', verbose_name='Project Manager')
+    qa_lead = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='qa_led_projects', verbose_name='QA Lead')
+    ba_lead = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='ba_led_projects', verbose_name='Business Analyst Lead')
+    # scope lists: one item per line
+    objective = models.TextField('Business Objective', blank=True)
+    in_scope = models.TextField('In-Scope Items', blank=True)
+    out_of_scope = models.TextField('Out-of-Scope Items', blank=True)
+    deliverables = models.TextField(blank=True)
+    success_criteria = models.TextField('Success Criteria', blank=True)
     # symmetrical: linking A -> B also shows A as linked on B
     linked_projects = models.ManyToManyField('self', blank=True, symmetrical=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_projects')
@@ -18,6 +63,74 @@ class Project(models.Model):
 
     def __str__(self):
         return self.name
+
+    def tag_list(self):
+        return [t.strip() for t in self.tags.split(',') if t.strip()]
+
+    def in_scope_list(self):
+        return _lines(self.in_scope)
+
+    def out_of_scope_list(self):
+        return _lines(self.out_of_scope)
+
+    def deliverable_list(self):
+        return _lines(self.deliverables)
+
+    def success_criteria_list(self):
+        return _lines(self.success_criteria)
+
+    def next_statuses(self):
+        return self.TRANSITIONS.get(self.status, [])
+
+
+class ProjectMember(models.Model):
+    ROLES = ['Viewer', 'Tester', 'Developer', 'Lead', 'Project Admin']
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='members')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='project_memberships')
+    role = models.CharField(max_length=20, choices=[(r, r) for r in ROLES], default='Tester')
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['user__username']
+        unique_together = ('project', 'user')
+
+    def __str__(self):
+        return f'{self.user} ({self.role})'
+
+
+class Milestone(models.Model):
+    STATUSES = ['Pending', 'In Progress', 'Completed']
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='milestones')
+    title = models.CharField(max_length=200)
+    target_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=[(s, s) for s in STATUSES], default='Pending')
+
+    class Meta:
+        ordering = [models.F('target_date').asc(nulls_last=True), 'id']
+
+    def __str__(self):
+        return self.title
+
+
+class ProjectActivity(models.Model):
+    """Append-only audit trail of a project: nothing in the app edits or deletes these rows."""
+    CATEGORIES = [('created', 'Created'), ('scope', 'Profile & Scope'), ('team', 'Team & Access'),
+                  ('milestone', 'Milestones'), ('status', 'Lifecycle'), ('settings', 'Settings')]
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='activities')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    category = models.CharField(max_length=20, choices=CATEGORIES)
+    message = models.CharField(max_length=500)
+    reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return self.message
 
 
 class Release(models.Model):

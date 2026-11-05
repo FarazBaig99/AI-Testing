@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+{% block title %}{{ project.key }} · {{ project.name }}{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<nav class="small text-muted mb-2"><a href="{% url 'portfolio_list' %}">Projects</a> / {{ project.name }}</nav>
+<div class="pf">
+  {# ---------- project header ---------- #}
+  <div class="pf-head mb-3">
+    <div class="d-flex flex-wrap gap-3">
+      <div class="key-logo">{{ project.key|slice:":4" }}</div>
+      <div class="flex-grow-1" style="min-width:260px">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <h4 class="fw-bold mb-0">{{ project.name }} <span class="text-muted fw-normal">({{ project.key }})</span></h4>
+          <span class="badge text-bg-light border">{{ project.project_type }}</span>
+          <span class="lc lc-{{ project.status|slugify }}">{{ project.status }}</span>
+          <span class="crit crit-{{ project.criticality|lower }}">{{ project.criticality }} Criticality</span>
+        </div>
+        {% if project.description %}<p class="small text-muted mb-1 mt-1">{{ project.description }}</p>{% endif %}
+        <div class="meta d-flex flex-wrap gap-3 mt-1">
+          <span>Owner / Sponsor: <b>{{ project.sponsor|default:"-" }}</b></span>
+          <span>Manager: <b>{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</b></span>
+          <span>QA Lead: <b>{% if project.qa_lead %}{{ project.qa_lead.get_full_name|default:project.qa_lead.username }}{% else %}-{% endif %}</b></span>
+          <span>Model: <b>{{ project.delivery_model }}</b></span>
+          <span>Timeline: <b>{% include "portfolio/_timeline.html" %}</b></span>
+        </div>
+        {% if project.tag_list %}<div class="mt-2">{% for t in project.tag_list %}<span class="badge text-bg-light border me-1">{{ t }}</span>{% endfor %}</div>{% endif %}
+      </div>
+      <div class="d-flex flex-column gap-2 align-items-stretch">
+        <a href="{% url 'project_detail' project.pk %}" class="btn btn-sm btn-pf"><i class="bi bi-check2-square"></i> Open Test Management</a>
+        <a href="{% url 'portfolio_workspace' project.pk 'lifecycle' %}" class="btn btn-sm btn-outline-pf"><i class="bi bi-arrow-repeat"></i> Change Status</a>
+        <a href="{% url 'portfolio_list' %}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> All Projects</a>
+      </div>
+    </div>
+    <div class="ws-tabs border-top mt-3 pt-3">
+      {% for slug, label, icon in tabs %}
+        <a href="{% url 'portfolio_workspace' project.pk slug %}" class="{% if slug == tab %}active{% endif %}"><i class="bi bi-{{ icon }}"></i> {{ label }}{% if slug == 'team' %} ({{ counts.members }}){% elif slug == 'modules' %} ({{ counts.modules }}){% endif %}{% if slug == 'delivery' or slug == 'integrations' or slug == 'requirements' %} <span class="soon">· soon</span>{% endif %}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ---------- placeholder tabs ---------- #}
+  {% if soon %}
+  <div class="panel text-center py-5">
+    <i class="bi bi-hourglass-split fs-1 text-secondary"></i>
+    <h5 class="fw-bold mt-2">Coming soon</h5>
+    <p class="text-muted mx-auto" style="max-width:620px">{{ soon.0 }}</p>
+    <ul class="list-unstyled d-inline-block text-start mb-0">
+      {% for f in soon.1 %}<li class="mb-1"><i class="bi bi-check2-circle text-success me-2"></i>{{ f }}</li>{% endfor %}
+    </ul>
+  </div>
+
+  {# ---------- 1. overview ---------- #}
+  {% elif tab == 'overview' %}
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3"><div class="kpi">
+      <small>QA Health</small>
+      <b class="text-{{ health.css }}">{% if health.rate is not None %}{{ health.rate }}%{% else %}N/A{% endif %}</b>
+      <span class="badge text-bg-{{ health.css }}">{{ health.label }}</span>
+      <div class="small text-muted mt-1">{{ counts.passed }} pass · {{ counts.failed }} fail · {{ counts.blocked }} blocked</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="kpi">
+      <small>Milestone Completion</small>
+      <b>{% if progress is not None %}{{ progress }}%{% else %}<span class="text-muted fs-5">No milestones</span>{% endif %}</b>
+      <div class="progress mt-2"><div class="progress-bar" style="width:{{ progress|default:0 }}%"></div></div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="kpi">
+      <small>Team Members</small><b>{{ counts.members }}</b>
+      <a href="{% url 'portfolio_workspace' project.pk 'team' %}" class="small text-success text-decoration-none">Manage team →</a>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="kpi">
+      <small>Environments</small><b>{{ counts.environments }}</b>
+      <a href="{% url 'portfolio_workspace' project.pk 'environments' %}" class="small text-success text-decoration-none">View environments →</a>
+    </div></div>
+  </div>
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Modules</small><b>{{ counts.modules }}</b></div></div>
+    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Test Cases</small><b>{{ counts.cases }}</b></div></div>
+    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Test Runners</small><b>{{ counts.runners }}</b></div></div>
+    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Pending Results</small><b>{{ counts.pending }}</b></div></div>
+    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>API Test Cases</small><b>{{ counts.api_cases }}</b></div></div>
+    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Requirements</small><b class="text-muted fs-5">Soon</b></div></div>
+  </div>
+  <div class="row g-3">
+    <div class="col-lg-7"><div class="panel h-100">
+      <div class="d-flex align-items-center mb-2">
+        <h6 class="mb-0"><i class="bi bi-bullseye text-success"></i> Project Milestones &amp; Key Deliverables</h6>
+        <small class="text-muted ms-auto">Timeline: {% include "portfolio/_timeline.html" %}</small>
+      </div>
+      {% for m in milestones %}
+        <div class="d-flex align-items-center border rounded p-2 mb-2">
+          {% if m.status == 'Completed' %}<i class="bi bi-check-circle-fill text-success me-2"></i>{% else %}<span class="badge rounded-pill text-bg-light border me-2">{{ forloop.counter }}</span>{% endif %}
+          <div><b class="small">{{ m.title }}</b><br><small class="text-muted">Target: {{ m.target_date|date:"Y-m-d"|default:"-" }}</small></div>
+          <form method="post" class="ms-auto d-flex gap-1">{% csrf_token %}
+            <input type="hidden" name="milestone" value="{{ m.pk }}">
+            <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto">
+              {% for s in m.STATUSES %}<option {% if s == m.status %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select>
+            <input type="hidden" name="action" value="milestone_status">
+            <button name="action" value="milestone_delete" class="btn btn-sm btn-link text-danger" title="Delete milestone" onclick="return confirm('Delete this milestone?')"><i class="bi bi-trash"></i></button>
+          </form>
+        </div>
+      {% empty %}<p class="small text-muted">No milestones yet.</p>{% endfor %}
+      <form method="post" class="d-flex flex-wrap gap-2 mt-2">{% csrf_token %}
+        <input type="hidden" name="action" value="milestone_add">
+        <input name="title" class="form-control form-control-sm" style="flex:1;min-width:180px" placeholder="New milestone title" required>
+        <input name="target_date" type="date" class="form-control form-control-sm w-auto">
+        <button class="btn btn-sm btn-outline-pf"><i class="bi bi-plus"></i> Add</button>
+      </form>
+    </div></div>
+    <div class="col-lg-5"><div class="panel h-100">
+      <h6><i class="bi bi-clock-history text-success"></i> Recent Activity</h6>
+      {% for a in recent %}
+        <div class="small border-bottom py-2"><b>{{ a.user|default:"system" }}</b> · {{ a.message }}<br><span class="text-muted">{{ a.created_at|date:"M d, Y H:i" }}</span></div>
+      {% empty %}<p class="small text-muted">No activity yet.</p>{% endfor %}
+      <a href="{% url 'portfolio_workspace' project.pk 'activity' %}" class="small text-success text-decoration-none d-inline-block mt-2">Full audit trail →</a>
+    </div></div>
+  </div>
+
+  {# ---------- 2. profile & scope ---------- #}
+  {% elif tab == 'scope' %}
+  <div class="panel mb-3">
+    <div class="d-flex align-items-center mb-1">
+      <h6 class="mb-0"><i class="bi bi-bullseye text-success"></i> Business Objective &amp; Scope Boundary</h6>
+      <button class="btn btn-sm btn-outline-pf ms-auto" data-bs-toggle="collapse" data-bs-target="#scopeEdit"><i class="bi bi-pencil"></i> Edit</button>
+    </div>
+    <small class="text-muted d-block mb-3">Business goals, sponsor, in-scope and out-of-scope boundaries, deliverables and success criteria.</small>
+    <div class="box-plain mb-3"><div class="box-label text-secondary">Core Business Objective</div><div class="fw-semibold">{{ project.objective|default:"Not defined yet."|linebreaksbr }}</div></div>
+    <div class="row g-3 mb-3">
+      <div class="col-md-6"><div class="box-in"><div class="box-label text-success mb-1"><i class="bi bi-check-circle"></i> In-Scope Deliverables &amp; Features</div>
+        <ul class="small mb-0 list-in">{% for i in project.in_scope_list %}<li>{{ i }}</li>{% empty %}<li class="text-muted">Not defined</li>{% endfor %}</ul></div></div>
+      <div class="col-md-6"><div class="box-out"><div class="box-label text-danger mb-1"><i class="bi bi-exclamation-circle"></i> Out-of-Scope Items</div>
+        <ul class="small mb-0 list-out">{% for i in project.out_of_scope_list %}<li>{{ i }}</li>{% empty %}<li class="text-muted">Not defined</li>{% endfor %}</ul></div></div>
+      <div class="col-md-6"><div class="box-plain"><div class="box-label text-secondary mb-1">Key Deliverables</div>
+        <ul class="small mb-0 list-unstyled">{% for i in project.deliverable_list %}<li><i class="bi bi-file-earmark-check text-success"></i> {{ i }}</li>{% empty %}<li class="text-muted">Not defined</li>{% endfor %}</ul></div></div>
+      <div class="col-md-6"><div class="box-plain"><div class="box-label text-secondary mb-1">Acceptance &amp; Success Criteria</div>
+        <ul class="small mb-0 list-unstyled">{% for i in project.success_criteria_list %}<li><i class="bi bi-check2 text-success"></i> {{ i }}</li>{% empty %}<li class="text-muted">Not defined</li>{% endfor %}</ul></div></div>
+    </div>
+    <div class="meta d-flex flex-wrap gap-4">
+      <span>Business Owner / Sponsor: <b>{{ project.sponsor|default:"-" }}</b></span>
+      <span>Criticality: <b>{{ project.criticality }}</b></span>
+      <span>Visibility: <b>{{ project.get_visibility_display }}</b></span>
+    </div>
+  </div>
+  <div class="collapse {% if form.errors %}show{% endif %}" id="scopeEdit"><div class="panel">
+    <h6>Edit Profile &amp; Scope</h6>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="scope">
+      {% include "portfolio/_field.html" with field=form.objective %}
+      <div class="row">
+        <div class="col-md-6">{% include "portfolio/_field.html" with field=form.in_scope %}</div>
+        <div class="col-md-6">{% include "portfolio/_field.html" with field=form.out_of_scope %}</div>
+        <div class="col-md-6">{% include "portfolio/_field.html" with field=form.deliverables %}</div>
+        <div class="col-md-6">{% include "portfolio/_field.html" with field=form.success_criteria %}</div>
+        <div class="col-md-4">{% include "portfolio/_field.html" with field=form.sponsor %}</div>
+        <div class="col-md-4">{% include "portfolio/_field.html" with field=form.criticality %}</div>
+        <div class="col-md-4">{% include "portfolio/_field.html" with field=form.visibility %}</div>
+      </div>
+      <button class="btn btn-pf"><i class="bi bi-check-lg"></i> Save Scope</button>
+    </form>
+  </div></div>
+
+  {# ---------- 3. team & access ---------- #}
+  {% elif tab == 'team' %}
+  <div class="row g-3">
+    <div class="col-lg-4"><div class="panel h-100">
+      <h6><i class="bi bi-person-badge text-success"></i> Key Leadership</h6>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="leaders">
+        {% include "portfolio/_field.html" with field=leader_form.manager %}
+        {% include "portfolio/_field.html" with field=leader_form.qa_lead %}
+        {% include "portfolio/_field.html" with field=leader_form.ba_lead %}
+        <button class="btn btn-sm btn-pf">Save Leadership</button>
+      </form>
+    </div></div>
+    <div class="col-lg-8"><div class="panel h-100">
+      <h6><i class="bi bi-people text-success"></i> Team Allocation Matrix</h6>
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Member</th><th>Job title</th><th style="width:180px">Role / Permission</th><th></th></tr></thead>
+        <tbody>
+        {% for m in members %}
+          <tr>
+            <td><span class="avatar me-1" style="width:26px;height:26px;font-size:.75rem">{{ m.user.username|first|upper }}</span> {{ m.user.get_full_name|default:m.user.username }}</td>
+            <td class="small text-muted">{{ m.user.profile.job_title|default:"-" }}</td>
+            <td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="member_role"><input type="hidden" name="member" value="{{ m.pk }}">
+              <select name="role" class="form-select form-select-sm" onchange="this.form.submit()">{% for r in roles %}<option {% if r == m.role %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></form></td>
+            <td class="text-end"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="member_remove"><input type="hidden" name="member" value="{{ m.pk }}">
+              <button class="btn btn-sm btn-link text-danger" title="Remove from team" onclick="return confirm('Remove this member from the project?')"><i class="bi bi-person-dash"></i></button></form></td>
+          </tr>
+        {% empty %}<tr><td colspan="4" class="text-muted small">No team members yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      <form method="post" class="row g-2 align-items-end">{% csrf_token %}<input type="hidden" name="action" value="member_add">
+        <div class="col-md-6"><label class="form-label small fw-semibold">Add member</label>{{ member_form.user }}</div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Role</label>{{ member_form.role }}</div>
+        <div class="col-md-2"><button class="btn btn-pf w-100"><i class="bi bi-person-plus"></i> Add</button></div>
+      </form>
+      <div class="small text-muted mt-3"><i class="bi bi-shield-lock"></i> Roles: <b>Viewer</b> (read only) · <b>Tester</b> (execute tests) · <b>Developer</b> (fix defects) · <b>Lead</b> (manage cases and runs) · <b>Project Admin</b> (full control). Access rules are applied in a later step.</div>
+    </div></div>
+  </div>
+
+  {# ---------- 6. environments ---------- #}
+  {% elif tab == 'environments' %}
+  <div class="panel">
+    <div class="d-flex align-items-center mb-1">
+      <h6 class="mb-0"><i class="bi bi-hdd-network text-success"></i> Project-Scoped Environment Infrastructure</h6>
+      <a href="{% url 'api_environments' project.pk %}" class="btn btn-sm btn-pf ms-auto">Manage Environments →</a>
+    </div>
+    <small class="text-muted d-block mb-3">Environments of {{ project.name }} (DEV, SIT, QA, UAT, PROD...). Test runners and API tests run against these.</small>
+    <div class="row g-3">
+      {% for e in environments %}
+      <div class="col-md-6 col-xl-4"><div class="box-plain">
+        <b>{{ e.name }}</b>
+        <div class="small font-monospace text-success text-break">{{ e.base_url }}</div>
+        <div class="small text-muted mt-2">{{ e.n_cases }} API test cases · {{ e.n_results }} test results</div>
+      </div></div>
+      {% empty %}<div class="col-12 small text-muted">No environments yet. <a href="{% url 'api_environments' project.pk %}">Add the first one</a>.</div>{% endfor %}
+    </div>
+    <div class="small text-muted mt-3"><i class="bi bi-info-circle"></i> Health check, deployed build, connected database and SSL validity are planned in the Environments &amp; Integrations module.</div>
+  </div>
+
+  {# ---------- 7. modules (WBS) ---------- #}
+  {% elif tab == 'modules' %}
+  <div class="panel">
+    <div class="d-flex align-items-center mb-1">
+      <h6 class="mb-0"><i class="bi bi-diagram-3 text-success"></i> Modules &amp; Architecture Breakdown (WBS)</h6>
+      <a href="{% url 'module_create' project.pk %}" class="btn btn-sm btn-outline-pf ms-auto"><i class="bi bi-plus"></i> Add Module</a>
+    </div>
+    <small class="text-muted d-block mb-3">Functional modules of the project with test coverage (cases executed at least once) and results.</small>
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Module</th><th>Submodules</th><th>Test Cases</th><th style="width:200px">Execution Coverage</th><th>Failed</th><th>Health</th></tr></thead>
+      <tbody>
+      {% for r in module_rows %}
+        <tr><td><i class="bi bi-folder-fill text-warning"></i> <a href="{% url 'project_detail' project.pk %}?search={{ r.module.name|urlencode }}" class="text-dark">{{ r.module.name }}</a></td>
+          <td>{{ r.subs }}</td><td>{{ r.cases }}</td>
+          <td>{% if r.coverage is not None %}<div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1"><div class="progress-bar" style="width:{{ r.coverage }}%"></div></div><small>{{ r.coverage }}%</small></div>{% else %}<small class="text-muted">No cases</small>{% endif %}</td>
+          <td>{% if r.failed %}<span class="text-danger fw-semibold">{{ r.failed }}</span>{% else %}0{% endif %}</td>
+          <td><span class="badge text-bg-{{ r.health.css }}">{% if r.health.rate is not None %}{{ r.health.rate }}% · {% endif %}{{ r.health.label }}</span></td></tr>
+      {% empty %}<tr><td colspan="6" class="text-muted small">No modules yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ---------- 9. APIs & databases ---------- #}
+  {% elif tab == 'apis' %}
+  <div class="panel mb-3">
+    <div class="d-flex align-items-center mb-1">
+      <h6 class="mb-0"><i class="bi bi-cloud-arrow-up text-success"></i> API Registry</h6>
+      <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-pf ms-auto">Open API Testing →</a>
+    </div>
+    <small class="text-muted d-block mb-3">{{ counts.api_cases }} API test cases imported from collections, per environment.</small>
+    <table class="table table-sm mb-3">
+      <thead><tr><th>Environment</th><th>Modules</th><th>API Test Cases</th><th>Pass</th><th>Fail</th></tr></thead>
+      <tbody>{% for e in api_envs %}<tr><td><b>{{ e.name }}</b><div class="small text-muted text-break">{{ e.base_url }}</div></td><td>{{ e.n_folders }}</td><td>{{ e.n_cases }}</td><td class="text-success">{{ e.n_pass }}</td><td class="text-danger">{{ e.n_fail }}</td></tr>
+      {% empty %}<tr><td colspan="5" class="small text-muted">No API environments yet.</td></tr>{% endfor %}</tbody>
+    </table>
+    {% if api_sources %}<h6 class="small fw-bold">Collection sources</h6>
+      <ul class="small mb-0">{% for s in api_sources %}<li class="text-break">{{ s.url }} <span class="text-muted">({{ s.environment|default:"-" }})</span></li>{% endfor %}</ul>{% endif %}
+  </div>
+  <div class="panel text-center py-4">
+    <i class="bi bi-database fs-2 text-secondary"></i>
+    <h6 class="mt-2">Database Connections — coming soon</h6>
+    <p class="small text-muted mb-0">Connection profiles (Oracle, SQL Server, PostgreSQL, MySQL) with host, database, CDC status and ping health come with the Database Testing module.</p>
+  </div>
+
+  {# ---------- 10. lifecycle ---------- #}
+  {% elif tab == 'lifecycle' %}
+  <div class="row g-3">
+    <div class="col-lg-5"><div class="panel h-100">
+      <h6><i class="bi bi-arrow-repeat text-success"></i> Lifecycle Stage-Gate</h6>
+      <div class="d-flex flex-wrap gap-1 align-items-center mb-3">
+        {% for s in statuses %}<span class="lc lc-{{ s|slugify }} {% if s == project.status %}border border-2 border-success{% else %}opacity-50{% endif %}">{{ s }}</span>{% if not forloop.last %}<i class="bi bi-chevron-right small text-muted"></i>{% endif %}{% endfor %}
+      </div>
+      <p class="small mb-2">Current status: <span class="lc lc-{{ project.status|slugify }}">{{ project.status }}</span></p>
+      {% if project.next_statuses %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="status">
+        <div class="mb-2"><label class="form-label small fw-semibold">{{ status_form.status.label }}</label>{{ status_form.status }}</div>
+        <div class="mb-2"><label class="form-label small fw-semibold">Reason <span class="text-danger">*</span></label>{{ status_form.reason }}
+          <div class="form-text">{{ status_form.reason.help_text }}</div>
+          {% if status_form.reason.errors %}<div class="text-danger small">{{ status_form.reason.errors|join:" " }}</div>{% endif %}</div>
+        <button class="btn btn-pf"><i class="bi bi-arrow-right-circle"></i> Change Status</button>
+      </form>
+      {% endif %}
+      <details class="small text-muted mt-3"><summary>Allowed transitions</summary>
+        <ul class="mb-0 mt-1">{% for s, nexts in transitions.items %}<li><b>{{ s }}</b> → {{ nexts|join:", " }}</li>{% endfor %}</ul></details>
+    </div></div>
+    <div class="col-lg-7"><div class="panel h-100">
+      <h6><i class="bi bi-journal-check text-success"></i> Status History &amp; Approvals</h6>
+      <table class="table table-sm small mb-0">
+        <thead><tr><th>When</th><th>By</th><th>Change</th><th>Reason</th></tr></thead>
+        <tbody>{% for a in history %}<tr><td class="text-nowrap">{{ a.created_at|date:"M d, Y H:i" }}</td><td>{{ a.user|default:"system" }}</td><td>{{ a.message }}</td><td>{{ a.reason|default:"-"|linebreaksbr }}</td></tr>
+        {% empty %}<tr><td colspan="4" class="text-muted">No status changes yet.</td></tr>{% endfor %}</tbody>
+      </table>
+    </div></div>
+  </div>
+
+  {# ---------- 11. activity & audit ---------- #}
+  {% elif tab == 'activity' %}
+  <div class="panel">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <h6 class="mb-0"><i class="bi bi-clock-history text-success"></i> Activity &amp; Audit Trail</h6>
+      <div class="ms-auto d-flex flex-wrap gap-1">
+        <a href="?" class="btn btn-sm {% if not category %}btn-pf{% else %}btn-light border{% endif %}">All</a>
+        {% for value, label in categories %}<a href="?category={{ value }}" class="btn btn-sm {% if category == value %}btn-pf{% else %}btn-light border{% endif %}">{{ label }}</a>{% endfor %}
+      </div>
+    </div>
+    <small class="text-muted d-block mb-2">Every change is recorded and cannot be edited or deleted.</small>
+    <table class="table table-sm small mb-0">
+      <thead><tr><th style="width:150px">When</th><th style="width:120px">User</th><th style="width:130px">Area</th><th>Action</th></tr></thead>
+      <tbody>{% for a in activities %}<tr><td class="text-nowrap">{{ a.created_at|date:"M d, Y H:i" }}</td><td>{{ a.user|default:"system" }}</td><td><span class="pill-pf">{{ a.get_category_display }}</span></td>
+        <td>{{ a.message }}{% if a.reason %}<div class="text-muted">Reason: {{ a.reason }}</div>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="4" class="text-muted">No activity{% if category %} in this area{% endif %} yet.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+
+  {# ---------- 12. settings ---------- #}
+  {% elif tab == 'settings' %}
+  <div class="row g-3">
+    <div class="col-lg-8"><div class="panel">
+      <h6><i class="bi bi-gear text-success"></i> Project Settings</h6>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="settings">
+        <div class="row">
+          <div class="col-md-8">{% include "portfolio/_field.html" with field=form.name %}</div>
+          <div class="col-md-4">{% include "portfolio/_field.html" with field=form.key %}</div>
+          <div class="col-12">{% include "portfolio/_field.html" with field=form.description %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.project_type %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.delivery_model %}</div>
+          <div class="col-12">{% include "portfolio/_field.html" with field=form.tags %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.start_date %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.target_date %}</div>
+        </div>
+        <button class="btn btn-pf"><i class="bi bi-check-lg"></i> Save Settings</button>
+      </form>
+    </div></div>
+    <div class="col-lg-4">
+      <div class="panel mb-3">
+        <h6><i class="bi bi-archive text-secondary"></i> Archive</h6>
+        <p class="small text-muted">Archived projects are hidden from the project list. Archive from the Lifecycle tab (a reason is required){% if project.status != 'Closed' and project.status != 'Draft' %}; the project must be Closed first{% endif %}.</p>
+        <a href="{% url 'portfolio_workspace' project.pk 'lifecycle' %}" class="btn btn-sm btn-light border">Go to Lifecycle</a>
+      </div>
+      <div class="panel border-danger">
+        <h6 class="text-danger"><i class="bi bi-exclamation-octagon"></i> Delete Project</h6>
+        <p class="small text-muted">Permanently deletes the project with all its modules, test cases, runners, results, API tests and environments. This cannot be undone.</p>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete">
+          <label class="form-label small">Type <b class="font-monospace">{{ project.key }}</b> to confirm</label>
+          <input name="confirm_key" class="form-control form-control-sm mb-2" autocomplete="off" required>
+          <button class="btn btn-sm btn-danger w-100"><i class="bi bi-trash"></i> Delete Project</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

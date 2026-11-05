@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Collection Review{% endblock %}
 {% block content %}
-<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / Collection Comparison &amp; Review</nav>
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Test Management</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / Collection Comparison &amp; Review</nav>
 <div class="card p-3 mb-3 d-flex flex-row align-items-start">
   <div>
     <h4 class="fw-bold mb-0"><i class="bi bi-arrow-left-right text-success"></i> Collection Comparison &amp; Review</h4>

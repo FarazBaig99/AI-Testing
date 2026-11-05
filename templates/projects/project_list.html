@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}My Projects{% endblock %}
+{% block title %}Test Management{% endblock %}
 {% block content %}
 <div class="hero mb-3 d-flex justify-content-between align-items-start">
   <div>
-    <h3 class="fw-bold"><i class="bi bi-folder2-open"></i> My Projects</h3>
-    <p class="opacity-75">Manage and organize all your testing projects in one place.</p>
+    <h3 class="fw-bold"><i class="bi bi-check2-square"></i> Test Management</h3>
+    <p class="opacity-75">Projects, modules, test cases and test runs, all in one place.</p>
     <span class="chip"><b>{{ projects|length }}</b>Projects</span>
     <span class="chip"><b>{{ total_modules }}</b>Modules</span>
     <span class="chip"><b>{{ total_cases }}</b>Test Cases</span>
   </div>
-  <a href="{% url 'project_create' %}" class="btn btn-light"><i class="bi bi-plus"></i> New Project</a>
+  <a href="{% url 'portfolio_create' %}" class="btn btn-light"><i class="bi bi-plus"></i> New Project</a>
 </div>
 <form class="card p-3 mb-3 d-flex flex-row gap-2">
   <input name="search" value="{{ search }}" class="form-control" placeholder="Search projects...">
@@ -43,7 +43,7 @@
     </div>
   </div>
   {% empty %}
-  <div class="col-12"><div class="card p-5 text-center text-muted">No projects yet. <a href="{% url 'project_create' %}">Create your first project</a>.</div></div>
+  <div class="col-12"><div class="card p-5 text-center text-muted">No projects yet. <a href="{% url 'portfolio_create' %}">Create your first project</a>.</div></div>
   {% endfor %}
 </div>
 {% endblock %}

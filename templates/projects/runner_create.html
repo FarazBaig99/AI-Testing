@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Create Test Runner{% endblock %}
 {% block content %}
-<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'runner_list' project.pk %}">Test Runners</a> / Create</nav>
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Test Management</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'runner_list' project.pk %}">Test Runners</a> / Create</nav>
 <h4 class="fw-bold"><i class="bi bi-play-circle text-success"></i> Create Test Runner</h4>
 <p class="text-muted small">Set up a new test execution cycle for <b>{{ project.name }}</b></p>
 

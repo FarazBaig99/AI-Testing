@@ -24,9 +24,14 @@
   .exec-detail .form-control, .exec-detail .form-select { font-size: .82rem; background: #f8fafc; }
   .chev { transition: transform .2s; } .exec-row.open .chev { transform: rotate(180deg); }
   kbd { background: #1e293b; font-size: .68rem; }
+  /* narrow screens: status buttons drop below the title instead of squeezing it */
+  @media (max-width: 992px) {
+    .exec-head { flex-wrap: wrap; }
+    .exec-head .qbtns { width: 100%; justify-content: flex-end; }
+  }
 </style>
 
-<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'runner_list' project.pk %}">Test Runners</a> / {{ runner.name }}</nav>
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Test Management</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'runner_list' project.pk %}">Test Runners</a> / {{ runner.name }}</nav>
 
 <div class="d-flex align-items-start mb-3">
   <div>
@@ -129,7 +134,7 @@
             {% if r.attachments.all %}<span><i class="bi bi-paperclip"></i> {{ r.attachments.all|length }}</span>{% endif %}
           </div>
         </div>
-        <div class="d-flex gap-1 align-items-center">
+        <div class="qbtns d-flex gap-1 align-items-center">
           {% for s, key, icon, k in quick_statuses %}
             <button type="submit" name="quick" value="{{ s }}" class="qbtn q-{{ key }} {% if s == r.status %}active{% endif %}" title="{{ s }} ({{ k }})" data-key="{{ k|lower }}"><i class="bi {{ icon }}"></i></button>
           {% endfor %}

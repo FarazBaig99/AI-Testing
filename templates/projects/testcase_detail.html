@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}#{{ case.pk }} {{ case.title }}{% endblock %}
 {% block content %}
-<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / Test Case #{{ case.pk }}</nav>
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Test Management</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / Test Case #{{ case.pk }}</nav>
 <div class="card p-4 mb-3">
   <div class="d-flex">
     <div>
@@ -27,7 +27,7 @@
   {% if case.description %}<h6 class="fw-bold">Description</h6><p>{{ case.description|linebreaksbr }}</p>{% endif %}
   {% if case.preconditions %}<h6 class="fw-bold">Preconditions</h6><p>{{ case.preconditions|linebreaksbr }}</p>{% endif %}
   <h6 class="fw-bold">Steps</h6>
-  <ol>{% for s in steps %}<li>{{ s }}</li>{% endfor %}</ol>
+  <ol>{% for step, expected in case.step_list %}<li>{{ step }}{% if expected %}<div class="small text-muted">→ Expected: {{ expected }}</div>{% endif %}</li>{% endfor %}</ol>
   <h6 class="fw-bold">Expected Result</h6>
   <p>{{ case.expected_result|linebreaksbr }}</p>
   <small class="text-muted">Created by {{ case.created_by|default:"-" }} on {{ case.created_at|date:"M d, Y H:i" }}</small>

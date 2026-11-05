@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }}{% endblock %}
 {% block content %}
-<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / <a href="{% url 'project_list' %}">Projects</a> / {{ project.name }}</nav>
+<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / <a href="{% url 'project_list' %}">Test Management</a> / {{ project.name }}</nav>
 
 <div class="card p-3 mb-3">
   <div class="d-flex align-items-start">
@@ -48,7 +48,8 @@
   </div>
   <div class="row g-3 mb-3">
     <div class="col-md-6"><div class="card p-3 h-100">
-      <h6 class="fw-bold">Execution Summary</h6>
+      <h6 class="fw-bold mb-0">Execution Summary</h6>
+      <small class="text-muted mb-2">Results of all test runners, across all environments</small>
       <div class="d-flex gap-4">
         <div><b class="fs-3">{{ stats.pass_rate }}%</b><br><small>Pass Rate</small></div>
         <div><b class="fs-3 text-success">{{ stats.passed }}</b><br><small>Passed</small></div>
@@ -58,7 +59,9 @@
     </div></div>
     <div class="col-md-6"><div class="card p-3 h-100">
       <h6 class="fw-bold">Label Distribution</h6>
-      {% for name, n in labels %}<span class="badge text-bg-light border me-1 mb-1">{{ name }} · {{ n }}</span>{% empty %}<small class="text-muted">No test cases yet.</small>{% endfor %}
+      <div class="d-flex flex-wrap gap-1">
+        {% for name, n in labels %}<span class="badge text-bg-light border fw-semibold">{{ name }} · {{ n }}</span>{% empty %}<small class="text-muted">No test cases yet.</small>{% endfor %}
+      </div>
     </div></div>
   </div>
 
@@ -69,7 +72,7 @@
       <button class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('.module-body').forEach(e=>e.classList.add('show'))">Expand All</button>
       <button class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('.module-body').forEach(e=>e.classList.remove('show'))">Collapse All</button>
       <form class="ms-auto d-flex gap-1">
-        <input name="search" value="{{ search }}" class="form-control form-control-sm" placeholder="Search by #ID, title or module">
+        <input name="search" value="{{ search }}" class="form-control form-control-sm" style="width:260px" placeholder="Search by #ID, title or module">
         <button class="btn btn-sm btn-dark">Search</button>
         {% if search %}<a href="?" class="btn btn-sm btn-outline-secondary">Clear</a>{% endif %}
       </form>
@@ -135,4 +138,11 @@
   </div>
 </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  // /projects/N/#tab-releases (sidebar "Releases & Quality Gates") opens that tab directly
+  const tabBtn = location.hash && document.querySelector(`[data-bs-target="${CSS.escape(location.hash)}"]`);
+  if (tabBtn) bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+</script>
 {% endblock %}

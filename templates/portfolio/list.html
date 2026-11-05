@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<div class="pf">
+  <div class="pf-head d-flex flex-wrap align-items-center gap-3 mb-3">
+    <div>
+      <div class="pf-eyebrow">Central projects &amp; governance foundation</div>
+      <h4 class="fw-bold mb-0">Projects Management <span class="pill-pf align-middle">{{ kpis.total }} Total Projects</span></h4>
+      <small class="text-muted">Manage projects, scope, business objectives, team, lifecycle and project-scoped environments.</small>
+    </div>
+    <a href="{% url 'portfolio_create' %}" class="btn btn-pf ms-auto"><i class="bi bi-plus-lg"></i> Create Project</a>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-2"><div class="kpi"><small>Active</small><b class="text-success">{{ kpis.active }}</b></div></div>
+    <div class="col-6 col-lg-2"><div class="kpi"><small>Planning / Draft</small><b>{{ kpis.planning }}</b></div></div>
+    <div class="col-6 col-lg-2"><div class="kpi"><small>On Hold</small><b class="text-warning">{{ kpis.on_hold }}</b></div></div>
+    <div class="col-6 col-lg-2"><div class="kpi"><small>Completed / Closed</small><b class="text-primary">{{ kpis.closed }}</b></div></div>
+    <div class="col-6 col-lg-2"><div class="kpi"><small>Avg Test Pass Rate</small><b>{% if kpis.avg_pass is not None %}{{ kpis.avg_pass }}%{% else %}<span class="text-muted fs-5">N/A</span>{% endif %}</b></div></div>
+    <div class="col-6 col-lg-2"><div class="kpi"><small>Failed / Blocked</small><b><span class="text-danger">{{ kpis.failed }}</span> <span class="text-muted fs-5">/</span> <span class="text-warning">{{ kpis.blocked }}</span></b></div></div>
+  </div>
+
+  <form class="panel d-flex flex-wrap gap-2 mb-3 py-3">
+    <div class="input-group" style="max-width:340px">
+      <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+      <input name="q" value="{{ q }}" class="form-control" placeholder="Search by name, key, tags...">
+    </div>
+    <select name="status" class="form-select w-auto" onchange="this.form.submit()">
+      <option value="">All Lifecycles (except Archived)</option>
+      {% for s in statuses %}<option {% if s == status %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+    <select name="type" class="form-select w-auto" onchange="this.form.submit()">
+      <option value="">All Types</option>
+      {% for t in types %}<option {% if t == ptype %}selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+    <select name="criticality" class="form-select w-auto" onchange="this.form.submit()">
+      <option value="">All Criticality</option>
+      {% for c in criticalities %}<option {% if c == criticality %}selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-outline-pf">Search</button>
+    {% if filtered %}<a href="?" class="btn btn-link text-secondary">Clear</a>{% endif %}
+  </form>
+
+  <div class="row g-3">
+    {% for p in projects %}
+    <div class="col-md-6 col-xl-4">
+      <div class="pcard">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="key-chip">{{ p.key }}</span>
+          <small class="text-muted"><i class="bi bi-globe2"></i> {{ p.project_type }}</small>
+          <span class="lc lc-{{ p.status|slugify }} ms-auto">{{ p.status }}</span>
+        </div>
+        <h6 class="fw-bold mb-1"><a href="{% url 'portfolio_workspace' p.pk %}" class="text-dark text-decoration-none">{{ p.name }}</a></h6>
+        <p class="small text-muted mb-2">{{ p.description|default:"No description"|truncatechars:110 }}</p>
+        <div class="d-flex flex-wrap align-items-center gap-2 small mb-2">
+          <span class="crit crit-{{ p.criticality|lower }}">{{ p.criticality }} Priority</span>
+          <span class="text-muted">PM: <b class="text-dark">{% if p.manager %}{{ p.manager.get_full_name|default:p.manager.username }}{% else %}-{% endif %}</b></span>
+        </div>
+        <div class="d-flex justify-content-between small mb-1">
+          <span class="text-muted">Milestone Progress</span>
+          <b>{% if p.progress is not None %}{{ p.progress }}%{% else %}<span class="text-muted fw-normal">No milestones</span>{% endif %}</b>
+        </div>
+        <div class="progress mb-3"><div class="progress-bar" style="width:{{ p.progress|default:0 }}%"></div></div>
+        <div class="d-flex flex-wrap gap-3 small text-muted mb-3">
+          <span title="Health from executed test results"><i class="bi bi-heart-pulse text-{{ p.health.css }}"></i> {% if p.health.rate is not None %}{{ p.health.rate }}% pass · {% endif %}<span class="text-{{ p.health.css }}">{{ p.health.label }}</span></span>
+          <span><i class="bi bi-people"></i> {{ p.n_members }} member{{ p.n_members|pluralize }}</span>
+          <span><i class="bi bi-file-text"></i> {{ p.n_cases }} test cases</span>
+        </div>
+        <div class="d-flex align-items-center mt-auto pt-2 border-top">
+          <a href="{% url 'portfolio_workspace' p.pk 'environments' %}" class="small text-muted text-decoration-none"><i class="bi bi-hdd-network"></i> Environments</a>
+          <a href="{% url 'portfolio_workspace' p.pk %}" class="btn btn-sm btn-pf ms-auto">Open Workspace <i class="bi bi-arrow-right"></i></a>
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <div class="col-12"><div class="panel text-center text-muted py-5">
+      {% if filtered %}No projects match these filters. <a href="?">Clear filters</a>
+      {% else %}No projects yet. <a href="{% url 'portfolio_create' %}">Create your first project</a>.{% endif %}
+    </div></div>
+    {% endfor %}
+  </div>
+  {% if kpis.archived and status != 'Archived' %}
+    <p class="small text-muted mt-3"><i class="bi bi-archive"></i> {{ kpis.archived }} archived project{{ kpis.archived|pluralize }} hidden. <a href="?status=Archived">Show archived</a></p>
+  {% endif %}
+</div>
+{% endblock %}

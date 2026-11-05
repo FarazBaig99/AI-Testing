@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ item.label }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / {{ item.label }}</nav>
+<div class="hero mb-3">
+  <h3 class="fw-bold mb-1"><i class="bi bi-{{ item.icon }}"></i> {{ item.label }}
+    {% if item.badge %}<span class="badge text-bg-success align-middle fs-6">{{ item.badge }}</span>{% endif %}</h3>
+  <p class="opacity-75 mb-0">{{ item.about }}</p>
+</div>
+<div class="card p-4 text-center">
+  <div class="mb-2"><i class="bi bi-hourglass-split fs-1 text-secondary"></i></div>
+  <h5 class="fw-bold">Coming soon</h5>
+  <p class="text-muted">This module is not built yet. Planned features:</p>
+  <ul class="list-unstyled d-inline-block text-start mx-auto mb-3">
+    {% for feature in item.planned %}<li class="mb-1"><i class="bi bi-check2-circle text-success me-2"></i>{{ feature }}</li>{% endfor %}
+  </ul>
+  <div><a href="{% url 'project_list' %}" class="btn btn-sm btn-dark"><i class="bi bi-check2-square"></i> Go to Test Management</a></div>
+</div>
+{% endblock %}

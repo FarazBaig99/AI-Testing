@@ -10,17 +10,22 @@
   <style>
     :root { --side: #0f1b2d; --brand: #1d2f4f; --accent: #16a34a; }
     body { background: #f1f5f9; font-size: .92rem; }
-    .sidebar { width: 230px; background: var(--side); min-height: 100vh; position: fixed; top: 0; left: 0; display: flex; flex-direction: column; }
+    .sidebar { width: 260px; background: var(--side); height: 100vh; position: fixed; top: 0; left: 0; display: flex; flex-direction: column; }
     .sidebar .brand { color: #fff; font-weight: 700; padding: 18px; font-size: 1.05rem; border-bottom: 1px solid #1f2d44; }
     .sidebar .brand i { color: #22c55e; }
-    .sidebar .section { color: #64748b; font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; padding: 14px 18px 4px; }
-    .sidebar a.nav-item { color: #cbd5e1; display: block; padding: 9px 18px; text-decoration: none; border-radius: 8px; margin: 2px 8px; }
+    .sidebar .menu { flex: 1; overflow-y: auto; padding-bottom: 8px; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+    .sidebar .section { color: #64748b; font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; padding: 14px 18px 4px; display: flex; align-items: center; cursor: pointer; user-select: none; }
+    .sidebar .section:hover { color: #94a3b8; }
+    .sidebar .section .bi { margin-left: auto; transition: transform .2s; }
+    .sidebar .section.collapsed .bi { transform: rotate(-90deg); }
+    .sidebar a.nav-item { color: #cbd5e1; display: flex; align-items: center; padding: 7px 14px; text-decoration: none; border-radius: 8px; margin: 1px 8px; font-size: .84rem; white-space: nowrap; }
+    .sidebar a.nav-item .menu-badge { margin-left: auto; font-size: .62rem; background: #14532d; color: #86efac; border-radius: 6px; padding: 1px 6px; }
     .sidebar a.nav-item:hover { background: #1b2a42; color: #fff; }
     .sidebar a.nav-item.active { background: #14532d; color: #fff; }
-    .sidebar a.nav-item i { width: 22px; display: inline-block; }
-    .sidebar .account { margin-top: auto; padding: 12px; border-top: 1px solid #1f2d44; color: #fff; }
+    .sidebar a.nav-item i { width: 22px; flex-shrink: 0; }
+    .sidebar .account { padding: 12px; border-top: 1px solid #1f2d44; color: #fff; }
     .avatar { width: 34px; height: 34px; border-radius: 8px; background: #1d4ed8; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
-    main { margin-left: 230px; padding: 22px 28px; }
+    main { margin-left: 260px; padding: 22px 28px; }
     .hero { background: linear-gradient(120deg, #1d2f4f, #2c4a75); color: #fff; border-radius: 14px; padding: 22px 26px; }
     .hero .chip { background: rgba(255,255,255,.12); border-radius: 8px; padding: 6px 14px; text-align: center; display: inline-block; margin-right: 8px; }
     .hero .chip b { font-size: 1.2rem; display: block; }
@@ -39,18 +44,25 @@
     .method-get { background: #16a34a; } .method-post { background: #2563eb; } .method-put { background: #d97706; }
     .method-patch { background: #7c3aed; } .method-delete { background: #dc2626; } .method-head, .method-options { background: #64748b; }
     .tc-row:hover { background: #f8fafc; }
-    @media (max-width: 768px) { .sidebar { position: static; width: 100%; min-height: auto; } main { margin-left: 0; padding: 16px; } }
+    @media (max-width: 768px) { .sidebar { position: static; width: 100%; height: auto; } .sidebar .menu { max-height: 50vh; } main { margin-left: 0; padding: 16px; } }
   </style>
 </head>
 <body>
 {% with url=request.resolver_match.url_name %}
 <nav class="sidebar">
   <div class="brand"><i class="bi bi-diagram-3-fill"></i> BaigNova TestManager</div>
-  <a class="nav-item {% if url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><i class="bi bi-grid"></i>Dashboard</a>
-  <a class="nav-item {% if url == 'my_tasks' %}active{% endif %}" href="{% url 'my_tasks' %}"><i class="bi bi-clipboard-check"></i>My Tasks</a>
-  <div class="section">Workspace</div>
-  <a class="nav-item {% if url != 'dashboard' and url != 'my_tasks' and url != 'profile' %}active{% endif %}" href="{% url 'project_list' %}"><i class="bi bi-folder2"></i>Projects</a>
-  <div class="section">Account</div>
+  <div class="menu">
+  {% for section in sidebar_menu %}
+    {% if section.title %}
+      <div class="section" data-bs-toggle="collapse" data-bs-target="#menu-{{ section.key }}" data-menu="{{ section.key }}" role="button">{{ section.title }}<i class="bi bi-chevron-down"></i></div>
+    {% endif %}
+    <div {% if section.title %}id="menu-{{ section.key }}" class="collapse show" data-active="{{ section.has_active|yesno:'1,' }}"{% endif %}>
+      {% for item in section.items %}
+        <a class="nav-item {% if item.active %}active{% endif %}" href="{{ item.url }}"><i class="bi bi-{{ item.icon }}"></i>{{ item.label }}{% if item.badge %}<span class="menu-badge">{{ item.badge }}</span>{% endif %}</a>
+      {% endfor %}
+    </div>
+  {% endfor %}
+  </div>
   <div class="account">
     <div class="d-flex align-items-center gap-2 mb-2">
       <span class="avatar">{{ user.username|first|upper }}</span>
@@ -75,6 +87,22 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 <script>
+  // Sidebar sections: remember which ones the user collapsed (the section of the current page always stays open)
+  (() => {
+    let closed = [];
+    try { closed = JSON.parse(localStorage.getItem('menuClosed') || '[]'); } catch (e) {}
+    document.querySelectorAll('.sidebar .section').forEach(head => {
+      const key = head.dataset.menu, body = document.getElementById('menu-' + key);
+      if (closed.includes(key) && !body.dataset.active) { body.classList.remove('show'); head.classList.add('collapsed'); }
+      body.addEventListener('show.bs.collapse', () => { head.classList.remove('collapsed'); save(key, false); });
+      body.addEventListener('hide.bs.collapse', () => { head.classList.add('collapsed'); save(key, true); });
+    });
+    function save(key, isClosed) {
+      closed = closed.filter(k => k !== key);
+      if (isClosed) closed.push(key);
+      try { localStorage.setItem('menuClosed', JSON.stringify(closed)); } catch (e) {}
+    }
+  })();
   // <select class="searchable">: type-to-search dropdown (long lists of modules, users, ...)
   document.querySelectorAll('select.searchable').forEach(sel => {
     if (!window.TomSelect) return;

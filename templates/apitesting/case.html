@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ case.code }} {{ case.name }}{% endblock %}
 {% block content %}
-<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / <a href="{% url 'api_folder' project.pk case.folder_id %}">{{ case.folder.name }}</a> / {{ case.code }}</nav>
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Test Management</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / <a href="{% url 'api_folder' project.pk case.folder_id %}">{{ case.folder.name }}</a> / {{ case.code }}</nav>
 <div class="card p-4">
   <div class="d-flex align-items-start mb-1">
     <div>

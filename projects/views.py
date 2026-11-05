@@ -3,13 +3,14 @@ from collections import Counter
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import ModuleForm, ProjectForm, ReleaseForm, TestCaseForm, TestRunnerForm
+from .menu import ITEMS as MENU_ITEMS, item_url as menu_item_url
 from .models import (Module, Project, Release, ResultAttachment, ResultHistory, ResultVideo, TestCase, TestResult,
                      TestRunner)
 
@@ -217,7 +218,7 @@ def testcase_detail(request, pk, case_id):
     case = get_object_or_404(TestCase.objects.select_related('project', 'module'), pk=case_id, project_id=pk)
     history = case.results.select_related('runner', 'executed_by', 'environment').exclude(status='Pending').order_by('-executed_at')
     return render(request, 'projects/testcase_detail.html', {
-        'case': case, 'project': case.project, 'steps': [s for s in case.steps.splitlines() if s.strip()],
+        'case': case, 'project': case.project,
         'history': history,
     })
 
@@ -476,3 +477,33 @@ def runner_delete(request, pk, runner_id):
         messages.success(request, 'Test runner deleted.')
         return redirect('runner_list', pk=pk)
     return render(request, 'projects/confirm_delete.html', {'object': runner, 'back_url': f'/projects/{pk}/runners/'})
+
+
+def _menu_item(slug):
+    item = MENU_ITEMS.get(slug)
+    if not item:
+        raise Http404('Unknown menu item')
+    return item
+
+
+@login_required
+def menu_module(request, slug):
+    """Placeholder page for a sidebar module that is not built yet."""
+    item = _menu_item(slug)
+    if 'url_name' in item or 'project_url' in item:
+        return redirect(menu_item_url(item))
+    return render(request, 'projects/menu_module.html', {'item': item})
+
+
+@login_required
+def menu_pick_project(request, slug):
+    """Sidebar items that live inside a project (API Testing, Environments, Releases): choose the project first."""
+    item = _menu_item(slug)
+    if 'project_url' not in item:
+        return redirect('menu_module', slug=slug)
+    projects = list(Project.objects.annotate(num_cases=Count('test_cases', distinct=True)).order_by('name'))
+    for p in projects:
+        p.target = reverse(item['project_url'], args=[p.pk]) + item.get('anchor', '')
+    if len(projects) == 1:
+        return redirect(projects[0].target)
+    return render(request, 'projects/menu_pick_project.html', {'item': item, 'projects': projects})

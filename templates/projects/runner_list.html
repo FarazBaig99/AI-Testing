@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Test Runners - {{ project.name }}{% endblock %}
 {% block content %}
-<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / <a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / Test Runners</nav>
+<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / <a href="{% url 'project_list' %}">Test Management</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / Test Runners</nav>
 <div class="d-flex align-items-center mb-3">
   <div><h4 class="fw-bold mb-0"><i class="bi bi-play-circle text-success"></i> Test Runners</h4><small class="text-muted">Execute and track test cases for <b>{{ project.name }}</b></small></div>
   <a href="{% url 'api_environments' project.pk %}" class="btn btn-outline-primary ms-auto me-2"><i class="bi bi-hdd-network"></i> Manage Environments</a>
@@ -36,7 +36,7 @@
   <div class="d-flex align-items-start">
     <div>
       <h6 class="fw-bold mb-1">{{ r.name }}</h6>
-      <small class="text-muted"><i class="bi bi-calendar"></i> {{ r.execution_date|date:"M d, Y"|default:"-" }} · <i class="bi bi-person"></i> {{ r.assigned_to|default:r.created_by }}
+      <small class="text-muted">{% if r.execution_date %}<i class="bi bi-calendar"></i> {{ r.execution_date|date:"M d, Y" }} · {% endif %}<i class="bi bi-person"></i> {{ r.assigned_to|default:r.created_by }}
         {% if r.release %}· <i class="bi bi-tag"></i> {{ r.release }}{% endif %}
         {% if r.due_date %}· <span class="text-danger">Due {{ r.due_date|date:"M d, Y" }}</span>{% endif %}</small>
     </div>
@@ -47,7 +47,7 @@
   <div class="d-flex justify-content-between small mt-2"><span class="text-muted">Execution progress</span><b>{{ c.progress }}%</b></div>
   <div class="progress mb-2" style="height:6px"><div class="progress-bar bg-success" style="width:{{ c.progress }}%"></div></div>
   <div class="small d-flex gap-2 flex-wrap">
-    <span class="st-badge st-pending">{{ c.total }} Total</span>
+    <span class="st-badge st-pending" title="Results across all environments">{{ r.test_cases.count }} test cases{% if c.total != r.test_cases.count %} · {{ c.total }} results{% endif %}</span>
     <span class="st-badge st-pending">{{ c.Pending }} Pending</span>
     <span class="st-badge st-pass">{{ c.Pass }} Pass</span>
     <span class="st-badge st-fail">{{ c.Fail }} Fail</span>
@@ -61,7 +61,7 @@
     <span class="text-muted"><i class="bi bi-hdd-network"></i> By environment:</span>
     {% for row in progress %}
       <a href="{% url 'runner_execute' project.pk r.pk %}{% if row.environment %}?env={{ row.environment.pk }}{% endif %}"
-         class="badge border text-decoration-none st-{{ row.status|slugify }}" title="{{ row.counts.Pass }} pass · {{ row.counts.Fail }} fail · {{ row.counts.Pending }} pending">
+         class="st-badge border text-decoration-none st-{{ row.status|slugify }}" title="{{ row.counts.Pass }} pass · {{ row.counts.Fail }} fail · {{ row.counts.Pending }} pending">
         {{ row.environment|default:"No environment" }} · {{ row.counts.progress }}% · {{ row.status }}</a>
     {% endfor %}
   </div>

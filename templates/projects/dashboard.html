@@ -4,7 +4,7 @@
 <div class="hero mb-4">
   <h3 class="fw-bold">Good day, {{ user.username }}!</h3>
   <p class="mb-3 opacity-75">You have {{ my_runner_count }} test runner(s) assigned to you.</p>
-  <a href="{% url 'project_list' %}" class="btn btn-sm btn-light"><i class="bi bi-folder2"></i> Projects</a>
+  <a href="{% url 'project_list' %}" class="btn btn-sm btn-light"><i class="bi bi-check2-square"></i> Test Management</a>
   <a href="{% url 'my_tasks' %}" class="btn btn-sm btn-outline-light"><i class="bi bi-clipboard-check"></i> My Tasks</a>
 </div>
 
@@ -21,7 +21,7 @@
   <div class="col-md-3"><div class="card p-3"><b class="fs-4">{{ runner_count }}</b><span class="text-muted">Test Runners</span></div></div>
   <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-success">{{ pass_count }}</b><span class="text-muted">Passed</span></div></div>
   <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-danger">{{ fail_count }}</b><span class="text-muted">Failed</span></div></div>
-  <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-secondary">{{ pending_count }}</b><span class="text-muted">Pending</span></div></div>
+  <div class="col-md-3"><div class="card p-3"><b class="fs-4 text-secondary">{{ pending_count }}</b><span class="text-muted">Pending results</span></div></div>
 </div>
 
 <div class="card p-3">

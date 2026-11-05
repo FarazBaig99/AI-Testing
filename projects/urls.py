@@ -1,4 +1,5 @@
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from . import views
 
@@ -6,7 +7,10 @@ urlpatterns = [
     path('', views.project_list, name='project_list'),
     path('dashboard/', views.dashboard, name='dashboard'),
     path('my-tasks/', views.my_tasks, name='my_tasks'),
-    path('create/', views.project_form, name='project_create'),
+    path('modules/<slug:slug>/', views.menu_module, name='menu_module'),
+    path('modules/<slug:slug>/projects/', views.menu_pick_project, name='menu_pick_project'),
+    # projects are created in the Projects module (Project & Business Analysis)
+    path('create/', RedirectView.as_view(pattern_name='portfolio_create'), name='project_create'),
     path('<int:pk>/', views.project_detail, name='project_detail'),
     path('<int:pk>/edit/', views.project_form, name='project_edit'),
     path('<int:pk>/delete/', views.project_delete, name='project_delete'),

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ item.label }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="{% url 'dashboard' %}">Dashboard</a> / {{ item.label }}</nav>
+<div class="hero mb-3">
+  <h3 class="fw-bold mb-1"><i class="bi bi-{{ item.icon }}"></i> {{ item.label }}</h3>
+  <p class="opacity-75 mb-0">Select a project to open its {{ item.label }}.</p>
+</div>
+<div class="row g-3">
+  {% for p in projects %}
+  <div class="col-md-6 col-xl-4">
+    <a href="{{ p.target }}" class="card p-3 h-100 text-decoration-none text-dark tc-row">
+      <div class="d-flex align-items-center">
+        <i class="bi bi-folder2-open fs-4 text-primary me-3"></i>
+        <div><b>{{ p.name }}</b><br><small class="text-muted">{{ p.num_cases }} test cases</small></div>
+        <i class="bi bi-arrow-right ms-auto"></i>
+      </div>
+    </a>
+  </div>
+  {% empty %}
+  <div class="col-12"><div class="card p-5 text-center text-muted">No projects yet. <a href="{% url 'portfolio_create' %}">Create one in Projects</a>.</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

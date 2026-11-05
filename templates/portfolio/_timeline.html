@@ -1,0 +1,1 @@
+{% if project.start_date or project.target_date %}{{ project.start_date|date:"Y-m-d"|default:"?" }} to {{ project.target_date|date:"Y-m-d"|default:"?" }}{% else %}Not set{% endif %}

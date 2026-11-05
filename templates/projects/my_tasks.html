@@ -27,7 +27,7 @@
     <tbody>
     {% for r in runners %}{% with c=r.counts %}
       <tr>
-        <td>{{ r.name }}<br><small class="text-muted">{{ c.total }} test cases</small></td>
+        <td>{{ r.name }}<br><small class="text-muted">{{ r.test_cases.count }} test cases</small></td>
         <td>{{ r.project.name }}</td><td>{{ r.release|default:"-" }}</td>
         <td><div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:{{ c.progress }}%"></div></div><small>{{ c.progress }}%</small></td>
         <td><span class="st-badge st-{{ r.status|slugify }}">{{ r.status }}</span></td>

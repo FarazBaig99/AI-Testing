@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ folder.name }}{% endblock %}
 {% block content %}
-<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Projects</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / {{ folder.name }}</nav>
+<nav class="small text-muted mb-2"><a href="{% url 'project_list' %}">Test Management</a> / <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a> / <a href="{% url 'api_home' project.pk %}">API Testing</a> / {{ folder.name }}</nav>
 <div class="card p-3 mb-3 d-flex flex-row align-items-start">
   <div>
     <h4 class="fw-bold mb-0"><i class="bi bi-folder-fill text-warning"></i> {{ folder.name }}</h4>
@@ -20,7 +20,7 @@
         <td><input type="checkbox" class="form-check-input case" name="case" value="{{ c.pk }}"></td>
         <td><span class="badge text-bg-light border text-success">{{ c.code }}</span></td>
         <td><a href="{% url 'api_case' project.pk c.pk %}" class="text-decoration-none">{{ c.name }}</a>{% if c.summary %}<br><small class="text-muted">{{ c.summary }}</small>{% endif %}</td>
-        <td><span class="st-badge st-pending">{{ c.status }}</span></td>
+        <td><span class="st-badge st-pending">{{ c.get_status_display }}</span></td>
         <td class="text-end text-nowrap">
           <a href="{% url 'api_case' project.pk c.pk %}" class="btn btn-sm btn-link" title="View Request"><i class="bi bi-eye"></i></a>
           <a href="{% url 'api_case_edit' project.pk c.pk %}" class="btn btn-sm btn-link" title="Edit"><i class="bi bi-pencil"></i></a>

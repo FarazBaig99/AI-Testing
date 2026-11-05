@@ -1,0 +1,50 @@
+<style>
+  /* Projects module: green & white enterprise theme (TestOps style) */
+  .pf { --pf: #059669; --pf-dark: #065f46; --pf-soft: #ecfdf5; --pf-border: #a7f3d0; }
+  .pf .pf-head { background: #fff; border: 1px solid var(--pf-border); border-radius: 14px; padding: 18px 22px; }
+  .pf .pf-eyebrow { color: var(--pf-dark); font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .pf .pf-eyebrow::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--pf); margin-right: 6px; vertical-align: middle; }
+  .pf .btn-pf { background: var(--pf); border-color: var(--pf); color: #fff; }
+  .pf .btn-pf:hover { background: var(--pf-dark); border-color: var(--pf-dark); color: #fff; }
+  .pf .btn-outline-pf { border-color: var(--pf); color: var(--pf-dark); background: #fff; }
+  .pf .btn-outline-pf:hover { background: var(--pf-soft); }
+  .pf .pill-pf { background: var(--pf-soft); color: var(--pf-dark); border: 1px solid var(--pf-border); border-radius: 20px; padding: 2px 10px; font-size: .75rem; font-weight: 600; }
+  .pf .kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; height: 100%; }
+  .pf .kpi small { color: #64748b; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .pf .kpi b { font-size: 1.6rem; display: block; line-height: 1.2; }
+  .pf .pcard { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px; height: 100%; display: flex; flex-direction: column; transition: border-color .15s, box-shadow .15s; }
+  .pf .pcard:hover { border-color: var(--pf); box-shadow: 0 4px 14px rgba(5,150,105,.12); }
+  .pf .key-chip { background: var(--pf-soft); color: var(--pf-dark); border: 1px solid var(--pf-border); border-radius: 6px; padding: 1px 7px; font-size: .72rem; font-weight: 700; font-family: monospace; }
+  .pf .key-logo { width: 56px; height: 56px; border-radius: 12px; background: var(--pf-soft); border: 1px solid var(--pf-border); color: var(--pf-dark); font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: .95rem; flex-shrink: 0; }
+  .pf .progress { height: 7px; background: #e2e8f0; }
+  .pf .progress-bar { background: var(--pf); }
+  .pf .lc { border-radius: 20px; padding: 2px 10px; font-size: .72rem; font-weight: 600; white-space: nowrap; }
+  .pf .lc::before { content: '● '; font-size: .6rem; vertical-align: 1px; }
+  .pf .lc-active { background: #dcfce7; color: #15803d; }
+  .pf .lc-draft { background: #f1f5f9; color: #475569; }
+  .pf .lc-pending-approval { background: #e0f2fe; color: #0369a1; }
+  .pf .lc-on-hold { background: #fef3c7; color: #b45309; }
+  .pf .lc-completed { background: #ede9fe; color: #6d28d9; }
+  .pf .lc-closed { background: #e2e8f0; color: #334155; }
+  .pf .lc-archived { background: #f1f5f9; color: #94a3b8; }
+  .pf .crit { border-radius: 6px; padding: 1px 8px; font-size: .72rem; font-weight: 600; border: 1px solid; }
+  .pf .crit-critical { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+  .pf .crit-high { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+  .pf .crit-medium { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+  .pf .crit-low { color: #475569; background: #f8fafc; border-color: #e2e8f0; }
+  .pf .ws-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pf .ws-tabs a { white-space: nowrap; padding: 7px 12px; border-radius: 8px; color: #475569; text-decoration: none; font-size: .84rem; }
+  .pf .ws-tabs a:hover { background: var(--pf-soft); color: var(--pf-dark); }
+  .pf .ws-tabs a.active { background: var(--pf); color: #fff; }
+  .pf .ws-tabs a .soon { font-size: .6rem; vertical-align: 1px; opacity: .7; }
+  .pf .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; }
+  .pf .panel h6 { font-weight: 700; }
+  .pf .list-in li::marker { color: var(--pf); }
+  .pf .list-out li::marker { color: #dc2626; }
+  .pf .box-in { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px 16px; height: 100%; }
+  .pf .box-out { background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 14px 16px; height: 100%; }
+  .pf .box-plain { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; height: 100%; }
+  .pf .box-label { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .pf .meta b { color: #0f172a; font-weight: 600; }
+  .pf .meta { color: #64748b; font-size: .82rem; }
+</style>

@@ -19,7 +19,8 @@ class Command(BaseCommand):
             self.stdout.write('Demo data already exists.')
             return
 
-        project = Project.objects.create(name='Demo Shop', description='Sample e-commerce web application', created_by=user)
+        project = Project.objects.create(name='Demo Shop', key='DS', status='Active', visibility='organization',
+                                         description='Sample e-commerce web application', created_by=user)
         r1 = Release.objects.create(project=project, name='v1.0.0', description='First release')
         Release.objects.create(project=project, name='v1.1.0', description='Cart improvements')
 

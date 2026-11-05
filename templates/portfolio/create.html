@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Create Project{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .wiz-steps { display: flex; flex-wrap: wrap; gap: 6px 4px; align-items: center; }
+  .wiz-steps .st { display: flex; align-items: center; gap: 6px; color: #94a3b8; font-size: .82rem; cursor: pointer; padding: 4px 6px; border-radius: 8px; }
+  .wiz-steps .st .n { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #cbd5e1; display: inline-flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; }
+  .wiz-steps .st.done { color: #065f46; }
+  .wiz-steps .st.done .n { background: #d1fae5; border-color: #6ee7b7; }
+  .wiz-steps .st.current { color: #0f172a; font-weight: 600; }
+  .wiz-steps .st.current .n { background: #059669; border-color: #059669; color: #fff; }
+  .wiz-steps .st.has-error .n { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+  .wiz-steps .sep { color: #cbd5e1; }
+  .wiz-step { display: none; }
+  .wiz-step.current { display: block; }
+  .review dt { font-size: .72rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  .review dd { margin-bottom: .6rem; white-space: pre-line; }
+</style>
+<nav class="small text-muted mb-2"><a href="{% url 'portfolio_list' %}">Projects</a> / Create Project</nav>
+<div class="pf">
+  <div class="panel mx-auto" style="max-width:860px">
+    <div class="pf-eyebrow" id="stepCounter">Step 1 of 6</div>
+    <h5 class="fw-bold mb-3" id="stepTitle">Basic Information</h5>
+    <div class="wiz-steps mb-4" id="stepNav"></div>
+
+    <form method="post" id="wizard" novalidate>{% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-danger py-2">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+
+      <div class="wiz-step" data-title="Basic Information" data-short="Basic">
+        <div class="row">
+          <div class="col-md-8">{% include "portfolio/_field.html" with field=form.name %}</div>
+          <div class="col-md-4">{% include "portfolio/_field.html" with field=form.key %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.project_type %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.visibility %}</div>
+          <div class="col-12">{% include "portfolio/_field.html" with field=form.description %}</div>
+          <div class="col-12">{% include "portfolio/_field.html" with field=form.tags %}</div>
+        </div>
+      </div>
+
+      <div class="wiz-step" data-title="Business Scope" data-short="Scope">
+        {% include "portfolio/_field.html" with field=form.objective %}
+        <div class="row">
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.in_scope %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.out_of_scope %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.deliverables %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.success_criteria %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.criticality %}</div>
+        </div>
+      </div>
+
+      <div class="wiz-step" data-title="Timeline & Delivery" data-short="Timeline">
+        <div class="row">
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.start_date %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.target_date %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.delivery_model %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.status %}</div>
+          <div class="col-12">{% include "portfolio/_field.html" with field=form.milestones %}</div>
+        </div>
+      </div>
+
+      <div class="wiz-step" data-title="Team & Leadership" data-short="Team">
+        <div class="row">
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.sponsor %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.manager %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.qa_lead %}</div>
+          <div class="col-md-6">{% include "portfolio/_field.html" with field=form.ba_lead %}</div>
+          <div class="col-12">{% include "portfolio/_field.html" with field=form.members %}</div>
+        </div>
+      </div>
+
+      <div class="wiz-step" data-title="Modules & Architecture (WBS)" data-short="Modules">
+        {% include "portfolio/_field.html" with field=form.modules %}
+        <div class="small text-muted"><i class="bi bi-info-circle"></i> Each module is created in Test Management, where you add its test cases.</div>
+      </div>
+
+      <div class="wiz-step" data-title="Review & Create" data-short="Review">
+        <p class="small text-muted">Check the details, then create the project. You can change everything later in the project workspace.</p>
+        <dl class="review row" id="review"></dl>
+      </div>
+
+      <div class="d-flex border-top pt-3 mt-2">
+        <button type="button" class="btn btn-outline-secondary" id="prevBtn"><i class="bi bi-arrow-left"></i> Previous</button>
+        <a href="{% url 'portfolio_list' %}" class="btn btn-link text-secondary ms-2">Cancel</a>
+        <button type="button" class="btn btn-pf ms-auto" id="nextBtn">Next Step <i class="bi bi-arrow-right"></i></button>
+        <button type="submit" class="btn btn-pf ms-auto d-none" id="createBtn"><i class="bi bi-check-lg"></i> Create Project</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const steps = [...document.querySelectorAll('.wiz-step')];
+  const nav = document.getElementById('stepNav');
+  let current = 0;
+
+  steps.forEach((step, i) => {
+    if (i) nav.insertAdjacentHTML('beforeend', '<span class="sep">›</span>');
+    nav.insertAdjacentHTML('beforeend', `<span class="st" data-i="${i}"><span class="n">${i + 1}</span>${step.dataset.short}</span>`);
+    if (step.querySelector('.field-error')) step.dataset.error = '1';
+  });
+  const navItems = [...nav.querySelectorAll('.st')];
+
+  function show(i) {
+    current = i;
+    steps.forEach((s, n) => s.classList.toggle('current', n === i));
+    navItems.forEach((s, n) => {
+      s.classList.toggle('current', n === i);
+      s.classList.toggle('done', n < i);
+      s.classList.toggle('has-error', !!steps[n].dataset.error && n !== i);
+    });
+    document.getElementById('stepCounter').textContent = `Step ${i + 1} of ${steps.length}`;
+    document.getElementById('stepTitle').textContent = steps[i].dataset.title;
+    document.getElementById('prevBtn').disabled = i === 0;
+    const last = i === steps.length - 1;
+    document.getElementById('nextBtn').classList.toggle('d-none', last);
+    document.getElementById('createBtn').classList.toggle('d-none', !last);
+    if (last) buildReview();
+  }
+
+  // browser checks for the required fields of one step (the server validates everything again)
+  function stepValid(i) {
+    const key = document.getElementById('id_key');
+    key.value = key.value.toUpperCase().trim();
+    key.setCustomValidity(key.value && !/^[A-Z0-9]{2,12}$/.test(key.value) ? 'Use 2-12 capital letters or digits.' : '');
+    const s = document.getElementById('id_start_date'), t = document.getElementById('id_target_date');
+    t.setCustomValidity(s.value && t.value && t.value < s.value ? 'Target completion cannot be before the start date.' : '');
+    for (const el of steps[i].querySelectorAll('input, select, textarea')) {
+      if (!el.checkValidity()) { el.reportValidity(); return false; }
+    }
+    return true;
+  }
+
+  document.getElementById('nextBtn').onclick = () => { if (stepValid(current)) show(current + 1); };
+  document.getElementById('prevBtn').onclick = () => show(current - 1);
+  navItems.forEach(item => item.onclick = () => {
+    const target = +item.dataset.i;
+    for (let i = current; i < target; i++) if (!stepValid(i)) return show(i);
+    show(target);
+  });
+  document.getElementById('wizard').addEventListener('submit', e => {
+    for (let i = 0; i < steps.length - 1; i++) if (!stepValid(i)) { e.preventDefault(); show(i); return; }
+  });
+
+  function buildReview() {
+    const rows = [];
+    steps.slice(0, -1).forEach(step => {
+      rows.push(`<div class="col-12"><h6 class="fw-bold border-bottom pb-1 mt-2" style="color:#065f46">${step.dataset.title}</h6></div>`);
+      step.querySelectorAll('input:not([type=hidden]), select, textarea').forEach(el => {
+        if (el.closest('.ts-wrapper') && el.tagName !== 'SELECT') return;  // Tom Select's own search box
+        // Tom Select moves a select's label to its own control: "<id>-ts-control"
+        const label = step.querySelector(`label[for="${el.id}"], label[for="${el.id}-ts-control"]`);
+        if (!label) return;
+        let value = el.tagName === 'SELECT' ? [...el.selectedOptions].map(o => o.text).filter(t => t && !t.startsWith('---')).join(', ') : el.value;
+        const text = document.createElement('dd');
+        text.className = 'col-sm-8';
+        text.textContent = value.trim() || '—';
+        rows.push(`<dt class="col-sm-4">${label.textContent.replace('*', '').trim()}</dt>${text.outerHTML}`);
+      });
+    });
+    document.getElementById('review').innerHTML = rows.join('');
+  }
+
+  // after a failed submit, open the first step that has an error
+  const firstError = steps.findIndex(s => s.dataset.error);
+  show(firstError >= 0 ? firstError : 0);
+</script>
+{% endblock %}

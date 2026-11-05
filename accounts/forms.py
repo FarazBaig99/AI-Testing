@@ -54,3 +54,5 @@ class StyledPasswordChangeForm(PasswordChangeForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         _style(self)
+        # it sits next to the profile form - don't jump the cursor into "Old password" on every visit
+        self.fields['old_password'].widget.attrs.pop('autofocus', None)

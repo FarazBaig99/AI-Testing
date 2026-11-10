@@ -1,0 +1,22 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}User Stories & Epics{% endblock %}
+{% block delivery %}
+{% if epics %}
+<div class="panel mb-3">
+  <h6 class="mb-2">Epics</h6>
+  <div class="row g-2">
+    {% for e in epics %}
+    <div class="col-md-6 col-xl-4"><div class="border rounded-3 p-2 h-100">
+      <div class="d-flex gap-2 align-items-start"><span class="kind kind-epic">Epic</span>
+        <div class="small fw-semibold flex-grow-1">{% if e.url %}<a href="{{ e.url }}" target="_blank" rel="noopener" class="text-body text-decoration-none">{{ e.title }}</a>{% else %}{{ e.title }}{% endif %}</div>
+        <span class="ext-key">{{ e.external_key }}</span></div>
+      <div class="d-flex align-items-center gap-2 mt-2"><div class="progress flex-grow-1"><div class="progress-bar" style="width:{{ e.progress|default:0 }}%"></div></div>
+        <small class="text-muted text-nowrap">{{ e.n_done }}/{{ e.n_children }} done</small></div>
+    </div></div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+<h6 class="mb-2">User stories</h6>
+{% include "delivery/_item_table.html" with qa_column=True empty_title="No user stories yet" %}
+{% endblock %}

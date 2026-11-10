@@ -1,0 +1,5 @@
+<div class="ins ins-{{ i.level }} mb-2">
+  <i class="bi bi-{% if i.level == 'danger' %}exclamation-octagon-fill{% elif i.level == 'warning' %}exclamation-triangle-fill{% else %}info-circle-fill{% endif %}"></i>
+  <div class="flex-grow-1"><div class="fw-semibold small">{{ i.title }}</div><div class="small text-muted">{{ i.detail }}</div></div>
+  <a href="{% url 'delivery_section' project.pk i.section %}" class="small text-success text-decoration-none text-nowrap align-self-center">View →</a>
+</div>

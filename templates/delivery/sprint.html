@@ -1,0 +1,136 @@
+{% extends "delivery/_layout.html" %}
+{% block title %}{{ sprint.name }} · {{ project.key }}{% endblock %}
+{% block heading %}{{ sprint.name }}{% endblock %}
+{% block delivery %}
+<style>
+  .st-bar { display: flex; height: 14px; gap: 2px; border-radius: 4px; overflow: hidden; }
+  .st-bar span { display: block; height: 100%; }
+  .st-todo { background: #94a3b8; } .st-in_progress { background: #2a78d6; } .st-done { background: #059669; }
+  .tree td { vertical-align: middle; }
+  .tree tr.story-row { background: #f8fafc; }
+  .tree tr.story-row td { border-top: 2px solid #e2e8f0; }
+  .tree tr.dim td { opacity: .55; }
+  .tree .toggle { border: 0; background: none; padding: 0 4px; color: #64748b; }
+  .tree .toggle .bi { transition: transform .15s; display: inline-block; }
+  .tree .toggle.collapsed .bi { transform: rotate(-90deg); }
+  .qa-select { width: auto; font-size: .76rem; padding: 1px 24px 1px 6px; font-weight: 600; }
+  .qa-Passed { color: #15803d; border-color: #86efac; background-color: #f0fdf4; }
+  .qa-Failed { color: #b91c1c; border-color: #fca5a5; background-color: #fef2f2; }
+  .qa-Blocked { color: #b45309; border-color: #fcd34d; background-color: #fffbeb; }
+  .qa-NotTested { color: #475569; }
+</style>
+<nav class="small mb-2"><a href="{% url 'delivery_section' project.pk 'sprints' %}" class="text-success text-decoration-none">← All sprints</a></nav>
+
+<div class="panel mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <span class="cat state-{{ sprint.state }} text-uppercase">{{ sprint.state }}</span>
+    <b class="fs-6">{{ sprint.name }}</b>
+    {% if sprint.release %}<span class="pill-pf">{{ sprint.release.name }}</span>{% endif %}
+    {% if sprint.url %}<a href="{{ sprint.url }}" target="_blank" rel="noopener" class="small text-muted">Open in tool <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
+    <span class="ms-auto ext-key">{{ sprint.start_date|date:"d M Y"|default:"?" }} – {{ sprint.end_date|date:"d M Y"|default:"?" }}{% if sprint.days_left is not None %} · {{ sprint.days_left }} day{{ sprint.days_left|pluralize }} left{% endif %}</span>
+  </div>
+  {% if sprint.goal %}<div class="small mb-2"><b>Sprint goal:</b> {{ sprint.goal }}</div>{% endif %}
+  <div class="row g-3">
+    <div class="col-md-6"><div class="small">Work done <b>{{ sprint.done_pct|default:0 }}%</b>{% if stats.points %} ({{ stats.points_done|floatformat:"-1" }} of {{ stats.points|floatformat:"-1" }} story points){% endif %}</div>
+      <div class="progress"><div class="progress-bar" style="width:{{ sprint.done_pct|default:0 }}%"></div></div></div>
+    <div class="col-md-6"><div class="small">Time passed <b>{% if sprint.time_pct is not None %}{{ sprint.time_pct }}%{% else %}-{% endif %}</b></div>
+      <div class="progress"><div class="progress-bar bg-secondary" style="width:{{ sprint.time_pct|default:0 }}%"></div></div></div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl"><div class="kpi"><small>User stories</small><b>{{ stats.stories_done }} / {{ stats.stories }}</b><span class="small text-muted">done</span></div></div>
+  <div class="col-6 col-xl"><div class="kpi"><small>QA verified</small><b class="text-success">{{ stats.verified }} / {{ stats.stories }}</b><span class="small {% if stats.qa_failed %}text-danger{% else %}text-muted{% endif %}">{{ stats.qa_failed }} failed / blocked</span></div></div>
+  <div class="col-6 col-xl"><div class="kpi"><small>Tasks</small><b>{{ stats.tasks_done }} / {{ stats.tasks }}</b><span class="small text-muted">done</span></div></div>
+  <div class="col-6 col-xl"><div class="kpi"><small>Sub-tasks</small><b>{{ stats.subtasks_done }} / {{ stats.subtasks }}</b><span class="small text-muted">done</span></div></div>
+  <div class="col-6 col-xl"><div class="kpi"><small>Bugs</small><b class="{% if stats.bugs_open %}text-danger{% endif %}">{{ stats.bugs_open }} open</b><span class="small text-muted">{{ stats.bugs }} total</span></div></div>
+</div>
+
+{% if status_rows %}
+<div class="panel mb-3">
+  <h6 class="mb-2">Status breakdown <span class="small text-muted fw-normal">· every story, task, sub-task and bug of the sprint, by its status in the tool</span></h6>
+  <div class="st-bar mb-2" role="img" aria-label="Status breakdown">
+    {% for r in status_rows %}<span class="st-{{ r.category }}" style="width:{{ r.pct|floatformat:2 }}%" title="{{ r.name }}: {{ r.count }}"></span>{% endfor %}
+  </div>
+  <div class="d-flex flex-wrap gap-3 small">
+    {% for r in status_rows %}<span><span class="d-inline-block rounded st-{{ r.category }}" style="width:10px;height:10px"></span> {{ r.name }} <b>{{ r.count }}</b></span>{% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="panel mb-3">
+  <form class="d-flex flex-wrap gap-2 align-items-center mb-2" method="get">
+    <h6 class="mb-0 me-2">Stories, tasks & bugs</h6>
+    <select name="kind" class="form-select form-select-sm w-auto"><option value="">All types</option>
+      <option value="story" {% if f.kind == 'story' %}selected{% endif %}>User stories</option>
+      <option value="task" {% if f.kind == 'task' %}selected{% endif %}>Tasks & sub-tasks</option>
+      <option value="bug" {% if f.kind == 'bug' %}selected{% endif %}>Bugs</option></select>
+    <select name="status" class="form-select form-select-sm w-auto"><option value="">All statuses</option>
+      {% for v, l in categories %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="qa" class="form-select form-select-sm w-auto"><option value="">Any QA status</option>
+      {% for q in qa_statuses %}<option {% if f.qa == q %}selected{% endif %}>{{ q }}</option>{% endfor %}</select>
+    <select name="assignee" class="form-select form-select-sm w-auto"><option value="">Everyone</option><option value="none" {% if f.assignee == 'none' %}selected{% endif %}>Unassigned</option>
+      {% for id, name in people_filter %}<option value="{{ id }}" {% if f.assignee == id|stringformat:'s' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-pf"><i class="bi bi-funnel"></i> Filter</button>
+    {% if filtered %}<a href="?" class="btn btn-sm btn-light border">Clear</a>{% endif %}
+    {% if tree %}<span class="ms-auto small"><a href="#" class="text-success text-decoration-none" id="expandAll">Expand all</a> · <a href="#" class="text-success text-decoration-none" id="collapseAll">Collapse all</a></span>{% endif %}
+  </form>
+
+  {% if tree or other_tasks or other_bugs %}
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0 tree">
+    <thead><tr><th>Key</th><th>Title</th><th>Type</th><th>Status</th><th>QA verification</th><th>Points</th><th>Assignee</th><th>Priority / severity</th></tr></thead>
+    {% for s in tree %}
+    <tbody>
+      <tr class="story-row {% if s.dim %}dim{% endif %}">
+        <td class="text-nowrap">{% if s.rows %}<button class="toggle" type="button" data-bs-toggle="collapse" data-bs-target="#rows-{{ s.pk }}" aria-expanded="true"><i class="bi bi-chevron-down"></i></button>{% else %}<span class="d-inline-block" style="width:22px"></span>{% endif %}<span class="ext-key">{{ s.external_key }}</span></td>
+        <td class="fw-semibold">{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener" class="text-body text-decoration-none">{{ s.title }}</a>{% else %}{{ s.title }}{% endif %}
+          {% if s.parent and s.parent.kind == 'epic' %}<div class="small text-muted fw-normal"><span class="kind kind-epic">Epic</span> {{ s.parent.title }}</div>{% endif %}
+          {% if s.rows %}<div class="small text-muted fw-normal">{{ s.rows|length }} item{{ s.rows|length|pluralize }} below</div>{% endif %}</td>
+        <td><span class="kind kind-story">Story</span></td>
+        <td><span class="cat cat-{{ s.category }}">{{ s.status|default:s.get_category_display }}</span></td>
+        <td><form method="post" action="{% url 'delivery_qa' project.pk s.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <select name="qa_status" class="form-select form-select-sm qa-select qa-{{ s.qa_status|cut:' ' }}" onchange="this.form.submit()" title="{% if s.qa_by %}Set by {{ s.qa_by.username }} on {{ s.qa_at|date:'d M Y H:i' }}{% else %}Not verified yet{% endif %}">
+            {% for q in qa_statuses %}<option {% if q == s.qa_status %}selected{% endif %}>{{ q }}</option>{% endfor %}</select></form></td>
+        <td>{% if s.story_points is not None %}{{ s.story_points|floatformat:"-1" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+        <td class="text-nowrap">{{ s.assignee.name|default:"-" }}</td>
+        <td>{{ s.priority|default:"-" }}</td>
+      </tr>
+    </tbody>
+    {% if s.rows %}
+    <tbody class="collapse show child-rows" id="rows-{{ s.pk }}">
+      {% for r in s.rows %}{% include "delivery/_sprint_row.html" %}{% endfor %}
+    </tbody>
+    {% endif %}
+    {% endfor %}
+    {% if other_tasks %}
+    <tbody><tr class="story-row"><td colspan="8" class="fw-semibold small">Tasks not under a story of this sprint ({{ other_tasks|length }})</td></tr>
+      {% for r in other_tasks %}{% include "delivery/_sprint_row.html" %}{% endfor %}</tbody>
+    {% endif %}
+    {% if other_bugs %}
+    <tbody><tr class="story-row"><td colspan="8" class="fw-semibold small text-danger">Sprint bugs not linked to a story ({{ other_bugs|length }})</td></tr>
+      {% for r in other_bugs %}{% include "delivery/_sprint_row.html" %}{% endfor %}</tbody>
+    {% endif %}
+  </table></div>
+  {% elif filtered %}<p class="text-center text-muted py-3 mb-0">Nothing in this sprint matches the filters.</p>
+  {% else %}<p class="text-center text-muted py-3 mb-0">This sprint has no stories, tasks or bugs yet.</p>{% endif %}
+</div>
+
+{% if people %}
+<div class="panel">
+  <h6 class="mb-2">Team in this sprint</h6>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Person</th><th>Open items</th><th>Done</th><th>Open story points</th><th>Open bugs</th></tr></thead>
+    <tbody>{% for p in people %}<tr><td class="fw-semibold">{{ p.name }}</td><td>{{ p.open }}</td><td>{{ p.done }}</td><td>{{ p.points|floatformat:"-1" }}</td><td>{% if p.bugs %}<span class="text-danger">{{ p.bugs }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  function setAll(show) {
+    document.querySelectorAll('.child-rows').forEach(el => bootstrap.Collapse.getOrCreateInstance(el, {toggle: false})[show ? 'show' : 'hide']());
+  }
+  document.getElementById('expandAll')?.addEventListener('click', e => { e.preventDefault(); setAll(true); });
+  document.getElementById('collapseAll')?.addEventListener('click', e => { e.preventDefault(); setAll(false); });
+</script>
+{% endblock %}

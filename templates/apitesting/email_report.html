@@ -1,0 +1,44 @@
+<!doctype html>
+<html><body style="margin:0;padding:24px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;color:#0f172a">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px">
+  <tr><td style="padding:20px 24px;border-bottom:1px solid #e2e8f0">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#065f46">BaigNova TestManager · {{ run.get_kind_display }} run #{{ run.pk }}</div>
+    <div style="font-size:20px;font-weight:700;margin-top:4px">{{ collection.name }}</div>
+    <div style="margin-top:8px">
+      <span style="display:inline-block;padding:3px 12px;border-radius:20px;font-size:12px;font-weight:700;{% if run.status == 'passed' %}background:#dcfce7;color:#15803d{% else %}background:#fee2e2;color:#b91c1c{% endif %}">{{ run.get_status_display|upper }}</span>
+      <span style="font-size:12px;color:#64748b;margin-left:8px">{{ run.started_at|date:"d M Y, H:i" }} · {{ run.duration_s }} s{% if run.schedule %} · schedule "{{ run.schedule.name }}"{% endif %}</span>
+    </div>
+  </td></tr>
+  <tr><td style="padding:20px 24px">
+    {% if run.error %}<p style="color:#b91c1c;font-size:13px"><b>Error:</b> {{ run.error }}</p>{% endif %}
+    {% if run.kind == 'performance' %}
+    <table role="presentation" width="100%" cellpadding="8" style="border-collapse:collapse;font-size:13px">
+      <tr style="background:#f8fafc"><td>Virtual users</td><td><b>{{ run.config.vus }}</b></td><td>Requests</td><td><b>{{ summary.totals.requests }}</b></td></tr>
+      <tr><td>Throughput</td><td><b>{{ summary.totals.rps }} req/s</b></td><td>Error rate</td><td><b>{{ summary.totals.error_pct }}%</b></td></tr>
+      <tr style="background:#f8fafc"><td>Average</td><td><b>{{ summary.totals.avg|default:"-" }} ms</b></td><td>p95 / p99</td><td><b>{{ summary.totals.p95|default:"-" }} / {{ summary.totals.p99|default:"-" }} ms</b></td></tr>
+      <tr><td>Min / Max</td><td><b>{{ summary.totals.min|default:"-" }} / {{ summary.totals.max|default:"-" }} ms</b></td><td>Duration</td><td><b>{{ summary.elapsed }} s</b></td></tr>
+    </table>
+    {% for reason in summary.fail_reasons %}<p style="color:#b91c1c;font-size:13px;margin:8px 0 0">{{ reason }}</p>{% endfor %}
+    <h3 style="font-size:14px;margin:20px 0 8px">Per API</h3>
+    <table role="presentation" width="100%" cellpadding="6" style="border-collapse:collapse;font-size:12px">
+      <tr style="background:#f1f5f9;text-align:left"><th>API</th><th align="right">Requests</th><th align="right">Errors</th><th align="right">Avg</th><th align="right">p95</th></tr>
+      {% for a in summary.apis %}<tr style="border-top:1px solid #e2e8f0"><td>{{ a.method }} {{ a.name }}</td><td align="right">{{ a.requests }}</td><td align="right">{{ a.errors }}</td><td align="right">{{ a.avg|default:"-" }} ms</td><td align="right">{{ a.p95|default:"-" }} ms</td></tr>{% endfor %}
+    </table>
+    {% else %}
+    <table role="presentation" width="100%" cellpadding="8" style="border-collapse:collapse;font-size:13px">
+      <tr style="background:#f8fafc"><td>Requests run</td><td><b>{{ summary.done|default:0 }} / {{ summary.planned|default:0 }}</b></td><td>Iterations</td><td><b>{{ summary.iterations|default:1 }}</b></td></tr>
+      <tr><td>Passed</td><td><b style="color:#15803d">{{ summary.passed|default:0 }}</b></td><td>Failed</td><td><b style="color:#b91c1c">{{ summary.failed|default:0 }}</b></td></tr>
+      <tr style="background:#f8fafc"><td>Average response</td><td><b>{{ summary.avg_ms|default:"-" }} ms</b></td><td></td><td></td></tr>
+    </table>
+    {% if failed %}
+    <h3 style="font-size:14px;margin:20px 0 8px;color:#b91c1c">Failed requests</h3>
+    <table role="presentation" width="100%" cellpadding="6" style="border-collapse:collapse;font-size:12px">
+      <tr style="background:#f1f5f9;text-align:left"><th>Request</th><th>Expected</th><th>Got</th><th>Details</th></tr>
+      {% for r in failed %}<tr style="border-top:1px solid #e2e8f0"><td>{{ r.method }} {{ r.name }}</td><td>{{ r.expected }}</td><td>{{ r.status_code|default:"-" }}</td><td>{{ r.error|default:""|truncatechars:120 }}</td></tr>{% endfor %}
+    </table>
+    {% endif %}
+    {% endif %}
+    {% if link %}<p style="margin:24px 0 0"><a href="{{ link }}" style="background:#059669;color:#ffffff;text-decoration:none;padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600">Open the full report</a></p>{% endif %}
+  </td></tr>
+</table>
+</body></html>

@@ -39,7 +39,7 @@ MENU = [
         {'slug': 'automation', 'label': 'Automation Testing', 'icon': 'cpu',
          'about': 'Manage automated test suites and their run results.',
          'planned': ['Automation suites and scripts', 'Run history and reports', 'Link to automatable test cases']},
-        {'slug': 'api-testing', 'label': 'API Testing', 'icon': 'terminal', 'project_url': 'api_home'},
+        {'slug': 'api-testing', 'label': 'API Testing', 'icon': 'terminal', 'url_name': 'api_workspace'},
         {'slug': 'database-testing', 'label': 'Database Testing', 'icon': 'database',
          'about': 'Verify application data directly in the database during test execution.',
          'planned': ['Database connections per environment', 'SQL query checks with expected results',
@@ -71,9 +71,7 @@ MENU = [
          'about': 'AI help for writing test cases, reviewing coverage and analysing failures.',
          'planned': ['Generate test cases from requirements', 'Suggest missing scenarios',
                      'Summarise failed executions']},
-        {'slug': 'org-team', 'label': 'Org & Team', 'icon': 'people',
-         'about': 'Manage team members, roles and project access.',
-         'planned': ['Team members and roles', 'Project-level access', 'Workload overview']},
+        {'slug': 'org-team', 'label': 'Org & Team', 'icon': 'people', 'url_name': 'org_home'},
         {'slug': 'settings', 'label': 'Settings & Audit', 'icon': 'gear',
          'about': 'Application settings and an audit log of changes.',
          'planned': ['General settings', 'Audit trail of who changed what', 'Data export']},
@@ -108,8 +106,10 @@ def active_slug(request):
     name = match.url_name
     if name in ACTIVE_BY_URL:
         return ACTIVE_BY_URL[name]
-    if name and name.startswith('portfolio_'):
+    if name and name.startswith(('portfolio_', 'delivery_', 'integrations_')):
         return 'projects'
+    if name and name.startswith('org_'):
+        return 'org-team'
     if name and name.startswith('api_'):
         return 'api-testing'
     if request.path.startswith('/projects/'):

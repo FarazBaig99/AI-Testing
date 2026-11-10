@@ -1,0 +1,60 @@
+{% extends "integrations/_layout.html" %}
+{% block body %}
+{% for c in connections %}
+<div class="int-card mb-3 {% if c.last_status == 'Failed' %}is-failed{% elif c.is_linked %}is-passed{% endif %}">
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+    <span class="int-logo">{{ c.get_tool_display|first }}</span>
+    <div class="me-auto">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <b>{{ c.get_tool_display }} Integration</b>
+        {% if c.last_status == 'Failed' %}<span class="st st-Failed">● Last sync failed</span>{% elif c.is_linked %}<span class="st st-Passed">● Connected</span>{% else %}<span class="st st-muted">Project not picked</span>{% endif %}
+        <span class="badge text-bg-light border fw-normal">One-way import</span>
+      </div>
+      <div class="small text-muted">{% if c.base_url %}Workspace: <b>{{ c.base_url }}</b> · {% endif %}Project: <b>{{ c.external_name|default:"-" }}</b></div>
+    </div>
+    {% if c.is_linked %}
+    <form method="post" action="{% url 'delivery_sync' project.pk %}">{% csrf_token %}<input type="hidden" name="connection" value="{{ c.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button class="btn btn-sm btn-pf" onclick="this.disabled=true;this.form.submit();this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Syncing...'"><i class="bi bi-arrow-repeat"></i> Sync Now</button></form>
+    {% endif %}
+    <a href="{% url 'delivery_section' project.pk 'integration' %}" class="btn btn-sm btn-light border">Edit Mappings</a>
+  </div>
+  <div class="row g-2 mb-2">
+    <div class="col-6 col-lg-3"><div class="kpi kpi-soft"><small>Synced sprints</small><b>{{ c.stats.sprints }}</b><span class="small text-muted">Iterations</span></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi kpi-soft"><small>User stories</small><b>{{ c.stats.stories }}</b><span class="small text-muted">Backlog items</span></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi kpi-soft"><small>Tasks synced</small><b>{{ c.stats.tasks }}</b><span class="small text-muted">Tasks &amp; sub-tasks</span></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi kpi-soft"><small>Tracked bugs</small><b class="text-orange">{{ c.stats.bugs }}</b></div></div>
+  </div>
+  <div class="box-plain small py-2 mb-2">Last synced: <b>{% if c.last_synced_at %}{{ c.last_synced_at|timesince }} ago{% else %}never{% endif %}</b> · Frequency: <b>Manual (Sync Now)</b></div>
+  {% if c.recent_runs %}
+  <div class="small fw-bold text-muted text-uppercase mb-1" style="font-size:.7rem">Recent sync audit logs</div>
+  {% for r in c.recent_runs %}
+  <div class="d-flex align-items-center gap-2 border rounded-3 px-3 py-2 mb-1 small">
+    <i class="bi {% if r.status == 'Failed' %}bi-x-circle text-danger{% else %}bi-check-circle text-success{% endif %}"></i>
+    <span>{% if r.status == 'Failed' %}Sync failed: {{ r.error|truncatechars:120 }}{% else %}Sync {{ r.status|lower }}: {{ r.created }} new, {{ r.updated }} updated, {{ r.unchanged }} unchanged, {{ r.removed }} removed{% endif %}</span>
+    <span class="ms-auto mono text-muted">{{ r.started_at|date:"Y-m-d H:i" }}</span>
+  </div>
+  {% endfor %}
+  <a href="{% url 'delivery_section' project.pk 'history' %}" class="small text-success text-decoration-none">Full sync history →</a>
+  {% endif %}
+</div>
+{% empty %}
+<div class="panel text-center text-muted py-4 mb-3"><i class="bi bi-kanban fs-1"></i>
+  <p class="mt-2 mb-0">No project management tool connected yet. Pick one below or press <b>Connect Project Management Tool</b>.</p></div>
+{% endfor %}
+
+<div class="panel">
+  <h6 class="mb-0">Available Project Management Connectors</h6>
+  <small class="text-muted d-block mb-3">Sprints, user stories, tasks and bugs of the picked project are imported into Project Delivery.</small>
+  <div class="row g-3">
+    {% for t in pm_tools %}
+    <div class="col-md-6 col-xl-4"><div class="int-card h-100 d-flex flex-column">
+      <div class="d-flex align-items-center gap-2 mb-1"><b>{{ t.label }}</b>
+        {% if t.tool in connected_tools %}<span class="st st-Passed ms-auto">Connected</span>{% elif t.phase > 1 %}<span class="st st-muted ms-auto">Coming in phase {{ t.phase }}</span>{% else %}<span class="st st-muted ms-auto">Ready to connect</span>{% endif %}</div>
+      <div class="small text-muted mb-2">{{ t.about }}</div>
+      {% if t.phase == 1 %}<a href="{% url 'delivery_section' project.pk 'integration' %}?tool={{ t.tool }}" class="btn btn-sm btn-light border mt-auto">{% if t.tool in connected_tools %}Manage Settings{% else %}Configure Integration →{% endif %}</a>
+      {% else %}<button class="btn btn-sm btn-light border mt-auto" disabled>Not available yet</button>{% endif %}
+    </div></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

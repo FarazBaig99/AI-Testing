@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ project.key }} · Project Delivery{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .dl-nav a { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; color: #475569; text-decoration: none; font-size: .84rem; }
+  .dl-nav a:hover { background: var(--pf-soft); color: var(--pf-dark); }
+  .dl-nav a.active { background: var(--pf-soft); color: var(--pf-dark); font-weight: 600; box-shadow: inset 3px 0 0 var(--pf); }
+  .dl-nav .n { margin-left: auto; color: #94a3b8; font-size: .72rem; }
+  .pf .table { font-size: .84rem; }
+  .pf .table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 600; white-space: nowrap; }
+  .cat { border-radius: 20px; padding: 1px 9px; font-size: .72rem; font-weight: 600; white-space: nowrap; }
+  .cat-todo { background: #f1f5f9; color: #475569; }
+  .cat-in_progress { background: #dbeafe; color: #1d4ed8; }
+  .cat-done { background: #dcfce7; color: #15803d; }
+  .state-active { background: #dcfce7; color: #15803d; } .state-future { background: #e0f2fe; color: #0369a1; } .state-closed { background: #f1f5f9; color: #475569; }
+  .kind { font-size: .68rem; font-weight: 700; border-radius: 5px; padding: 1px 6px; text-transform: uppercase; }
+  .kind-epic { background: #ede9fe; color: #6d28d9; } .kind-story { background: #dcfce7; color: #15803d; }
+  .kind-task { background: #e0f2fe; color: #0369a1; } .kind-subtask { background: #f1f5f9; color: #475569; } .kind-bug { background: #fee2e2; color: #b91c1c; }
+  .ext-key { font-family: monospace; font-size: .76rem; color: #475569; white-space: nowrap; }
+  .removed-note { font-size: .7rem; color: #94a3b8; }
+  .ins { border-radius: 10px; padding: 10px 12px; border: 1px solid; display: flex; gap: 10px; }
+  .ins-danger { background: #fef2f2; border-color: #fecaca; } .ins-danger > i { color: #dc2626; }
+  .ins-warning { background: #fffbeb; border-color: #fde68a; } .ins-warning > i { color: #d97706; }
+  .ins-info { background: #f8fafc; border-color: #e2e8f0; } .ins-info > i { color: #64748b; }
+</style>
+<nav class="small text-muted mb-2"><a href="{% url 'portfolio_list' %}">Projects</a> / <a href="{% url 'portfolio_workspace' project.pk %}">{{ project.name }}</a> / Project Delivery</nav>
+<div class="pf">
+  {% include "portfolio/_header.html" %}
+
+  <div class="row g-3">
+    <div class="col-lg-3 col-xl-2">
+      <div class="panel p-2 dl-nav">
+        {% for slug, label, icon in sections %}
+          <a href="{% if slug == 'overview' %}{% url 'delivery_home' project.pk %}{% else %}{% url 'delivery_section' project.pk slug %}{% endif %}" class="{% if slug == section %}active{% endif %}"><i class="bi bi-{{ icon }}"></i>{{ label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="col-lg-9 col-xl-10">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div class="me-auto">
+          <div class="pf-eyebrow">Project Delivery</div>
+          <h5 class="fw-bold mb-0">{% block heading %}{% endblock %}</h5>
+        </div>
+        <div class="small text-muted text-end">
+          {% for c in linked %}<div><i class="bi bi-plug"></i> {{ c.get_tool_display }} · {{ c.external_name }}
+            {% if c.last_synced_at %}· synced {{ c.last_synced_at|timesince }} ago{% else %}· never synced{% endif %}
+            {% if c.last_status == 'Failed' %}<span class="text-danger fw-semibold">· failed</span>{% endif %}</div>{% endfor %}
+        </div>
+        {% if linked %}
+        <form method="post" action="{% url 'delivery_sync' project.pk %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="btn btn-pf" onclick="this.disabled=true;this.form.submit();this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Syncing...'"><i class="bi bi-arrow-repeat"></i> Sync Now</button>
+        </form>
+        {% else %}
+        <a href="{% url 'delivery_section' project.pk 'integration' %}" class="btn btn-pf"><i class="bi bi-plug"></i> Connect a Tool</a>
+        {% endif %}
+      </div>
+      {% block delivery %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}

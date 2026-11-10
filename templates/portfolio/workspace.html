@@ -2,41 +2,8 @@
 {% block title %}{{ project.key }} · {{ project.name }}{% endblock %}
 {% block content %}
 {% include "portfolio/_theme.html" %}
-<nav class="small text-muted mb-2"><a href="{% url 'portfolio_list' %}">Projects</a> / {{ project.name }}</nav>
 <div class="pf">
-  {# ---------- project header ---------- #}
-  <div class="pf-head mb-3">
-    <div class="d-flex flex-wrap gap-3">
-      <div class="key-logo">{{ project.key|slice:":4" }}</div>
-      <div class="flex-grow-1" style="min-width:260px">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <h4 class="fw-bold mb-0">{{ project.name }} <span class="text-muted fw-normal">({{ project.key }})</span></h4>
-          <span class="badge text-bg-light border">{{ project.project_type }}</span>
-          <span class="lc lc-{{ project.status|slugify }}">{{ project.status }}</span>
-          <span class="crit crit-{{ project.criticality|lower }}">{{ project.criticality }} Criticality</span>
-        </div>
-        {% if project.description %}<p class="small text-muted mb-1 mt-1">{{ project.description }}</p>{% endif %}
-        <div class="meta d-flex flex-wrap gap-3 mt-1">
-          <span>Owner / Sponsor: <b>{{ project.sponsor|default:"-" }}</b></span>
-          <span>Manager: <b>{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</b></span>
-          <span>QA Lead: <b>{% if project.qa_lead %}{{ project.qa_lead.get_full_name|default:project.qa_lead.username }}{% else %}-{% endif %}</b></span>
-          <span>Model: <b>{{ project.delivery_model }}</b></span>
-          <span>Timeline: <b>{% include "portfolio/_timeline.html" %}</b></span>
-        </div>
-        {% if project.tag_list %}<div class="mt-2">{% for t in project.tag_list %}<span class="badge text-bg-light border me-1">{{ t }}</span>{% endfor %}</div>{% endif %}
-      </div>
-      <div class="d-flex flex-column gap-2 align-items-stretch">
-        <a href="{% url 'project_detail' project.pk %}" class="btn btn-sm btn-pf"><i class="bi bi-check2-square"></i> Open Test Management</a>
-        <a href="{% url 'portfolio_workspace' project.pk 'lifecycle' %}" class="btn btn-sm btn-outline-pf"><i class="bi bi-arrow-repeat"></i> Change Status</a>
-        <a href="{% url 'portfolio_list' %}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> All Projects</a>
-      </div>
-    </div>
-    <div class="ws-tabs border-top mt-3 pt-3">
-      {% for slug, label, icon in tabs %}
-        <a href="{% url 'portfolio_workspace' project.pk slug %}" class="{% if slug == tab %}active{% endif %}"><i class="bi bi-{{ icon }}"></i> {{ label }}{% if slug == 'team' %} ({{ counts.members }}){% elif slug == 'modules' %} ({{ counts.modules }}){% endif %}{% if slug == 'delivery' or slug == 'integrations' or slug == 'requirements' %} <span class="soon">· soon</span>{% endif %}</a>
-      {% endfor %}
-    </div>
-  </div>
+  {% include "portfolio/_header.html" %}
 
   {# ---------- placeholder tabs ---------- #}
   {% if soon %}
@@ -51,63 +18,150 @@
 
   {# ---------- 1. overview ---------- #}
   {% elif tab == 'overview' %}
+  {# KPI cards #}
   <div class="row g-3 mb-3">
-    <div class="col-6 col-lg-3"><div class="kpi">
-      <small>QA Health</small>
-      <b class="text-{{ health.css }}">{% if health.rate is not None %}{{ health.rate }}%{% else %}N/A{% endif %}</b>
-      <span class="badge text-bg-{{ health.css }}">{{ health.label }}</span>
-      <div class="small text-muted mt-1">{{ counts.passed }} pass · {{ counts.failed }} fail · {{ counts.blocked }} blocked</div>
+    <div class="col-sm-6 col-xl-3"><div class="kpi">
+      <small>Overall Completion</small>
+      <div class="d-flex align-items-baseline gap-2"><b>{% if completion.pct is not None %}{{ completion.pct }}%{% else %}<span class="text-muted">-</span>{% endif %}</b>
+        <span class="small fw-semibold text-{{ completion.schedule.css }}">{{ completion.schedule.label }}</span></div>
+      <div class="progress mt-2"><div class="progress-bar" style="width:{{ completion.pct|default:0 }}%"></div></div>
+      <div class="small text-muted mt-1">{{ completion.source }}{% if completion.schedule.elapsed is not None %} · {{ completion.schedule.elapsed }}% of timeline passed{% endif %}</div>
     </div></div>
-    <div class="col-6 col-lg-3"><div class="kpi">
-      <small>Milestone Completion</small>
-      <b>{% if progress is not None %}{{ progress }}%{% else %}<span class="text-muted fs-5">No milestones</span>{% endif %}</b>
-      <div class="progress mt-2"><div class="progress-bar" style="width:{{ progress|default:0 }}%"></div></div>
+    <div class="col-sm-6 col-xl-3"><div class="kpi">
+      <small>Assigned Members</small>
+      <div class="d-flex align-items-baseline gap-2"><b>{{ counts.members }}</b><span class="small text-muted">{{ team_label }}</span></div>
+      <div class="avatars mt-2">
+        {% for m in team|slice:":6" %}<span class="av" title="{{ m.user.get_full_name|default:m.user.username }} · {{ m.role }}">{{ m.user.username|first|upper }}</span>{% endfor %}
+        {% if team|length > 6 %}<span class="av av-more">+{{ team|length|add:"-6" }}</span>{% endif %}
+        {% if not team %}<a href="{% url 'org_access' %}?project={{ project.pk }}" class="small text-success fw-semibold text-decoration-none">Add members in Org &amp; Team →</a>{% endif %}
+      </div>
     </div></div>
-    <div class="col-6 col-lg-3"><div class="kpi">
-      <small>Team Members</small><b>{{ counts.members }}</b>
-      <a href="{% url 'portfolio_workspace' project.pk 'team' %}" class="small text-success text-decoration-none">Manage team →</a>
+    <div class="col-sm-6 col-xl-3"><div class="kpi">
+      <small>Configured Environments</small>
+      <div class="d-flex align-items-baseline gap-2 flex-wrap"><b>{{ counts.environments }}</b>
+        <span class="small fw-semibold text-success">{% for e in env_list %}{{ e.name|upper }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-muted fw-normal">None yet</span>{% endfor %}</span></div>
+      <a href="{% url 'api_environments' project.pk %}" class="small text-success fw-semibold text-decoration-none d-inline-block mt-2">Manage Environments →</a>
     </div></div>
-    <div class="col-6 col-lg-3"><div class="kpi">
-      <small>Environments</small><b>{{ counts.environments }}</b>
-      <a href="{% url 'portfolio_workspace' project.pk 'environments' %}" class="small text-success text-decoration-none">View environments →</a>
+    <div class="col-sm-6 col-xl-3"><div class="kpi">
+      <small>Requirements &amp; Docs</small>
+      <div class="d-flex align-items-baseline gap-2"><b class="text-muted">-</b><span class="small text-muted">Approved specs</span></div>
+      <div class="small text-muted mt-2">BRD, SRS, CRF, RTM tracking comes with the Requirements &amp; Docs module</div>
     </div></div>
   </div>
+
   <div class="row g-3 mb-3">
-    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Modules</small><b>{{ counts.modules }}</b></div></div>
-    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Test Cases</small><b>{{ counts.cases }}</b></div></div>
-    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Test Runners</small><b>{{ counts.runners }}</b></div></div>
-    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Pending Results</small><b>{{ counts.pending }}</b></div></div>
-    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>API Test Cases</small><b>{{ counts.api_cases }}</b></div></div>
-    <div class="col-6 col-md-4 col-xl-2"><div class="kpi"><small>Requirements</small><b class="text-muted fs-5">Soon</b></div></div>
-  </div>
-  <div class="row g-3">
-    <div class="col-lg-7"><div class="panel h-100">
-      <div class="d-flex align-items-center mb-2">
+    {# milestones #}
+    <div class="col-lg-8"><div class="panel h-100">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
         <h6 class="mb-0"><i class="bi bi-bullseye text-success"></i> Project Milestones &amp; Key Deliverables</h6>
         <small class="text-muted ms-auto">Timeline: {% include "portfolio/_timeline.html" %}</small>
+        <button class="btn btn-sm btn-outline-pf" data-bs-toggle="collapse" data-bs-target="#addMilestone"><i class="bi bi-plus"></i> Add</button>
       </div>
+      <form method="post" class="collapse {% if not milestones %}show{% endif %}" id="addMilestone">{% csrf_token %}
+        <input type="hidden" name="action" value="milestone_add">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <input name="title" class="form-control form-control-sm" style="flex:1;min-width:180px" placeholder="New milestone or key deliverable" required>
+          <input name="target_date" type="date" class="form-control form-control-sm w-auto" title="Target date">
+          <button class="btn btn-sm btn-pf"><i class="bi bi-plus"></i> Add Milestone</button>
+        </div>
+      </form>
       {% for m in milestones %}
-        <div class="d-flex align-items-center border rounded p-2 mb-2">
-          {% if m.status == 'Completed' %}<i class="bi bi-check-circle-fill text-success me-2"></i>{% else %}<span class="badge rounded-pill text-bg-light border me-2">{{ forloop.counter }}</span>{% endif %}
-          <div><b class="small">{{ m.title }}</b><br><small class="text-muted">Target: {{ m.target_date|date:"Y-m-d"|default:"-" }}</small></div>
-          <form method="post" class="ms-auto d-flex gap-1">{% csrf_token %}
+        <div class="ms-row {% if m.status == 'Completed' %}done{% endif %}">
+          {% if m.status == 'Completed' %}<span class="ms-num ms-check"><i class="bi bi-check-lg"></i></span>{% else %}<span class="ms-num">{{ forloop.counter }}</span>{% endif %}
+          <div class="flex-grow-1"><div class="fw-semibold small">{{ m.title }}</div><div class="text-muted" style="font-size:.74rem">Target Date: {{ m.target_date|date:"Y-m-d"|default:"not set" }}</div></div>
+          <form method="post" class="d-flex align-items-center gap-1">{% csrf_token %}
             <input type="hidden" name="milestone" value="{{ m.pk }}">
-            <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto">
+            <input type="hidden" name="action" value="milestone_status">
+            <select name="status" class="ms-pill ms-{{ m.status|slugify }}" onchange="this.form.submit()" title="Change status">
               {% for s in m.STATUSES %}<option {% if s == m.status %}selected{% endif %}>{{ s }}</option>{% endfor %}
             </select>
-            <input type="hidden" name="action" value="milestone_status">
-            <button name="action" value="milestone_delete" class="btn btn-sm btn-link text-danger" title="Delete milestone" onclick="return confirm('Delete this milestone?')"><i class="bi bi-trash"></i></button>
+            <button name="action" value="milestone_delete" class="btn btn-sm btn-link text-muted p-1" title="Delete milestone" onclick="return confirm('Delete this milestone?')"><i class="bi bi-trash"></i></button>
           </form>
         </div>
-      {% empty %}<p class="small text-muted">No milestones yet.</p>{% endfor %}
-      <form method="post" class="d-flex flex-wrap gap-2 mt-2">{% csrf_token %}
-        <input type="hidden" name="action" value="milestone_add">
-        <input name="title" class="form-control form-control-sm" style="flex:1;min-width:180px" placeholder="New milestone title" required>
-        <input name="target_date" type="date" class="form-control form-control-sm w-auto">
-        <button class="btn btn-sm btn-outline-pf"><i class="bi bi-plus"></i> Add</button>
-      </form>
+      {% empty %}<p class="small text-muted mb-0">No milestones yet. Add the key deliverables of this project above.</p>{% endfor %}
     </div></div>
-    <div class="col-lg-5"><div class="panel h-100">
+
+    {# connected environments #}
+    <div class="col-lg-4"><div class="env-card h-100 d-flex flex-column">
+      <span class="env-icon"><i class="bi bi-hdd-stack"></i></span>
+      <h6 class="fw-bold mt-3 mb-1">Connected Environments</h6>
+      <p class="small text-muted">Every project strictly isolates its own DEV, SIT, QA, Staging, and Production environments, database connections, and external system integrations.</p>
+      <div class="mb-3">
+        {% for e in env_list %}
+        <div class="env-row"><span title="{{ e.base_url }}">{{ e.name }}</span>
+          {% if e.locked %}<span class="fw-semibold text-success"><i class="bi bi-shield-lock"></i> Safety Locked</span>{% else %}<span class="fw-semibold text-success">Configured</span>{% endif %}</div>
+        {% empty %}<div class="small text-muted">No environments configured yet.</div>{% endfor %}
+      </div>
+      <a href="{% url 'portfolio_workspace' project.pk 'environments' %}" class="btn btn-pf w-100 mt-auto">Open Environment Management <i class="bi bi-arrow-right"></i></a>
+    </div></div>
+  </div>
+
+  {# external delivery & sprint backlog #}
+  <div class="panel mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+      <span class="env-icon env-icon-sm"><i class="bi bi-diagram-2"></i></span>
+      <div class="me-auto">
+        <div class="d-flex flex-wrap align-items-center gap-2"><h6 class="mb-0">External Delivery &amp; Sprint Backlog</h6>
+          {% for c in delivery.linked %}<span class="pill-pf"><span class="text-success">●</span> Connected: {{ c.get_tool_display }} ({{ c.external_name }})</span>{% empty %}<span class="badge text-bg-light border">Not connected</span>{% endfor %}
+          {% for c in delivery.failed %}<span class="badge text-bg-danger">{{ c.get_tool_display }}: last sync failed</span>{% endfor %}</div>
+        <small class="text-muted">Synchronized Sprints, Epics, User Stories, and Tasks with automated QA verification state linkage.</small>
+      </div>
+      {% if delivery.linked %}
+      <form method="post" action="{% url 'delivery_sync' project.pk %}">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="btn btn-sm btn-light border" onclick="this.disabled=true;this.form.submit();this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Syncing...'"><i class="bi bi-arrow-repeat"></i> Sync Now</button>
+      </form>
+      {% else %}
+      <a href="{% url 'delivery_section' project.pk 'integration' %}" class="btn btn-sm btn-light border"><i class="bi bi-plug"></i> Connect a Tool</a>
+      {% endif %}
+      <a href="{% url 'delivery_home' project.pk %}" class="btn btn-sm btn-pf">Full Delivery View →</a>
+    </div>
+    <div class="row g-3 mb-3">
+      <div class="col-6 col-xl-3"><div class="kpi kpi-soft"><small>Total Sprints</small><b>{{ delivery.sprints|length }}</b>
+        <span class="small text-success">{{ delivery.n_active }} Active • {{ delivery.n_future }} Future{% if delivery.n_closed %} • {{ delivery.n_closed }} Closed{% endif %}</span></div></div>
+      <div class="col-6 col-xl-3"><div class="kpi kpi-soft"><small>Ingested User Stories</small><b>{{ delivery.stories }}</b><span class="small text-muted">Unique across project</span></div></div>
+      <div class="col-6 col-xl-3"><div class="kpi kpi-soft"><small>Synced Tasks</small><b>{{ delivery.tasks }}</b><span class="small text-muted">Incl. {{ delivery.subtasks }} sub-task{{ delivery.subtasks|pluralize }}</span></div></div>
+      <div class="col-6 col-xl-3"><div class="kpi kpi-soft"><small>Backlog Bugs</small><b class="{% if delivery.bugs_open %}text-orange{% endif %}">{{ delivery.bugs_open }}</b>
+        <span class="small {% if delivery.warnings %}text-warning{% else %}text-success{% endif %}">{{ delivery.warnings }} sync warning{{ delivery.warnings|pluralize }} · {{ delivery.bugs }} total</span></div></div>
+    </div>
+    <div class="vel-box">
+      <div class="d-flex align-items-center px-3 py-2 border-bottom">
+        <span class="small fw-bold"><span class="text-success">●</span> Sprint Lifecycle &amp; Story Points Velocity</span>
+        <a href="{% url 'delivery_section' project.pk 'stories' %}" class="small fw-semibold text-success text-decoration-none ms-auto">Open User Stories Module →</a>
+      </div>
+      {% for s in delivery.sprints %}
+      <a href="{% url 'delivery_sprint' project.pk s.pk %}" class="vel-row">
+        <span class="cat state-{{ s.state }} text-uppercase">{{ s.state }}</span>
+        <div class="flex-grow-1" style="min-width:0">
+          <div class="fw-semibold small text-truncate">{{ s.name }}{% if s.goal %} — {{ s.goal }}{% endif %}</div>
+          <div class="text-muted" style="font-size:.74rem">{{ s.start_date|date:"Y-m-d"|default:"?" }} to {{ s.end_date|date:"Y-m-d"|default:"?" }} • {{ s.n_stories }} Stor{{ s.n_stories|pluralize:"y,ies" }} • Source: {{ s.connection.get_tool_display|default:"-" }}</div>
+        </div>
+        <div class="text-end"><div class="text-muted" style="font-size:.7rem">Velocity</div>
+          <div class="small fw-bold text-nowrap">{{ s.points_done|default:0|floatformat:"-1" }} / {{ s.points|default:0|floatformat:"-1" }} SP ({{ s.done_pct|default:0 }}%)</div></div>
+        <div class="progress vel-bar"><div class="progress-bar" style="width:{{ s.done_pct|default:0 }}%"></div></div>
+      </a>
+      {% empty %}
+      <div class="text-center text-muted small py-4">{% if delivery.linked %}No sprints synced yet. Press Sync Now.{% else %}Connect a project management tool (Jira, ClickUp...) to see its sprints here.{% endif %}</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# BaigNova extras: test management snapshot + recent activity #}
+  <div class="row g-3">
+    <div class="col-lg-8"><div class="panel h-100">
+      <div class="d-flex align-items-center mb-3">
+        <h6 class="mb-0"><i class="bi bi-check2-square text-success"></i> Test Management Snapshot</h6>
+        <a href="{% url 'project_detail' project.pk %}" class="small text-success fw-semibold text-decoration-none ms-auto">Open Test Management →</a>
+      </div>
+      <div class="row g-2">
+        <div class="col-6 col-md-3"><div class="kpi kpi-soft"><small>QA Health</small><b class="fs-5 text-{{ health.css }}">{% if health.rate is not None %}{{ health.rate }}%{% else %}N/A{% endif %}</b>
+          <span class="small text-muted">{{ health.label }} · {{ counts.passed }} pass · {{ counts.failed }} fail · {{ counts.blocked }} blocked</span></div></div>
+        <div class="col-6 col-md-3"><div class="kpi kpi-soft"><small>Test Cases</small><b class="fs-5">{{ counts.cases }}</b><span class="small text-muted">in {{ counts.modules }} module{{ counts.modules|pluralize }}</span></div></div>
+        <div class="col-6 col-md-3"><div class="kpi kpi-soft"><small>Test Runners</small><b class="fs-5">{{ counts.runners }}</b><span class="small text-muted">{{ counts.pending }} result{{ counts.pending|pluralize }} pending</span></div></div>
+        <div class="col-6 col-md-3"><div class="kpi kpi-soft"><small>API Test Cases</small><b class="fs-5">{{ counts.api_cases }}</b><span class="small text-muted">across {{ counts.environments }} environment{{ counts.environments|pluralize }}</span></div></div>
+      </div>
+    </div></div>
+    <div class="col-lg-4"><div class="panel h-100">
       <h6><i class="bi bi-clock-history text-success"></i> Recent Activity</h6>
       {% for a in recent %}
         <div class="small border-bottom py-2"><b>{{ a.user|default:"system" }}</b> · {{ a.message }}<br><span class="text-muted">{{ a.created_at|date:"M d, Y H:i" }}</span></div>
@@ -160,38 +214,45 @@
 
   {# ---------- 3. team & access ---------- #}
   {% elif tab == 'team' %}
+  <style>
+    .pf .role { border-radius: 20px; padding: 1px 9px; font-size: .72rem; font-weight: 600; white-space: nowrap; border: 1px solid; }
+    .pf .role-viewer { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
+    .pf .role-tester { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .pf .role-developer { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .pf .role-lead { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+    .pf .role-project-admin { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+  </style>
+  <div class="panel mb-3 d-flex flex-wrap align-items-center gap-2 py-3" style="background:var(--pf-soft);border-color:var(--pf-border)">
+    <i class="bi bi-info-circle text-success"></i>
+    <span class="small">This page only shows the team. Employees, project access, roles and key leadership are managed in <b>Org &amp; Team</b>.</span>
+    <a href="{% url 'org_access' %}?project={{ project.pk }}" class="btn btn-sm btn-pf ms-auto"><i class="bi bi-people"></i> Manage in Org &amp; Team →</a>
+  </div>
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-4 col-xl-2"><a href="?" class="text-decoration-none text-reset"><div class="kpi {% if not role %}border-success{% endif %}"><small>All members</small><b>{{ n_members }}</b></div></a></div>
+    {% for r, n in by_role.items %}
+    <div class="col-6 col-md-4 col-xl-2"><a href="?role={{ r|urlencode }}" class="text-decoration-none text-reset"><div class="kpi {% if role == r %}border-success{% endif %}"><small>{{ r }}</small><b class="{% if not n %}text-muted{% endif %}">{{ n }}</b></div></a></div>
+    {% endfor %}
+  </div>
   <div class="row g-3">
-    <div class="col-lg-4"><div class="panel h-100">
-      <h6><i class="bi bi-person-badge text-success"></i> Key Leadership</h6>
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="leaders">
-        {% include "portfolio/_field.html" with field=leader_form.manager %}
-        {% include "portfolio/_field.html" with field=leader_form.qa_lead %}
-        {% include "portfolio/_field.html" with field=leader_form.ba_lead %}
-        <button class="btn btn-sm btn-pf">Save Leadership</button>
-      </form>
-    </div></div>
-    <div class="col-lg-8"><div class="panel h-100">
-      <h6><i class="bi bi-people text-success"></i> Team Allocation Matrix</h6>
-      <table class="table table-sm align-middle">
-        <thead><tr><th>Member</th><th>Job title</th><th style="width:180px">Role / Permission</th><th></th></tr></thead>
+    <div class="col-12"><div class="panel h-100">
+      <div class="d-flex align-items-center mb-2">
+        <h6 class="mb-0"><i class="bi bi-people text-success"></i> Team Allocation Matrix{% if role %} <span class="small text-muted fw-normal">· {{ role }}</span>{% endif %}</h6>
+        {% if role %}<a href="?" class="small text-success text-decoration-none ms-auto">Show all</a>{% endif %}
+      </div>
+      <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Member</th><th>Job title</th><th>Department</th><th>Role / Permission</th><th>Member since</th></tr></thead>
         <tbody>
         {% for m in members %}
-          <tr>
-            <td><span class="avatar me-1" style="width:26px;height:26px;font-size:.75rem">{{ m.user.username|first|upper }}</span> {{ m.user.get_full_name|default:m.user.username }}</td>
+          <tr class="{% if not m.user.is_active %}opacity-50{% endif %}">
+            <td><span class="avatar me-1" style="width:26px;height:26px;font-size:.75rem">{{ m.user.username|first|upper }}</span> {{ m.user.get_full_name|default:m.user.username }}{% if not m.user.is_active %} <span class="small text-muted">(inactive)</span>{% endif %}</td>
             <td class="small text-muted">{{ m.user.profile.job_title|default:"-" }}</td>
-            <td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="member_role"><input type="hidden" name="member" value="{{ m.pk }}">
-              <select name="role" class="form-select form-select-sm" onchange="this.form.submit()">{% for r in roles %}<option {% if r == m.role %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></form></td>
-            <td class="text-end"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="member_remove"><input type="hidden" name="member" value="{{ m.pk }}">
-              <button class="btn btn-sm btn-link text-danger" title="Remove from team" onclick="return confirm('Remove this member from the project?')"><i class="bi bi-person-dash"></i></button></form></td>
+            <td class="small text-muted">{{ m.user.profile.department|default:"-" }}</td>
+            <td><span class="role role-{{ m.role|slugify }}">{{ m.role }}</span></td>
+            <td class="small text-muted">{{ m.added_at|date:"Y-m-d" }}</td>
           </tr>
-        {% empty %}<tr><td colspan="4" class="text-muted small">No team members yet.</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="5" class="text-muted small">{% if role %}No {{ role }} in this project.{% else %}No team members yet. Add them in <a href="{% url 'org_access' %}?project={{ project.pk }}" class="text-success">Org &amp; Team</a>.{% endif %}</td></tr>{% endfor %}
         </tbody>
-      </table>
-      <form method="post" class="row g-2 align-items-end">{% csrf_token %}<input type="hidden" name="action" value="member_add">
-        <div class="col-md-6"><label class="form-label small fw-semibold">Add member</label>{{ member_form.user }}</div>
-        <div class="col-md-4"><label class="form-label small fw-semibold">Role</label>{{ member_form.role }}</div>
-        <div class="col-md-2"><button class="btn btn-pf w-100"><i class="bi bi-person-plus"></i> Add</button></div>
-      </form>
+      </table></div>
       <div class="small text-muted mt-3"><i class="bi bi-shield-lock"></i> Roles: <b>Viewer</b> (read only) · <b>Tester</b> (execute tests) · <b>Developer</b> (fix defects) · <b>Lead</b> (manage cases and runs) · <b>Project Admin</b> (full control). Access rules are applied in a later step.</div>
     </div></div>
   </div>

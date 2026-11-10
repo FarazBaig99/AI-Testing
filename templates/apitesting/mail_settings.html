@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Mail Settings{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<div class="pf">
+  <div class="pf-head mb-3 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-auto">
+      <div class="pf-eyebrow">API Testing</div>
+      <h4 class="fw-bold mb-0"><i class="bi bi-envelope-gear text-success"></i> Mail Settings</h4>
+      <small class="text-muted">The SMTP server used to e-mail collection run reports.</small>
+    </div>
+    <a href="javascript:history.back()" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Back</a>
+  </div>
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <form method="post" class="panel" autocomplete="off">{% csrf_token %}
+        <h6>SMTP server {% if settings.is_configured %}<span class="pill-pf">Configured</span>{% else %}<span class="badge text-bg-warning">Not configured</span>{% endif %}</h6>
+        <div class="row g-2">
+          <div class="col-md-8"><label class="form-label small fw-semibold">SMTP host</label>
+            <input name="host" class="form-control form-control-sm" value="{{ settings.host }}" placeholder="smtp.office365.com"></div>
+          <div class="col-md-4"><label class="form-label small fw-semibold">Port</label>
+            <input type="number" name="port" class="form-control form-control-sm" value="{{ settings.port }}"></div>
+          <div class="col-md-4"><label class="form-label small fw-semibold">Security</label>
+            <select name="security" class="form-select form-select-sm">
+              <option value="tls" {% if settings.security == 'tls' %}selected{% endif %}>STARTTLS (port 587)</option>
+              <option value="ssl" {% if settings.security == 'ssl' %}selected{% endif %}>SSL/TLS (port 465)</option>
+              <option value="none" {% if settings.security == 'none' %}selected{% endif %}>None (port 25)</option>
+            </select></div>
+          <div class="col-md-8"><label class="form-label small fw-semibold">Username</label>
+            <input name="username" class="form-control form-control-sm" value="{{ settings.username }}" autocomplete="off"></div>
+          <div class="col-md-8"><label class="form-label small fw-semibold">Password</label>
+            <input type="password" name="password" class="form-control form-control-sm" autocomplete="new-password" placeholder="{% if settings.password %}Saved ({{ settings.masked_password }}). Leave empty to keep it.{% endif %}">
+            {% if settings.password %}<label class="form-check small mt-1"><input type="checkbox" name="clear_password" class="form-check-input">Remove the saved password</label>{% endif %}</div>
+          <div class="col-md-4"></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">From address</label>
+            <input name="from_email" class="form-control form-control-sm" value="{{ settings.from_email }}" placeholder="qa-reports@company.com"></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">BaigNova URL (for report links)</label>
+            <input name="site_url" class="form-control form-control-sm" value="{{ settings.site_url }}"></div>
+        </div>
+        <div class="small text-muted mt-2"><i class="bi bi-info-circle"></i> The password is stored in BaigNova's database as plain text for now (encryption is planned). Use an app password or a dedicated mail account.</div>
+        <button class="btn btn-pf mt-3"><i class="bi bi-floppy"></i> Save</button>
+      </form>
+    </div>
+    <div class="col-lg-5">
+      <form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="test">
+        <h6>Send a test e-mail</h6>
+        <p class="small text-muted">Save the settings first, then send a test to check they work.</p>
+        <input name="test_to" class="form-control form-control-sm mb-2" placeholder="you@company.com">
+        <button class="btn btn-outline-pf" {% if not settings.is_configured %}disabled{% endif %}><i class="bi bi-send"></i> Send test e-mail</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

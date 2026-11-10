@@ -1,0 +1,102 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Delivery Overview{% endblock %}
+{% block delivery %}
+<style>
+  .tl { position: relative; }
+  .tl-row { display: flex; align-items: center; height: 26px; }
+  .tl-label { width: 150px; flex-shrink: 0; font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
+  .tl-track { position: relative; flex: 1; height: 100%; }
+  .tl-bar { position: absolute; top: 6px; height: 14px; border-radius: 4px; }
+  .tl-bar.release { background: #2a78d6; }
+  .tl-bar.sprint { background: #9cc3f0; }
+  .tl-bar.sprint.active { background: #059669; }
+  .tl-today { position: absolute; top: 0; bottom: 0; width: 2px; background: #dc2626; z-index: 2; }
+  .tl-grid { position: absolute; inset: 0 0 0 150px; pointer-events: none; }
+</style>
+{% if not has_data %}
+  {% include "delivery/_empty.html" with icon="graph-up-arrow" title="No delivery data yet" text="Connect the project management tool your team uses (Jira, ClickUp, ...) or the Demo Source, pick the project, then press Sync Now. Releases, sprints, stories, tasks and bugs of that project will appear here." %}
+{% else %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3"><div class="kpi"><small>Releases</small><b>{{ kpis.releases }}</b><span class="small text-muted">{{ kpis.released }} released</span></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><small>Sprints</small><b>{{ kpis.sprints }}</b><span class="small text-muted">{{ kpis.closed_sprints }} closed</span></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><small>User stories done</small><b>{{ kpis.stories_done }} / {{ kpis.stories }}</b>
+    <div class="progress mt-1"><div class="progress-bar" style="width:{{ kpis.stories_pct|default:0 }}%"></div></div></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><small>Open bugs</small><b class="{% if kpis.bugs_serious %}text-danger{% endif %}">{{ kpis.bugs_open }}</b>
+    <span class="small text-muted">{{ kpis.bugs_serious }} critical / high · {{ kpis.bugs }} total</span></div></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6"><div class="panel h-100">
+    <h6 class="mb-2"><i class="bi bi-arrow-repeat text-success"></i> Current sprint</h6>
+    {% if sprint %}
+      <div class="d-flex justify-content-between align-items-baseline"><b>{{ sprint.name }}</b>
+        <span class="small text-muted">{{ sprint.start_date|date:"d M" }} – {{ sprint.end_date|date:"d M Y" }}{% if sprint.days_left is not None %} · {{ sprint.days_left }} day{{ sprint.days_left|pluralize }} left{% endif %}</span></div>
+      {% if sprint.goal %}<div class="small text-muted mb-2">{{ sprint.goal }}</div>{% endif %}
+      <div class="small mt-2">Work done <b>{{ sprint.done_pct|default:0 }}%</b>{% if sprint.points %} ({{ sprint.points_done|default:0|floatformat:"-1" }} of {{ sprint.points|floatformat:"-1" }} points){% endif %}</div>
+      <div class="progress mb-2"><div class="progress-bar" style="width:{{ sprint.done_pct|default:0 }}%"></div></div>
+      <div class="small">Time passed <b>{{ sprint.time_pct|default:0 }}%</b></div>
+      <div class="progress mb-2"><div class="progress-bar bg-secondary" style="width:{{ sprint.time_pct|default:0 }}%"></div></div>
+      <div class="meta d-flex flex-wrap gap-3"><span>Items <b>{{ sprint.n_done }}/{{ sprint.n_items }}</b></span><span>Stories <b>{{ sprint.n_stories_done }}/{{ sprint.n_stories }}</b></span><span>Open bugs <b>{{ sprint.n_bugs_open }}</b></span></div>
+    {% else %}<p class="small text-muted mb-0">No sprint is running right now.</p>{% endif %}
+  </div></div>
+  <div class="col-lg-6"><div class="panel h-100">
+    <h6 class="mb-2"><i class="bi bi-rocket-takeoff text-success"></i> Next release</h6>
+    {% if next_release %}
+      <div class="d-flex justify-content-between align-items-baseline"><b>{{ next_release.name }}</b>
+        <span class="small text-muted">{% if next_release.release_date %}due {{ next_release.release_date|date:"d M Y" }}{% else %}no release date{% endif %}</span></div>
+      <div class="small mt-2">Progress <b>{{ next_release.progress|default:0 }}%</b> ({{ next_release.n_done }} of {{ next_release.n_items }} items)</div>
+      <div class="progress mb-2"><div class="progress-bar" style="width:{{ next_release.progress|default:0 }}%"></div></div>
+      <div class="meta d-flex flex-wrap gap-3"><span>Status <b>{{ next_release.status }}</b></span><span>Stories <b>{{ next_release.n_stories_done }}/{{ next_release.n_stories }}</b></span><span>Open bugs <b>{{ next_release.n_bugs_open }}</b></span></div>
+      <a href="{% url 'delivery_section' project.pk 'analytics' %}" class="small text-success text-decoration-none d-inline-block mt-2">QA readiness →</a>
+    {% else %}<p class="small text-muted mb-0">No upcoming release.</p>{% endif %}
+  </div></div>
+</div>
+
+{% if timeline %}
+<div class="panel mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+    <h6 class="mb-0">Release & sprint timeline</h6>
+    <span class="small text-muted"><span class="d-inline-block rounded" style="width:12px;height:10px;background:#2a78d6"></span> Release
+      <span class="d-inline-block rounded ms-2" style="width:12px;height:10px;background:#9cc3f0"></span> Sprint
+      <span class="d-inline-block rounded ms-2" style="width:12px;height:10px;background:#059669"></span> Running sprint
+      <span class="d-inline-block ms-2" style="width:2px;height:10px;background:#dc2626"></span> Today</span>
+    <span class="ms-auto small text-muted">{{ timeline.first|date:"d M Y" }} – {{ timeline.last|date:"d M Y" }}</span>
+  </div>
+  <div class="tl">
+    {% for b in timeline.bars %}
+    <div class="tl-row">
+      <div class="tl-label {% if b.kind == 'release' %}fw-semibold{% endif %}" title="{{ b.obj.name }}">{{ b.obj.name }}</div>
+      <div class="tl-track">
+        {% if timeline.today is not None %}<div class="tl-today" style="left:{{ timeline.today|floatformat:2 }}%"></div>{% endif %}
+        <div class="tl-bar {{ b.kind }} {% if b.obj.state == 'active' %}active{% endif %}" style="left:{{ b.left|floatformat:2 }}%;width:{{ b.width|floatformat:2 }}%"
+             title="{{ b.obj.name }}: {{ b.start|date:'d M Y' }} – {{ b.end|date:'d M Y' }}{% if b.obj.progress is not None %} · {{ b.obj.progress }}% done{% endif %}"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-7"><div class="panel h-100">
+    <div class="d-flex mb-2"><h6 class="mb-0"><i class="bi bi-stars text-success"></i> Top insights</h6>
+      <a href="{% url 'delivery_section' project.pk 'analytics' %}" class="ms-auto small text-success text-decoration-none">All insights →</a></div>
+    {% for i in insights %}
+      {% include "delivery/_insight.html" %}
+    {% empty %}<p class="small text-muted mb-0"><i class="bi bi-check-circle text-success"></i> No delivery risks found.</p>{% endfor %}
+  </div></div>
+  <div class="col-lg-5"><div class="panel h-100">
+    <h6 class="mb-2">Work breakdown</h6>
+    <div class="meta d-flex flex-column gap-1">
+      <span>Epics <b>{{ kpis.epics }}</b></span>
+      <span>User stories <b>{{ kpis.stories }}</b></span>
+      <span>Open tasks & subtasks <b>{{ kpis.tasks_open }}</b></span>
+      <span>Bugs <b>{{ kpis.bugs }}</b></span>
+    </div>
+    {% if last_run %}<hr class="my-2"><div class="small text-muted">Last sync {{ last_run.started_at|date:"d M Y H:i" }} ·
+      <span class="fw-semibold {% if last_run.status == 'Failed' %}text-danger{% elif last_run.status == 'Warning' %}text-warning{% else %}text-success{% endif %}">{{ last_run.status }}</span>
+      · <a href="{% url 'delivery_section' project.pk 'history' %}?run={{ last_run.pk }}" class="text-success">details</a></div>{% endif %}
+  </div></div>
+</div>
+{% endif %}
+{% endblock %}

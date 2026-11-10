@@ -1,13 +1,16 @@
+from datetime import date
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Count, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from projects.models import Milestone, Module, Project, ProjectActivity, ProjectMember, TestResult
 
-from .forms import (LeadershipForm, MemberForm, MilestoneForm, ProjectCreateForm, ScopeForm, SettingsForm,
+from .forms import (MilestoneForm, ProjectCreateForm, ScopeForm, SettingsForm,
                     StatusChangeForm, _user_label)
 
 # workspace tabs: slug -> (label, icon); 'soon' tabs are placeholders until their module is built
@@ -17,8 +20,8 @@ TABS = [
     ('team', 'Team & Access', 'people'),
     ('delivery', 'Project Delivery', 'graph-up-arrow'),
     ('integrations', 'External Integrations', 'plug'),
-    ('environments', 'Environments', 'hdd-network'),
-    ('modules', 'Modules (WBS)', 'diagram-3'),
+    ('environments', 'Environment Management', 'hdd-network'),
+    ('modules', 'Project Modules', 'diagram-3'),
     ('requirements', 'Requirements & Docs', 'file-earmark-text'),
     ('apis', 'APIs & Databases', 'database'),
     ('lifecycle', 'Lifecycle', 'arrow-repeat'),
@@ -27,14 +30,6 @@ TABS = [
 ]
 TAB_SLUGS = [t[0] for t in TABS]
 SOON = {
-    'delivery': ('Sprints, epics, user stories and tasks synced from Jira / ClickUp / Azure DevOps, with story points, '
-                 'velocity and QA verification status on each story.',
-                 ['Active, future and closed sprints', 'Epic → Story → Task → Bug tree',
-                  'QA verification status on user stories']),
-    'integrations': ('Connect project management tools (Jira, ClickUp, Azure DevOps, Monday, Asana, Linear, Trello) '
-                     'and engineering tools (GitHub, GitLab, Bitbucket, Jenkins).',
-                     ['OAuth / API token connection', 'One-way import or two-way sync, status and field mapping',
-                      'Repository binding and PR change detection', '"Sync Now" with sync audit log']),
     'requirements': ('Official project documents (PRD, SRS, architecture diagrams, user guides) with versions and '
                      'approval status. Built together with the Requirements & Docs module.',
                      ['Document upload with version tracking', 'Approval status',
@@ -53,6 +48,85 @@ def health(passed, executed, blocked):
         index = 1
     _, label, css = HEALTH_LEVELS[index]
     return {'rate': rate, 'label': label, 'css': css}
+
+
+def workspace_counts(project):
+    """Counts shown in the workspace header and tabs (also used by the Project Delivery pages)."""
+    from delivery.models import Sprint
+    from integrations.models import ProjectLink
+    return {'members': project.members.count(), 'modules': project.modules.filter(parent__isnull=True).count(),
+            'environments': project.api_environments.count(),
+            'sprints': Sprint.objects.filter(project=project, removed=False).count(),
+            'integrations': (project.system_integrations.count() + project.repositories.count()
+                             + project.delivery_connections.exclude(external_id='').count()
+                             + ProjectLink.objects.filter(Q(source=project) | Q(target=project)).count()),
+            'integrations_failed': project.system_integrations.filter(last_status='Failed').count(),
+            'projects_total': Project.objects.count()}
+
+
+def schedule(done_pct, project):
+    """On Schedule / At Risk / Behind: work done compared with the share of the project timeline already passed."""
+    if project.status in ('Completed', 'Closed'):
+        return {'label': project.status, 'css': 'success'}
+    if done_pct is None:
+        return {'label': 'No progress data', 'css': 'secondary'}
+    start, end = project.start_date, project.target_date
+    if not (start and end and end > start):
+        return {'label': 'No timeline', 'css': 'secondary'}
+    elapsed = round((min(max(date.today(), start), end) - start).days * 100 / (end - start).days)
+    gap = elapsed - done_pct
+    if gap <= 10:
+        return {'label': 'On Schedule', 'css': 'success', 'elapsed': elapsed}
+    if gap <= 25:
+        return {'label': 'At Risk', 'css': 'warning', 'elapsed': elapsed}
+    return {'label': 'Behind Schedule', 'css': 'danger', 'elapsed': elapsed}
+
+
+def overview_context(project, milestones):
+    """Overview tab: completion, team, environments and the external delivery (synced sprints) summary."""
+    from delivery import metrics
+    work = metrics.items(project).exclude(kind='epic')
+    n_work = work.count()
+    if n_work:
+        completion = {'pct': metrics.pct(work.filter(category='done').count(), n_work),
+                      'source': f'From {n_work} synced work items'}
+    elif milestones:
+        completion = {'pct': round(sum(m.status == 'Completed' for m in milestones) * 100 / len(milestones)),
+                      'source': f'From {len(milestones)} milestones'}
+    else:
+        completion = {'pct': None, 'source': 'No synced work or milestones yet'}
+    completion['schedule'] = schedule(completion['pct'], project)
+
+    members = list(project.members.select_related('user'))
+    roles = {m.role for m in members}
+
+    environments = list(project.api_environments.all())
+    for e in environments:
+        # production-like environments are protected from destructive test runs
+        e.locked = any(word in e.name.lower() for word in ('prod', 'live'))
+
+    linked = list(project.delivery_connections.exclude(external_id=''))
+    kinds = dict(work.order_by().values('kind').annotate(n=Count('id')).values_list('kind', 'n'))
+    sprint_list = metrics.sprints(project)
+    last_runs = [c.runs.order_by('-started_at').first() for c in linked]
+    delivery = {
+        'linked': linked,
+        'failed': [c for c in linked if c.last_status == 'Failed'],
+        'sprints': sprint_list,
+        'n_active': sum(s.state == 'active' for s in sprint_list),
+        'n_future': sum(s.state == 'future' for s in sprint_list),
+        'n_closed': sum(s.state == 'closed' for s in sprint_list),
+        'stories': kinds.get('story', 0),
+        'tasks': kinds.get('task', 0) + kinds.get('subtask', 0),
+        'subtasks': kinds.get('subtask', 0),
+        'bugs': kinds.get('bug', 0),
+        'bugs_open': work.filter(kind='bug').exclude(category='done').count(),
+        'warnings': sum(len(r.warnings) for r in last_runs if r),
+    }
+    return {'completion': completion, 'team': members,
+            'team_label': 'Cross-functional' if len(roles) > 1 else (next(iter(roles)) if roles else 'No members yet'),
+            'env_list': environments, 'delivery': delivery,
+            'milestone_form': MilestoneForm(), 'recent': project.activities.select_related('user')[:6]}
 
 
 def _log(project, user, category, message, reason=''):
@@ -118,6 +192,7 @@ def portfolio_list(request):
         'projects': projects, 'kpis': kpis, 'q': q, 'status': status, 'ptype': ptype, 'criticality': criticality,
         'statuses': Project.STATUSES, 'types': Project.TYPES, 'criticalities': Project.CRITICALITIES,
         'filtered': bool(q or status or ptype or criticality),
+        'last_project': Project.objects.filter(pk=request.session.get('last_project')).first(),
     })
 
 
@@ -148,6 +223,7 @@ def portfolio_workspace(request, pk, tab='overview'):
     project = get_object_or_404(Project.objects.select_related('manager', 'qa_lead', 'ba_lead'), pk=pk)
     if request.method == 'POST':
         return _handle_post(request, project, tab)
+    request.session['last_project'] = project.pk  # target of the list page's "Project Workspace" toggle
     return _render_workspace(request, project, tab)
 
 
@@ -163,10 +239,8 @@ def _render_workspace(request, project, tab, **overrides):
         'pending': results.filter(status='Pending').count(),
         'cases': project.test_cases.count(),
         'api_cases': project.api_test_cases.count(),
-        'environments': project.api_environments.count(),
-        'members': project.members.count(),
-        'modules': project.modules.filter(parent__isnull=True).count(),
         'runners': project.runners.count(),
+        **workspace_counts(project),
     }
     milestones = list(project.milestones.all())
     done = sum(m.status == 'Completed' for m in milestones)
@@ -184,13 +258,17 @@ def _render_workspace(request, project, tab, **overrides):
 
 def _tab_context(request, project, tab, results):
     if tab == 'overview':
-        return {'milestone_form': MilestoneForm(), 'recent': project.activities.select_related('user')[:5]}
+        return overview_context(project, list(project.milestones.all()))
     if tab == 'scope':
         return {'form': ScopeForm(instance=project)}
     if tab == 'team':
-        return {'members': project.members.select_related('user', 'user__profile'),
-                'member_form': MemberForm(project=project), 'leader_form': LeadershipForm(instance=project),
-                'roles': ProjectMember.ROLES}
+        members = list(project.members.select_related('user', 'user__profile'))
+        by_role = {r: 0 for r in ProjectMember.ROLES}
+        for m in members:
+            by_role[m.role] = by_role.get(m.role, 0) + 1
+        role = request.GET.get('role', '')
+        return {'members': [m for m in members if not role or m.role == role], 'n_members': len(members),
+                'by_role': by_role, 'role': role}
     if tab == 'environments':
         return {'environments': project.api_environments.annotate(
             n_cases=Count('test_cases', distinct=True), n_results=Count('test_results', distinct=True))}
@@ -247,42 +325,6 @@ def _handle_post(request, project, tab):
             return back
         return _render_workspace(request, project, tab, form=form)
 
-    if action == 'leaders':
-        form = LeadershipForm(request.POST, instance=project)
-        if form.is_valid():
-            if form.changed_data:
-                form.save()
-                names = ', '.join(f'{form.fields[n].label}: {_user_label(getattr(project, n)) if getattr(project, n) else "-"}'
-                                  for n in form.changed_data)
-                _log(project, user, 'team', f'Key leadership changed ({names})')
-            messages.success(request, 'Key leadership saved.')
-        return back
-
-    if action == 'member_add':
-        form = MemberForm(request.POST, project=project)
-        if form.is_valid():
-            member = form.save(commit=False)
-            member.project = project
-            member.save()
-            _log(project, user, 'team', f'{_user_label(member.user)} added as {member.role}')
-            messages.success(request, f'{_user_label(member.user)} added to the team.')
-        else:
-            messages.error(request, 'Select a user who is not already in the team.')
-        return back
-
-    if action in ('member_role', 'member_remove'):
-        member = get_object_or_404(ProjectMember, pk=request.POST.get('member'), project=project)
-        if action == 'member_remove':
-            member.delete()
-            _log(project, user, 'team', f'{_user_label(member.user)} removed from the team')
-            messages.success(request, f'{_user_label(member.user)} removed.')
-        elif request.POST.get('role') in ProjectMember.ROLES and request.POST['role'] != member.role:
-            old, member.role = member.role, request.POST['role']
-            member.save(update_fields=['role'])
-            _log(project, user, 'team', f'{_user_label(member.user)} role changed {old} → {member.role}')
-            messages.success(request, f'{_user_label(member.user)} is now {member.role}.')
-        return back
-
     if action == 'milestone_add':
         form = MilestoneForm(request.POST)
         if form.is_valid():
@@ -313,6 +355,10 @@ def _handle_post(request, project, tab):
             _log(project, user, 'status', f'Lifecycle status changed {old} → {project.status}',
                  reason=form.cleaned_data['reason'])
             messages.success(request, f'Project is now {project.status}.')
+            # the header's Put on Hold / Resume dialog posts from any workspace or delivery page
+            nxt = request.POST.get('next', '')
+            if url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+                return redirect(nxt)
             return back
         return _render_workspace(request, project, tab, status_form=form)
 

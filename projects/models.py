@@ -117,7 +117,8 @@ class Milestone(models.Model):
 class ProjectActivity(models.Model):
     """Append-only audit trail of a project: nothing in the app edits or deletes these rows."""
     CATEGORIES = [('created', 'Created'), ('scope', 'Profile & Scope'), ('team', 'Team & Access'),
-                  ('milestone', 'Milestones'), ('status', 'Lifecycle'), ('settings', 'Settings')]
+                  ('milestone', 'Milestones'), ('status', 'Lifecycle'), ('settings', 'Settings'),
+                  ('delivery', 'Project Delivery'), ('integration', 'External Integrations')]
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='activities')
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)

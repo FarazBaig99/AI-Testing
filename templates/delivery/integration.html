@@ -1,0 +1,142 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Sync & Integration{% endblock %}
+{% block delivery %}
+<style>
+  .tool-card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; height: 100%; background: #fff; display: flex; flex-direction: column; }
+  .tool-card.off { opacity: .6; }
+  .tool-card:not(.off):hover { border-color: var(--pf); }
+</style>
+
+{% if pick %}
+<div class="panel mb-3" style="border-color:var(--pf-border)">
+  <h6><i class="bi bi-diagram-2 text-success"></i> {{ pick.get_tool_display }}: pick the {{ pick.connector.pick_label }}</h6>
+  {% if pick.is_linked %}
+    <p class="small text-muted mb-0">Already linked to <b>{{ pick.external_name }}</b>.</p>
+  {% elif pick_error %}
+    <div class="alert alert-danger small py-2">{{ pick_error }}</div>
+  {% else %}
+    <p class="small text-muted">Only the data of the project you pick is synced into {{ project.name }}.</p>
+    <form method="post" class="d-flex flex-wrap gap-2">{% csrf_token %}
+      <input type="hidden" name="action" value="pick"><input type="hidden" name="connection" value="{{ pick.pk }}">
+      <select name="external_id" class="form-select" style="max-width:420px" required>
+        <option value="">Select...</option>
+        {% for id, name in options %}<option value="{{ id }}">{{ name }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-pf"><i class="bi bi-link-45deg"></i> Link Project</button>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if tool %}
+<div class="panel mb-3" style="border-color:var(--pf-border);max-width:640px">
+  <h6><i class="bi bi-plug text-success"></i> Connect {{ tool.label }}</h6>
+  <p class="small text-muted">{{ tool.about }}</p>
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="action" value="connect"><input type="hidden" name="tool" value="{{ tool.tool }}">
+    {% for name, label, placeholder, help in tool.fields %}
+      <div class="mb-2">
+        <label class="form-label small fw-semibold" for="f-{{ name }}">{{ label }} <span class="text-danger">*</span></label>
+        <input id="f-{{ name }}" name="{{ name }}" class="form-control form-control-sm" placeholder="{{ placeholder }}" required autocomplete="off" {% if name == 'token' %}type="password"{% endif %}>
+        <div class="form-text">{{ help }}</div>
+      </div>
+    {% endfor %}
+    {% if tool.fields %}<p class="small text-muted"><i class="bi bi-shield-lock"></i> The token is only used to read data from {{ tool.label }}. It is never shown again on screen.</p>{% endif %}
+    <button class="btn btn-sm btn-pf"><i class="bi bi-box-arrow-in-right"></i> {% if tool.fields %}Connect & Load Projects{% else %}Connect{% endif %}</button>
+    <a href="?" class="btn btn-sm btn-link text-secondary">Cancel</a>
+  </form>
+</div>
+{% endif %}
+
+<div class="panel mb-3">
+  <h6 class="mb-1">Connected tools</h6>
+  <p class="small text-muted">Each connection syncs one project of an external tool into {{ project.name }}. Syncing again updates existing records and never duplicates them.</p>
+  {% for c in connections %}
+  <div class="border rounded-3 p-3 mb-2">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <b>{{ c.get_tool_display }}</b>
+      {% if c.is_linked %}<span class="pill-pf">{{ c.external_name }}</span>
+      {% else %}<span class="badge text-bg-warning">Project not picked</span> <a href="?pick={{ c.pk }}" class="small text-success">Pick project →</a>{% endif %}
+      <span class="small text-muted">{% if c.base_url %}{{ c.base_url }} · {% endif %}{% if c.account %}{{ c.account }} · {% endif %}{% if c.token %}token {{ c.masked_token }}{% endif %}</span>
+      <span class="ms-auto small text-muted">{% if c.last_synced_at %}Last sync {{ c.last_synced_at|date:"d M Y H:i" }} ·
+        <span class="fw-semibold {% if c.last_status == 'Failed' %}text-danger{% elif c.last_status == 'Warning' %}text-warning{% else %}text-success{% endif %}">{{ c.last_status }}</span>{% else %}Never synced{% endif %}</span>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      {% if c.is_linked %}
+      <form method="post" action="{% url 'delivery_sync' project.pk %}">{% csrf_token %}
+        <input type="hidden" name="connection" value="{{ c.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="btn btn-sm btn-pf"><i class="bi bi-arrow-repeat"></i> Sync Now</button></form>
+      {% endif %}
+      {% if c.connector.fields %}<button class="btn btn-sm btn-light border" data-bs-toggle="collapse" data-bs-target="#cred-{{ c.pk }}"><i class="bi bi-key"></i> Connection details</button>{% endif %}
+      <button class="btn btn-sm btn-light border" data-bs-toggle="collapse" data-bs-target="#map-{{ c.pk }}"><i class="bi bi-shuffle"></i> Mapping</button>
+      <a href="{% url 'delivery_section' project.pk 'history' %}" class="btn btn-sm btn-light border"><i class="bi bi-clock-history"></i> History</a>
+      <button class="btn btn-sm btn-outline-danger ms-auto" data-bs-toggle="collapse" data-bs-target="#del-{{ c.pk }}"><i class="bi bi-x-circle"></i> Disconnect</button>
+    </div>
+
+    {% if c.connector.fields %}
+    <div class="collapse" id="cred-{{ c.pk }}"><form method="post" class="mt-3" style="max-width:560px">{% csrf_token %}
+      <input type="hidden" name="action" value="credentials"><input type="hidden" name="connection" value="{{ c.pk }}">
+      {% for name, label, placeholder, help in c.connector.fields %}
+        <label class="form-label small fw-semibold mb-1" for="c{{ c.pk }}-{{ name }}">{{ label }}</label>
+        {% if name == 'token' %}<input id="c{{ c.pk }}-{{ name }}" name="token" type="password" class="form-control form-control-sm mb-2" placeholder="Leave empty to keep the saved token" autocomplete="off">
+        {% elif name == 'base_url' %}<input id="c{{ c.pk }}-{{ name }}" name="base_url" value="{{ c.base_url }}" class="form-control form-control-sm mb-2" required>
+        {% else %}<input id="c{{ c.pk }}-{{ name }}" name="{{ name }}" value="{{ c.account }}" class="form-control form-control-sm mb-2" required>{% endif %}
+      {% endfor %}
+      <button class="btn btn-sm btn-pf">Save</button>
+    </form></div>
+    {% endif %}
+
+    <div class="collapse" id="map-{{ c.pk }}"><form method="post" class="mt-3">{% csrf_token %}
+      <input type="hidden" name="action" value="mapping"><input type="hidden" name="connection" value="{{ c.pk }}">
+      <p class="small text-muted mb-2">{{ c.connector.about }}</p>
+      {% if c.tool == 'clickup' %}
+      <div class="row g-2 mb-2" style="max-width:560px">
+        <div class="col"><label class="form-label small fw-semibold mb-1">Sprint keyword (folder / list name)</label>
+          <input name="sprint_keyword" value="{{ c.mapping.sprint_keyword|default:'sprint' }}" class="form-control form-control-sm"></div>
+        <div class="col"><label class="form-label small fw-semibold mb-1">Release keyword (folder / list name)</label>
+          <input name="release_keyword" value="{{ c.mapping.release_keyword|default:'release' }}" class="form-control form-control-sm"></div>
+      </div>
+      {% endif %}
+      {% if c.type_rows %}
+      <table class="table table-sm align-middle mb-2" style="max-width:560px">
+        <thead><tr><th>{{ c.get_tool_display }} type</th><th>Items</th><th>Shown in BaigNova as</th></tr></thead>
+        <tbody>{% for t in c.type_rows %}<tr><td>{{ t.name }}</td><td>{{ t.count }}</td>
+          <td><select name="type:{{ t.name }}" class="form-select form-select-sm">{% for v, l in kinds %}<option value="{{ v }}" {% if t.kind == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="small text-muted">Item types appear here after the first sync, so you can decide which type is a story, task or bug.</p>{% endif %}
+      <button class="btn btn-sm btn-pf">Save Mapping</button>
+    </form></div>
+
+    <div class="collapse" id="del-{{ c.pk }}"><form method="post" class="mt-3 p-3 rounded-3" style="background:#fef2f2;max-width:560px">{% csrf_token %}
+      <input type="hidden" name="action" value="delete"><input type="hidden" name="connection" value="{{ c.pk }}">
+      <div class="form-check small mb-2"><input class="form-check-input" type="checkbox" name="confirm" value="yes" id="del-ok-{{ c.pk }}" required>
+        <label class="form-check-label" for="del-ok-{{ c.pk }}">Disconnect and delete the releases, sprints and items synced from this connection. Sync history is kept.</label></div>
+      <button class="btn btn-sm btn-danger">Disconnect</button>
+    </form></div>
+  </div>
+  {% empty %}
+  <p class="small text-muted mb-0">No tool connected yet. Choose one below.</p>
+  {% endfor %}
+</div>
+
+<div class="panel">
+  <h6 class="mb-3">Add a connection</h6>
+  <div class="row g-2">
+    {% for t in tools %}
+    <div class="col-sm-6 col-xl-4">
+      <div class="tool-card {% if t.phase > 1 %}off{% endif %}">
+        <div class="d-flex align-items-center mb-1"><b>{{ t.label }}</b>
+          {% if t.phase > 1 %}<span class="badge text-bg-light border ms-auto">Phase 2</span>{% elif t.tool == 'demo' %}<span class="badge text-bg-light border ms-auto">Sample data</span>{% endif %}</div>
+        <div class="small text-muted flex-grow-1">{{ t.about }}</div>
+        {% if t.phase == 1 %}
+          {% if t.fields %}<a href="?tool={{ t.tool }}" class="btn btn-sm btn-outline-pf mt-2">Connect</a>
+          {% else %}<form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="connect"><input type="hidden" name="tool" value="{{ t.tool }}">
+            <button class="btn btn-sm btn-outline-pf w-100">Connect</button></form>{% endif %}
+        {% else %}<button class="btn btn-sm btn-light border mt-2" disabled>Coming in Phase 2</button>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

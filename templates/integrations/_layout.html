@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ project.key }} · External Integrations{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .pf .table { font-size: .84rem; }
+  .pf .table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 600; white-space: nowrap; }
+  .pf .sub-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 12px; padding: 4px; }
+  .pf .sub-tabs a { padding: 6px 14px; border-radius: 9px; font-size: .82rem; color: #475569; text-decoration: none; font-weight: 500; }
+  .pf .sub-tabs a.active { background: #fff; color: var(--pf-dark); font-weight: 600; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+  .pf .st { border-radius: 20px; padding: 2px 10px; font-size: .72rem; font-weight: 600; white-space: nowrap; border: 1px solid; }
+  .pf .st-Passed, .pf .st-success, .pf .st-Success, .pf .st-OK { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+  .pf .st-Failed, .pf .st-failure, .pf .st-failed { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+  .pf .st-Warning { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+  .pf .st-muted { background: #f8fafc; color: #64748b; border-color: #e2e8f0; }
+  .pf .int-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 18px; }
+  .pf .int-card.is-failed { border-color: #fecaca; }
+  .pf .int-card.is-passed { border-color: var(--pf-border); }
+  .pf .int-logo { width: 40px; height: 40px; border-radius: 10px; background: var(--pf-soft); color: var(--pf-dark); border: 1px solid var(--pf-border); display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1rem; flex-shrink: 0; }
+  .pf .mono { font-family: monospace; font-size: .78rem; }
+  .pf .chip { display: inline-flex; align-items: center; gap: 5px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 3px 9px; font-size: .76rem; }
+</style>
+<div class="pf">
+  {% include "portfolio/_header.html" %}
+
+  <div class="pf-head mb-3 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-auto">
+      <div class="pf-eyebrow">Enterprise connectors</div>
+      <h5 class="fw-bold mb-0">External Systems, Projects, Tools &amp; Repositories</h5>
+      <small class="text-muted">Partner systems of {{ project.name }} with connection tests, linked BaigNova projects, project management tools and source repositories.</small>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% block actions %}{% endblock %}
+      <a href="{% url 'delivery_section' project.pk 'integration' %}" class="btn btn-pf"><i class="bi bi-plus-lg"></i> Connect Project Management Tool</a>
+    </div>
+  </div>
+
+  <div class="sub-tabs mb-3">
+    {% for slug, label, icon, n in section_tabs %}
+      <a href="{% url 'integrations_section' project.pk slug %}" class="{% if slug == section or section == 'system' and slug == 'systems' %}active{% endif %}"><i class="bi bi-{{ icon }}"></i> {{ label }} ({{ n }}){% if slug == 'systems' and n_failed %} <span class="badge text-bg-danger">{{ n_failed }} failed</span>{% endif %}</a>
+    {% endfor %}
+  </div>
+
+  {% block body %}{% endblock %}
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "integrations/_layout.html" %}
+{% block actions %}
+  {% if any_left %}<button class="btn btn-outline-pf" data-bs-toggle="collapse" data-bs-target="#linkProject"><i class="bi bi-link-45deg"></i> Link Project</button>{% endif %}
+{% endblock %}
+{% block body %}
+<div class="collapse {% if show_form %}show{% endif %}" id="linkProject"><div class="panel mb-3">
+  <h6><i class="bi bi-link-45deg text-success"></i> Link a project with {{ project.name }}</h6>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="link">
+    <div class="row g-2">
+      <div class="col-md-4">{% include "portfolio/_field.html" with field=form.relation %}</div>
+      <div class="col-md-4">{% include "portfolio/_field.html" with field=form.target %}</div>
+      <div class="col-md-4">{% include "portfolio/_field.html" with field=form.interface %}</div>
+      <div class="col-12">{% include "portfolio/_field.html" with field=form.description %}</div>
+    </div>
+    <div class="small text-muted mb-2">Read it as: <b>{{ project.name }}</b> <i>sends data to / receives data from / exchanges data with</i> the chosen project. The link shows on both projects.</div>
+    <button class="btn btn-sm btn-pf"><i class="bi bi-link-45deg"></i> Link Project</button>
+  </form>
+</div></div>
+
+<div class="panel">
+  <h6><i class="bi bi-link-45deg text-success"></i> Linked projects <span class="small text-muted fw-normal">· projects {{ project.name }} is integrated with (e.g. ACS ↔ PACE, WeBOC, PSW)</span></h6>
+  <div class="row g-3 mt-1">
+    {% for r in rows %}
+    <div class="col-md-6 col-xl-4"><div class="int-card h-100 d-flex flex-column">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="key-chip">{{ project.key }}</span>
+        <span class="small text-muted text-center flex-grow-1">{% if r.relation == 'Sends data to' %}──▶{% elif r.relation == 'Receives data from' %}◀──{% else %}◀──▶{% endif %}<br>{{ r.relation }}</span>
+        <span class="key-chip">{{ r.other.key }}</span>
+      </div>
+      <a href="{% url 'portfolio_workspace' r.other.pk %}" class="fw-bold text-dark text-decoration-none">{{ r.other.name }}</a>
+      <div class="d-flex flex-wrap gap-2 align-items-center small mt-1">
+        <span class="lc lc-{{ r.other.status|slugify }}">{{ r.other.status }}</span>
+        <span class="text-muted">{{ r.other.project_type }}</span>
+      </div>
+      {% if r.link.interface %}<div class="small mt-2"><i class="bi bi-arrow-left-right text-success"></i> {{ r.link.interface }}</div>{% endif %}
+      {% if r.link.description %}<p class="small text-muted mb-0 mt-1">{{ r.link.description }}</p>{% endif %}
+      <div class="d-flex align-items-center gap-2 mt-auto pt-2 small text-muted">
+        <span>Linked {{ r.link.created_at|date:"Y-m-d" }}{% if not r.owned %} from {{ r.other.name }}{% endif %}</span>
+        <a href="{% url 'integrations_section' r.other.pk 'links' %}" class="ms-auto text-success text-decoration-none">Its integrations →</a>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="unlink"><input type="hidden" name="link" value="{{ r.link.pk }}">
+          <button class="btn btn-sm btn-link text-danger p-0" title="Remove link" onclick="return confirm('Remove the link with {{ r.other.name }}? It disappears from both projects.')"><i class="bi bi-x-circle"></i></button></form>
+      </div>
+    </div></div>
+    {% empty %}
+    <div class="col-12 text-center text-muted py-4"><i class="bi bi-link-45deg fs-1"></i>
+      <p class="mt-2 mb-0">No linked projects yet.{% if any_left %} Press <b>Link Project</b> to connect {{ project.name }} with another BaigNova project.{% else %} Create the other projects first.{% endif %}</p></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

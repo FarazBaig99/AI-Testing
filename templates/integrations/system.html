@@ -1,0 +1,59 @@
+{% extends "integrations/_layout.html" %}
+{% block body %}
+<nav class="small mb-2"><a href="{% url 'integrations_section' project.pk 'systems' %}" class="text-success text-decoration-none">← All system integrations</a></nav>
+<div class="int-card mb-3 {% if integration.last_status == 'Failed' %}is-failed{% elif integration.last_status == 'Passed' %}is-passed{% endif %}">
+  <div class="d-flex flex-wrap align-items-center gap-3">
+    <span class="int-logo">{{ integration.name|first|upper }}</span>
+    <div class="flex-grow-1">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <h5 class="fw-bold mb-0">{{ integration.name }}</h5>
+        <span class="st {% if integration.last_status == 'Never tested' %}st-muted{% else %}st-{{ integration.last_status }}{% endif %}">{% if integration.last_status == 'Passed' %}● Connection Passed{% elif integration.last_status == 'Failed' %}● Connection Failed{% else %}Never tested{% endif %}</span>
+      </div>
+      <div class="meta meta-dots d-flex flex-wrap mt-1">
+        <span>Partner: <b>{{ integration.partner_type }}</b></span>
+        <span>Protocol: <b>{{ integration.protocol }}</b></span>
+        <span>Direction: <b>{{ integration.direction }}</b></span>
+        <span>Environment: <b>{{ integration.environment.name|default:"All" }}</b></span>
+        <span>Auth: <b>{{ integration.get_auth_type_display }}{% if integration.auth_secret %} ({{ integration.masked_secret }}){% endif %}</b></span>
+        {% if integration.contact %}<span>Contact: <b>{{ integration.contact }}</b></span>{% endif %}
+      </div>
+      <div class="mono text-break mt-1">{% if integration.is_url %}{{ integration.check_method }} {% endif %}{{ integration.endpoint }}</div>
+      {% if integration.description %}<p class="small text-muted mb-0 mt-1">{{ integration.description }}</p>{% endif %}
+    </div>
+    <div class="d-flex flex-column gap-2">
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="test">
+        <button class="btn btn-pf w-100" onclick="this.disabled=true;this.form.submit();this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Testing...'"><i class="bi bi-plug"></i> Test Connection</button></form>
+      <button class="btn btn-sm btn-outline-pf" data-bs-toggle="collapse" data-bs-target="#editSystem"><i class="bi bi-pencil"></i> Edit</button>
+    </div>
+  </div>
+  {% if integration.last_checked_at %}
+  <div class="row g-2 mt-2">
+    <div class="col-6 col-md-3"><div class="kpi kpi-soft"><small>Last result</small><b class="fs-6 {% if integration.last_status == 'Failed' %}text-danger{% else %}text-success{% endif %}">{{ integration.last_status }}</b></div></div>
+    <div class="col-6 col-md-3"><div class="kpi kpi-soft"><small>HTTP code</small><b class="fs-6">{{ integration.last_code|default:"-" }}</b></div></div>
+    <div class="col-6 col-md-3"><div class="kpi kpi-soft"><small>Response time</small><b class="fs-6">{% if integration.last_ms is not None %}{{ integration.last_ms }} ms{% else %}-{% endif %}</b></div></div>
+    <div class="col-6 col-md-3"><div class="kpi kpi-soft"><small>Tested</small><b class="fs-6">{{ integration.last_checked_at|timesince }} ago</b></div></div>
+    <div class="col-12 small {% if integration.last_status == 'Failed' %}text-danger{% else %}text-muted{% endif %}">{{ integration.last_message }}</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="collapse {% if show_edit %}show{% endif %}" id="editSystem"><div class="panel mb-3">
+  <h6><i class="bi bi-pencil text-success"></i> Edit integration</h6>
+  {% include "integrations/_system_form.html" with action="edit" button="Save" %}
+  <form method="post" class="mt-3 border-top pt-3">{% csrf_token %}<input type="hidden" name="action" value="delete">
+    <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete {{ integration.name }} and its test history?')"><i class="bi bi-trash"></i> Delete integration</button></form>
+</div></div>
+
+<div class="panel">
+  <h6><i class="bi bi-clock-history text-success"></i> Connection test history <span class="small text-muted fw-normal">· last {{ history|length }}</span></h6>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>When</th><th>Result</th><th>HTTP</th><th>Time</th><th>Details</th><th>By</th></tr></thead>
+    <tbody>{% for c in history %}
+      <tr><td class="text-nowrap small">{{ c.checked_at|date:"Y-m-d H:i:s" }}</td>
+        <td><span class="st {% if c.passed %}st-Passed{% else %}st-Failed{% endif %}">{% if c.passed %}Passed{% else %}Failed{% endif %}</span></td>
+        <td>{{ c.code|default:"-" }}</td><td class="text-nowrap">{% if c.ms is not None %}{{ c.ms }} ms{% else %}-{% endif %}</td>
+        <td class="small">{{ c.message }}</td><td class="small">{{ c.checked_by.username|default:"-" }}</td></tr>
+    {% empty %}<tr><td colspan="6" class="small text-muted">Not tested yet. Press Test Connection.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

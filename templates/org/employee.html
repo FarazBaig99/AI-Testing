@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ employee.get_full_name|default:employee.username }} · Org & Team{% endblock %}
+{% block content %}
+<div class="pf">
+  {% with org_tab='employees' %}{% include "org/_head.html" %}{% endwith %}
+  <nav class="small mb-2"><a href="{% url 'org_home' %}" class="text-success text-decoration-none">← All employees</a></nav>
+
+  <div class="panel mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+      <span class="av-lg" style="width:48px;height:48px;font-size:1.1rem">{{ employee.username|first|upper }}</span>
+      <div class="me-auto">
+        <h5 class="fw-bold mb-0">{{ employee.get_full_name|default:employee.username }} {% if not employee.is_active %}<span class="badge text-bg-secondary align-middle">Inactive</span>{% endif %}</h5>
+        <div class="meta meta-dots d-flex flex-wrap">
+          <span>Username: <b>{{ employee.username }}</b></span>
+          <span>Email: <b>{{ employee.email|default:"-" }}</b></span>
+          <span>Job title: <b>{{ employee.profile.job_title|default:"-" }}</b></span>
+          <span>Department: <b>{{ employee.profile.department|default:"-" }}</b></span>
+          <span>Joined: <b>{{ employee.date_joined|date:"Y-m-d" }}</b></span>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-outline-pf" data-bs-toggle="collapse" data-bs-target="#editEmployee"><i class="bi bi-pencil"></i> Edit details</button>
+    </div>
+    <div class="collapse {% if show_edit %}show{% endif %}" id="editEmployee"><form method="post" class="border-top mt-3 pt-3">{% csrf_token %}<input type="hidden" name="action" value="edit">
+      <div class="row g-2">
+        <div class="col-md-4">{% include "portfolio/_field.html" with field=edit_form.first_name %}</div>
+        <div class="col-md-4">{% include "portfolio/_field.html" with field=edit_form.last_name %}</div>
+        <div class="col-md-4">{% include "portfolio/_field.html" with field=edit_form.email %}</div>
+        <div class="col-md-4">{% include "portfolio/_field.html" with field=edit_form.job_title %}</div>
+        <div class="col-md-4">{% include "portfolio/_field.html" with field=edit_form.department %}</div>
+        <div class="col-md-4 d-flex align-items-center"><div class="form-check mt-3">{{ edit_form.is_active }} <label class="form-check-label small" for="{{ edit_form.is_active.id_for_label }}">{{ edit_form.is_active.label }}</label></div></div>
+      </div>
+      <button class="btn btn-sm btn-pf"><i class="bi bi-check-lg"></i> Save</button>
+    </form></div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-xl-8"><div class="panel">
+      <h6><i class="bi bi-shield-lock text-success"></i> Project access <span class="small text-muted fw-normal">· {{ memberships|length }} project{{ memberships|length|pluralize }}</span></h6>
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Project</th><th>Status</th><th style="width:190px">Role / permission</th><th>Since</th><th></th></tr></thead>
+        <tbody>
+        {% for m in memberships %}
+          <tr>
+            <td><span class="key-chip">{{ m.project.key }}</span> <a href="{% url 'portfolio_workspace' m.project.pk 'team' %}" class="text-dark text-decoration-none fw-semibold">{{ m.project.name }}</a></td>
+            <td><span class="lc lc-{{ m.project.status|slugify }}">{{ m.project.status }}</span></td>
+            <td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="role"><input type="hidden" name="member" value="{{ m.pk }}">
+              <select name="role" class="form-select form-select-sm" onchange="this.form.submit()">{% for r in roles %}<option {% if r == m.role %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></form></td>
+            <td class="small text-muted">{{ m.added_at|date:"Y-m-d" }}</td>
+            <td class="text-end"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="remove"><input type="hidden" name="member" value="{{ m.pk }}">
+              <button class="btn btn-sm btn-link text-danger" title="Remove from project" onclick="return confirm('Remove from {{ m.project.name }}?')"><i class="bi bi-person-dash"></i></button></form></td>
+          </tr>
+        {% empty %}<tr><td colspan="5" class="small text-muted">Not in any project yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% if assign_form.fields.project.queryset.exists %}
+      <form method="post" class="row g-2 align-items-end">{% csrf_token %}<input type="hidden" name="action" value="assign">
+        <div class="col-md-6"><label class="form-label small fw-semibold">Give access to project</label>{{ assign_form.project }}</div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Role</label>{{ assign_form.role }}</div>
+        <div class="col-md-2"><button class="btn btn-pf w-100"><i class="bi bi-plus-lg"></i> Add</button></div>
+        {% if assign_form.errors %}<div class="col-12 small text-danger">Select a project this employee is not already in.</div>{% endif %}
+      </form>
+      {% else %}<p class="small text-muted mb-0">Already has access to every project.</p>{% endif %}
+    </div></div>
+    <div class="col-xl-4">{% include "org/_roles.html" %}</div>
+  </div>
+</div>
+{% endblock %}

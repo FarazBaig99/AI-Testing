@@ -1,0 +1,49 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Milestones & Dependencies{% endblock %}
+{% block delivery %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-6"><div class="panel h-100">
+    <div class="d-flex mb-2"><h6 class="mb-0">Project milestones</h6>
+      <a href="{% url 'portfolio_workspace' project.pk 'overview' %}" class="ms-auto small text-success text-decoration-none">Manage →</a></div>
+    <p class="small text-muted">Milestones planned for this project in the Projects module.</p>
+    {% for m in milestones %}
+      <div class="d-flex align-items-center border-bottom py-1 small">
+        {% if m.status == 'Completed' %}<i class="bi bi-check-circle-fill text-success me-2"></i>{% else %}<i class="bi bi-circle me-2 text-muted"></i>{% endif %}
+        <span class="flex-grow-1">{{ m.title }}</span><span class="text-muted me-2">{{ m.target_date|date:"d M Y"|default:"No date" }}</span>
+        <span class="cat {% if m.status == 'Completed' %}cat-done{% elif m.status == 'In Progress' %}cat-in_progress{% else %}cat-todo{% endif %}">{{ m.status }}</span>
+      </div>
+    {% empty %}<p class="small text-muted mb-0">No milestones planned.</p>{% endfor %}
+  </div></div>
+  <div class="col-lg-6"><div class="panel h-100">
+    <h6 class="mb-2">Release milestones</h6>
+    <p class="small text-muted">Release dates from the linked tool.</p>
+    {% for r in release_milestones %}
+      <div class="d-flex align-items-center border-bottom py-1 small">
+        {% if r.status == 'Released' %}<i class="bi bi-check-circle-fill text-success me-2"></i>{% else %}<i class="bi bi-rocket-takeoff me-2 text-muted"></i>{% endif %}
+        <span class="flex-grow-1">{{ r.name }}</span><span class="text-muted me-2">{{ r.release_date|date:"d M Y" }}</span>
+        <span class="me-2 text-muted">{{ r.progress|default:0 }}%</span>
+        <span class="cat {% if r.status == 'Released' %}cat-done{% elif r.status == 'In Progress' %}cat-in_progress{% else %}cat-todo{% endif %}">{{ r.status }}</span>
+      </div>
+    {% empty %}<p class="small text-muted mb-0">No release dates synced yet.</p>{% endfor %}
+  </div></div>
+</div>
+
+<div class="panel">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2"><h6 class="mb-0">Dependencies</h6>
+    {% if at_risk %}<span class="badge text-bg-danger">{{ at_risk }} blocking</span>{% endif %}</div>
+  <p class="small text-muted">Links between items in the linked tool. A dependency is <b>blocking</b> while the item that blocks is not done.</p>
+  {% if dependencies %}
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Item</th><th></th><th>Depends on it</th><th>Sprint</th><th>Risk</th></tr></thead>
+    <tbody>{% for d in dependencies %}
+      <tr>
+        <td><span class="ext-key">{{ d.source.external_key }}</span> {{ d.source.title|truncatechars:50 }} <span class="cat cat-{{ d.source.category }}">{{ d.source.status }}</span></td>
+        <td class="text-muted small text-nowrap">{{ d.get_type_display|lower }} →</td>
+        <td><span class="ext-key">{{ d.target.external_key }}</span> {{ d.target.title|truncatechars:50 }} <span class="cat cat-{{ d.target.category }}">{{ d.target.status }}</span></td>
+        <td class="text-nowrap small">{{ d.target.sprint.name|default:"Backlog" }}</td>
+        <td>{% if d.risk %}<span class="text-danger small fw-semibold"><i class="bi bi-exclamation-triangle-fill"></i> Blocking</span>{% else %}<span class="text-success small"><i class="bi bi-check2"></i> Clear</span>{% endif %}</td>
+      </tr>{% endfor %}
+    </tbody></table></div>
+  {% else %}<p class="small text-muted mb-0">No dependencies synced.</p>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+<div class="panel">
+  <h6><i class="bi bi-shield-check text-success"></i> Roles &amp; permissions</h6>
+  {% for r, text in role_permissions %}
+  <div class="d-flex gap-2 align-items-start py-1"><span class="role role-{{ r|slugify }}">{{ r }}</span><span class="small text-muted">{{ text }}</span></div>
+  {% endfor %}
+  <div class="small text-muted mt-2"><i class="bi bi-info-circle"></i> Roles are saved per project. Blocking actions by role is applied in a later step.</div>
+</div>

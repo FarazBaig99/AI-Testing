@@ -1,0 +1,10 @@
+<tr>
+  <td class="text-nowrap" style="padding-left:calc({{ r.depth|default:0 }} * 1.2rem + 1.4rem)"><span class="ext-key">{{ r.external_key }}</span></td>
+  <td style="padding-left:calc({{ r.depth|default:0 }} * 1rem)">{% if r.depth %}<span class="text-muted">↳</span> {% endif %}{% if r.url %}<a href="{{ r.url }}" target="_blank" rel="noopener" class="text-body text-decoration-none">{{ r.title }}</a>{% else %}{{ r.title }}{% endif %}</td>
+  <td><span class="kind kind-{{ r.kind }}">{% if r.kind == 'subtask' %}Sub-task{% else %}{{ r.get_kind_display }}{% endif %}</span></td>
+  <td><span class="cat cat-{{ r.category }}">{{ r.status|default:r.get_category_display }}</span></td>
+  <td>{% if r.kind == 'story' %}{{ r.qa_status }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+  <td>{% if r.story_points is not None %}{{ r.story_points|floatformat:"-1" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+  <td class="text-nowrap">{{ r.assignee.name|default:"-" }}</td>
+  <td>{% if r.kind == 'bug' and r.severity %}<span class="{% if r.severity == 'Critical' or r.severity == 'High' %}text-danger fw-semibold{% endif %}">{{ r.severity }}</span>{% else %}{{ r.priority|default:"-" }}{% endif %}</td>
+</tr>

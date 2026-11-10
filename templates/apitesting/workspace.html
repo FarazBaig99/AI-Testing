@@ -1,0 +1,858 @@
+{% extends "base.html" %}
+{% block title %}API Testing{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .aw .aw-bar { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 16px; }
+  .aw .proj-chip { border: 1px solid var(--pf-border); background: var(--pf-soft); border-radius: 10px; padding: 4px 6px 4px 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .aw .env-btn { border: 1px solid #cbd5e1; background: #fff; color: #475569; border-radius: 6px; font-size: .75rem; padding: 1px 8px; }
+  .aw .env-btn.on { background: var(--pf); border-color: var(--pf); color: #fff; }
+  .aw .side { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; height: calc(100vh - 210px); min-height: 480px; display: flex; flex-direction: column; }
+  .aw .side-tabs { display: flex; border-bottom: 1px solid #e2e8f0; }
+  .aw .side-tabs button { flex: 1; border: 0; background: none; padding: 10px; font-size: .85rem; font-weight: 600; color: #64748b; border-bottom: 2px solid transparent; }
+  .aw .side-tabs button.active { color: var(--pf-dark); border-bottom-color: var(--pf); }
+  .aw .tree { overflow-y: auto; flex: 1; padding: 6px; font-size: .82rem; }
+  .aw .tree summary { list-style: none; cursor: pointer; padding: 4px 6px; border-radius: 6px; user-select: none; }
+  .aw .tree summary::-webkit-details-marker { display: none; }
+  .aw .tree summary::before { content: '▸'; display: inline-block; width: 12px; color: #94a3b8; transition: transform .1s; }
+  .aw .tree details[open] > summary::before { transform: rotate(90deg); }
+  .aw .tree summary:hover, .aw .tree .req:hover { background: #f1f5f9; }
+  .aw .tree .grp > summary { font-weight: 700; color: #0f172a; }
+  .aw .tree .fold { margin-left: 10px; }
+  .aw .tree .req { display: flex; align-items: center; gap: 6px; padding: 3px 6px 3px 20px; border-radius: 6px; cursor: pointer; }
+  .aw .tree .req.active { background: var(--pf-soft); }
+  .aw .tree .req .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .aw .m { font-size: .62rem; font-weight: 800; width: 44px; flex-shrink: 0; font-family: monospace; }
+  .aw .m-GET { color: #16a34a; } .aw .m-POST { color: #d97706; } .aw .m-PUT { color: #2563eb; }
+  .aw .m-PATCH { color: #7c3aed; } .aw .m-DELETE { color: #dc2626; } .aw .m-HEAD, .aw .m-OPTIONS { color: #64748b; }
+  .aw .main { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; min-height: calc(100vh - 210px); }
+  .aw .url-row .form-select { max-width: 120px; font-weight: 700; font-family: monospace; }
+  .aw .url-row .form-control { font-family: monospace; font-size: .85rem; }
+  .aw .rtabs { display: flex; gap: 2px; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }
+  .aw .rtabs button { border: 0; background: none; padding: 8px 12px; font-size: .82rem; color: #64748b; border-bottom: 2px solid transparent; }
+  .aw .rtabs button.active { color: #0f172a; border-bottom-color: #f97316; font-weight: 600; }
+  .aw .rtabs sup { color: var(--pf); font-weight: 700; }
+  .aw .kv td { padding: 2px 4px; }
+  .aw .kv input.form-control, .aw .kv select { font-size: .8rem; font-family: monospace; }
+  .aw .code { font-family: ui-monospace, Consolas, monospace; font-size: .8rem; }
+  .aw textarea.code { min-height: 220px; tab-size: 2; }
+  .aw .resp-pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; max-height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .aw .j-key { color: #a21caf; } .aw .j-str { color: #15803d; } .aw .j-num { color: #2563eb; } .aw .j-lit { color: #c2410c; }
+  .aw .stat { font-weight: 700; }
+  .aw .stat-2 { color: #16a34a; } .aw .stat-3 { color: #2563eb; } .aw .stat-4 { color: #d97706; } .aw .stat-5, .aw .stat-0 { color: #dc2626; }
+  .aw .ctx { font-size: .75rem; color: #64748b; }
+  .aw .items { min-height: 8px; }
+  .aw .req[draggable=true] { cursor: grab; }
+  .aw .req.dragging { opacity: .4; }
+  .aw .req.drop-before { box-shadow: inset 0 2px 0 var(--pf); }
+  .aw .items.drop-end { box-shadow: inset 0 -2px 0 var(--pf); }
+  .aw summary.drop-into { background: var(--pf-soft); outline: 1px dashed var(--pf); }
+  .aw .req .more { visibility: hidden; }
+  .aw .rename-input { font-size: .82rem; padding: 0 4px; height: 22px; }
+  .aw .req:hover .more, .aw .req.active .more { visibility: visible; }
+  #ctxMenu { position: fixed; z-index: 2000; min-width: 190px; display: none; }
+  #ctxMenu.show { display: block; }
+</style>
+
+<div class="pf aw">
+  <!-- top bar: projects and their environments -->
+  <div class="aw-bar mb-3 d-flex flex-wrap align-items-center gap-2">
+    <div class="me-2">
+      <div class="pf-eyebrow">Quality Engineering</div>
+      <h5 class="fw-bold mb-0"><i class="bi bi-terminal text-success"></i> API Testing</h5>
+    </div>
+    {% for s in selected %}
+    <div class="proj-chip">
+      <b class="small">{{ s.project.name }}</b>
+      {% for e in s.envs %}
+      <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="toggle_env">
+        <input type="hidden" name="project" value="{{ s.project.pk }}"><input type="hidden" name="env" value="{{ e.env.pk }}">
+        <button class="env-btn {% if e.on %}on{% endif %}" title="{{ e.env.base_url }}">{% if e.on %}<i class="bi bi-check"></i>{% endif %}{{ e.env.name }}</button></form>
+      {% empty %}
+      <a href="{% url 'api_environments' s.project.pk %}" class="small text-success">+ Add environment</a>
+      {% endfor %}
+      <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="remove_project"><input type="hidden" name="project" value="{{ s.project.pk }}">
+        <button class="btn btn-sm btn-link text-muted p-0 px-1" title="Remove {{ s.project.name }}"><i class="bi bi-x-lg"></i></button></form>
+    </div>
+    {% endfor %}
+    {% if other_projects %}
+    <div class="dropdown">
+      <button class="btn btn-sm btn-outline-pf dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-plus"></i> {% if selected %}Add Project{% else %}Select Project{% endif %}</button>
+      <ul class="dropdown-menu" style="max-height:320px;overflow:auto">
+        {% for p in other_projects %}
+        <li><form method="post">{% csrf_token %}<input type="hidden" name="action" value="add_project"><input type="hidden" name="project" value="{{ p.pk }}">
+          <button class="dropdown-item small">{{ p.name }}</button></form></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    <a href="{% url 'api_mail_settings' %}" class="btn btn-sm btn-light border ms-auto" title="SMTP server for run reports"><i class="bi bi-envelope-gear"></i> Mail Settings</a>
+    <div class="dropdown">
+      <button class="btn btn-sm btn-pf dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-upload"></i> Import API</button>
+      <ul class="dropdown-menu dropdown-menu-end small">
+        {% for g in groups %}
+        <li><a class="dropdown-item small" href="{% url 'api_import' g.project.pk %}?env={{ g.env.pk }}">{{ g.project.name }} · {{ g.env.name }}</a></li>
+        {% empty %}
+        <li><span class="dropdown-item-text small text-muted">Select a project and environment first</span></li>
+        {% endfor %}
+        {% if selected %}<li><hr class="dropdown-divider"></li><li><h6 class="dropdown-header">Modules &amp; test cases</h6></li>
+        {% for s in selected %}<li><a class="dropdown-item small" href="{% url 'api_home' s.project.pk %}">{{ s.project.name }}</a></li>{% endfor %}{% endif %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <!-- left: APIs and collections -->
+    <div class="col-lg-4 col-xl-3">
+      <div class="side">
+        <div class="side-tabs">
+          <button type="button" data-side="apis" class="{% if tab != 'collections' %}active{% endif %}"><i class="bi bi-plug"></i> APIs</button>
+          <button type="button" data-side="collections" class="{% if tab == 'collections' %}active{% endif %}"><i class="bi bi-collection"></i> Collections <span class="badge text-bg-light border">{{ collections|length }}</span></button>
+        </div>
+        <div class="p-2 border-bottom"><input id="treeSearch" class="form-control form-control-sm" placeholder="Search name, method or path..."></div>
+
+        <div class="tree" id="side-apis" {% if tab == 'collections' %}hidden{% endif %}>
+          {% for g in groups %}
+          <details class="grp" open>
+            <summary>{{ g.project.name }} <span class="key-chip">{{ g.env.name }}</span> <span class="text-muted fw-normal">{{ g.count }}</span></summary>
+            {% for f in g.folders %}
+            <details class="fold">
+              <summary><i class="bi bi-folder2 text-warning"></i> {{ f.name }} <span class="text-muted">{{ f.cases|length }}</span></summary>
+              {% for c in f.cases %}
+              <div class="req" data-case="{{ c.pk }}" data-text="{{ c.method }} {{ c.name|lower }} {{ c.path|lower }}" title="{{ c.method }} {{ c.path }}">
+                <span class="m m-{{ c.method }}">{{ c.method }}</span><span class="nm">{{ c.name }}</span></div>
+              {% endfor %}
+            </details>
+            {% endfor %}
+            {% if not g.folders %}
+            <div class="small text-muted px-3 py-2">No APIs synced in {{ g.env.name }} yet.
+              <a href="{% url 'api_import' g.project.pk %}?env={{ g.env.pk }}" class="text-success">Import APIs →</a></div>
+            {% endif %}
+          </details>
+          {% empty %}
+          <div class="text-center text-muted small p-4"><i class="bi bi-folder2-open fs-2 d-block"></i>
+            {% if selected %}Turn on an environment of the selected project(s) above.{% else %}Select a project above, then pick its environments. Their APIs show here.{% endif %}</div>
+          {% endfor %}
+        </div>
+
+        <div class="tree" id="side-collections" {% if tab != 'collections' %}hidden{% endif %}>
+          <form method="post" class="d-flex gap-1 mb-2 px-1">{% csrf_token %}<input type="hidden" name="action" value="new_collection">
+            <input name="name" class="form-control form-control-sm" placeholder="New collection name" required maxlength="200">
+            <button class="btn btn-sm btn-pf text-nowrap"><i class="bi bi-plus"></i> New</button></form>
+          {% for col in collections %}
+          <details class="grp col" data-collection="{{ col.pk }}" data-name="{{ col.name }}" {% if open_item or col.pk|stringformat:'d' == open_collection %}open{% endif %}>
+            <summary class="d-flex align-items-center"><span class="flex-grow-1"><i class="bi bi-collection text-success"></i> <span class="col-name">{{ col.name }}</span> <span class="text-muted fw-normal">{{ col.requests.all|length }}</span></span>
+              <form method="post" class="d-inline" onclick="event.stopPropagation()">{% csrf_token %}<input type="hidden" name="action" value="add_request"><input type="hidden" name="collection" value="{{ col.pk }}">
+                <button class="btn btn-sm btn-link text-success p-0 px-1" title="Add a new GET request"><i class="bi bi-plus-lg"></i></button></form>
+              <a href="{% url 'api_collection_run' col.pk %}" class="btn btn-sm btn-link text-success p-0 px-1" title="Run collection" onclick="event.stopPropagation()"><i class="bi bi-play-circle"></i></a>
+              <button type="button" class="btn btn-sm btn-link text-success p-0 px-1 add-apis" title="Add APIs from the APIs section" data-collection="{{ col.pk }}" data-name="{{ col.name }}" onclick="event.preventDefault();event.stopPropagation()"><i class="bi bi-plug"></i> <span class="small">APIs</span></button>
+              <span class="dropdown" onclick="event.stopPropagation()">
+                <button type="button" class="btn btn-sm btn-link text-muted p-0 px-1" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button>
+                <div class="dropdown-menu dropdown-menu-end p-2" style="min-width:230px">
+                  <form method="post" class="d-flex gap-1 mb-2">{% csrf_token %}<input type="hidden" name="action" value="rename_collection"><input type="hidden" name="collection" value="{{ col.pk }}">
+                    <input name="name" value="{{ col.name }}" class="form-control form-control-sm" required><button class="btn btn-sm btn-light border">Rename</button></form>
+                  <a href="{% url 'api_collection_run' col.pk %}" class="btn btn-sm btn-pf w-100 mb-2"><i class="bi bi-play-fill"></i> Run collection</a>
+                  <form method="post" class="mb-2">{% csrf_token %}<input type="hidden" name="action" value="duplicate_collection"><input type="hidden" name="collection" value="{{ col.pk }}">
+                    <button class="btn btn-sm btn-light border w-100"><i class="bi bi-copy"></i> Duplicate collection</button></form>
+                  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete_collection"><input type="hidden" name="collection" value="{{ col.pk }}">
+                    <button class="btn btn-sm btn-outline-danger w-100" onclick="return confirm('Delete collection {{ col.name|escapejs }} and its {{ col.requests.all|length }} saved requests?')"><i class="bi bi-trash"></i> Delete collection</button></form>
+                </div>
+              </span></summary>
+            <div class="items">
+            {% for r in col.requests.all %}
+            <div class="req" draggable="true" data-item="{{ r.pk }}" data-name="{{ r.name }}" data-text="{{ r.method }} {{ r.name|lower }} {{ r.url|lower }}" title="Drag to change the order or move to another collection. Right-click for options.">
+              <span class="text-muted small num" style="width:16px">{{ forloop.counter }}</span><span class="m m-{{ r.method }}">{{ r.method }}</span><span class="nm">{{ r.name }}</span>
+              {% if r.last_status %}<span class="stat stat-{{ r.last_status|stringformat:'d'|first }} small">{{ r.last_status }}</span>{% endif %}
+              <button type="button" class="btn btn-sm btn-link text-muted p-0 more" title="More options"><i class="bi bi-three-dots"></i></button>
+            </div>
+            {% endfor %}
+            <div class="small text-muted px-3 py-1 empty-note" {% if col.requests.all %}hidden{% endif %}>Empty. Drop a request here, press Press <i class="bi bi-plus-lg"></i> for a new request or <i class="bi bi-plug"></i> APIs to add synced APIs.</div>
+            </div>
+          </details>
+          {% empty %}
+          <div class="text-center text-muted small p-3"><i class="bi bi-collection fs-2 d-block"></i>No collections yet. Create one above.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- right: request builder + response -->
+    <div class="col-lg-8 col-xl-9">
+      <div class="main p-3">
+        <div id="emptyState" class="text-center text-muted py-5">
+          <i class="bi bi-send fs-1 text-success"></i>
+          <h6 class="mt-2">Pick an API on the left</h6>
+          <p class="small mb-3">Its method, URL and request payload fill in automatically. Change the values and press <b>Send</b>.</p>
+          <button type="button" class="btn btn-sm btn-outline-pf" id="newRequest"><i class="bi bi-plus"></i> Blank request</button>
+        </div>
+
+        <div id="builder" hidden>
+          <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <h6 class="fw-bold mb-0" id="reqName">Request</h6>
+            <span class="ctx" id="reqCtx"></span>
+          </div>
+          <div class="input-group url-row mb-1">
+            <select id="method" class="form-select">{% for m in methods %}<option>{{ m }}</option>{% endfor %}</select>
+            <input id="url" class="form-control" placeholder="Enter URL, e.g. {% templatetag openvariable %}baseUrl{% templatetag closevariable %}/api/v1/items" spellcheck="false">
+            <button class="btn btn-primary px-4" id="sendBtn"><i class="bi bi-send"></i> Send</button>
+            <button class="btn btn-outline-secondary" id="saveBtn"><i class="bi bi-floppy"></i> Save</button>
+          </div>
+          <div class="ctx mb-2" id="baseHint"></div>
+
+          <div class="rtabs mb-2" id="reqTabs">
+            <button type="button" data-tab="params" class="active">Params <sup id="cnt-params"></sup></button>
+            <button type="button" data-tab="auth">Authorization</button>
+            <button type="button" data-tab="headers">Headers <sup id="cnt-headers"></sup></button>
+            <button type="button" data-tab="body">Body <sup id="cnt-body"></sup></button>
+            <button type="button" data-tab="settings">Settings</button>
+          </div>
+
+          <div data-pane="params"><div class="small text-muted mb-1">Query Params</div><table class="table table-sm kv mb-0" id="kv-params"></table></div>
+
+          <div data-pane="auth" hidden>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold">Auth Type</label>
+                <select id="authType" class="form-select form-select-sm">
+                  <option value="none">No Auth</option><option value="bearer">Bearer Token</option>
+                  <option value="basic">Basic Auth</option><option value="apikey">API Key</option>
+                </select>
+                <div class="small text-muted mt-2">The authorization header is generated when you send the request.</div>
+              </div>
+              <div class="col-md-8">
+                <div data-auth="none" class="small text-muted pt-4">This request does not use any authorization.</div>
+                <div data-auth="bearer" hidden><label class="form-label small fw-semibold">Token</label><input id="authToken" type="password" class="form-control form-control-sm code" autocomplete="off"></div>
+                <div data-auth="basic" hidden>
+                  <label class="form-label small fw-semibold">Username</label><input id="authUser" class="form-control form-control-sm mb-2" autocomplete="off">
+                  <label class="form-label small fw-semibold">Password</label><input id="authPass" type="password" class="form-control form-control-sm" autocomplete="new-password"></div>
+                <div data-auth="apikey" hidden>
+                  <label class="form-label small fw-semibold">Key</label><input id="authKey" class="form-control form-control-sm mb-2 code" placeholder="x-api-key">
+                  <label class="form-label small fw-semibold">Value</label><input id="authValue" type="password" class="form-control form-control-sm mb-2 code" autocomplete="off">
+                  <label class="form-label small fw-semibold">Add to</label>
+                  <select id="authAddTo" class="form-select form-select-sm"><option value="header">Header</option><option value="query">Query Params</option></select></div>
+              </div>
+            </div>
+          </div>
+
+          <div data-pane="headers" hidden><table class="table table-sm kv mb-0" id="kv-headers"></table></div>
+
+          <div data-pane="body" hidden>
+            <div class="d-flex flex-wrap align-items-center gap-3 mb-2 small">
+              {% for value, label in body_modes %}
+              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="bodyMode" value="{{ value }}">{{ label }}</label>
+              {% endfor %}
+              <select id="rawLang" class="form-select form-select-sm w-auto" hidden>{% for value, label in raw_languages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+              <button type="button" class="btn btn-sm btn-link text-success p-0" id="beautify" hidden>Beautify</button>
+            </div>
+            <div data-body="none" class="small text-muted py-3">This request does not have a body.</div>
+            <div data-body="form-data" hidden><table class="table table-sm kv mb-0" id="kv-form"></table></div>
+            <div data-body="urlencoded" hidden><table class="table table-sm kv mb-0" id="kv-urlenc"></table></div>
+            <div data-body="raw" hidden><textarea id="rawBody" class="form-control code" spellcheck="false"></textarea></div>
+            <div data-body="binary" hidden><input type="file" id="binaryFile" class="form-control form-control-sm"><div class="small text-muted mt-1">The file is sent as the request body. It is not saved with the request.</div></div>
+            <div data-body="graphql" hidden><div class="row g-2">
+              <div class="col-md-7"><label class="small fw-semibold">Query</label><textarea id="gqlQuery" class="form-control code" spellcheck="false" placeholder="query { ... }"></textarea></div>
+              <div class="col-md-5"><label class="small fw-semibold">GraphQL Variables (JSON)</label><textarea id="gqlVars" class="form-control code" spellcheck="false" placeholder="{ }"></textarea></div>
+            </div></div>
+          </div>
+
+          <div data-pane="settings" hidden>
+            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="verifySsl" checked>
+              <label class="form-check-label small" for="verifySsl">Enable SSL certificate verification</label></div>
+            <div class="small text-muted mb-3">Turn off only for test servers with self-signed certificates.</div>
+            <label class="form-label small fw-semibold">Expected status code (collection runs)</label>
+            <input type="number" id="expectedStatus" min="100" max="599" class="form-control form-control-sm" style="max-width:160px" placeholder="any 2xx">
+            <div class="small text-muted">A collection run marks this request Passed when it returns this code. Empty = any 2xx.</div>
+          </div>
+
+          <!-- response -->
+          <div class="border-top mt-3 pt-2">
+            <div class="d-flex flex-wrap align-items-center gap-3 mb-1">
+              <div class="rtabs border-0" id="respTabs">
+                <button type="button" data-rtab="body" class="active">Body</button>
+                <button type="button" data-rtab="headers">Headers <sup id="cnt-rh"></sup></button>
+              </div>
+              <div class="ms-auto small" id="respMeta"></div>
+            </div>
+            <div id="respEmpty" class="text-center text-muted small py-4"><i class="bi bi-arrow-up-circle"></i> Press <b>Send</b> to get a response.</div>
+            <div id="respError" class="alert alert-danger small" hidden></div>
+            <div id="respBody" hidden>
+              <div class="d-flex align-items-center gap-2 mb-1 small">
+                <div class="btn-group btn-group-sm" id="viewMode">
+                  <button type="button" class="btn btn-light border active" data-view="pretty">Pretty</button>
+                  <button type="button" class="btn btn-light border" data-view="raw">Raw</button>
+                  <button type="button" class="btn btn-light border" data-view="preview">Preview</button>
+                </div>
+                <select id="respLang" class="form-select form-select-sm w-auto">
+                  <option value="json">JSON</option><option value="xml">XML</option><option value="html">HTML</option>
+                  <option value="javascript">JavaScript</option><option value="text">Text</option></select>
+                <button type="button" class="btn btn-sm btn-light border ms-auto" id="copyResp"><i class="bi bi-clipboard"></i> Copy</button>
+              </div>
+              <pre class="resp-pre code" id="respPre"></pre>
+              <iframe id="respFrame" sandbox="" class="w-100 border rounded" style="height:420px" hidden></iframe>
+            </div>
+            <div id="respHeaders" hidden><table class="table table-sm small mb-0"><tbody id="respHeaderRows"></tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- right-click / "..." menu for requests and collections -->
+<div id="ctxMenu" class="dropdown-menu shadow small"></div>
+<form method="post" id="ctxForm" hidden>{% csrf_token %}<input type="hidden" name="action"><input type="hidden" name="item"><input type="hidden" name="collection"></form>
+
+<!-- add APIs to a collection, in the order they are picked -->
+<div class="modal fade" id="apisModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-plug text-success"></i> Add APIs to <span id="apisColName"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="p-2 border-bottom"><input id="apisSearch" class="form-control form-control-sm" placeholder="Search name, method or path...">
+    <div class="small text-muted mt-1">APIs are added in the order you tick them (1, 2, 3...). That is their order in the collection.</div></div>
+  <div class="modal-body tree p-2" style="height:55vh">
+    {% for g in groups %}
+    <details class="grp" open>
+      <summary>{{ g.project.name }} <span class="key-chip">{{ g.env.name }}</span> <span class="text-muted fw-normal">{{ g.count }}</span></summary>
+      {% for f in g.folders %}
+      <details class="fold">
+        <summary><i class="bi bi-folder2 text-warning"></i> {{ f.name }} <span class="text-muted">{{ f.cases|length }}</span></summary>
+        {% for c in f.cases %}
+        <label class="req pick" data-text="{{ c.method }} {{ c.name|lower }} {{ c.path|lower }}" title="{{ c.method }} {{ c.path }}">
+          <input type="checkbox" class="form-check-input m-0" value="{{ c.pk }}"><span class="badge rounded-pill text-bg-success order" hidden></span>
+          <span class="m m-{{ c.method }}">{{ c.method }}</span><span class="nm">{{ c.name }}</span></label>
+        {% endfor %}
+      </details>
+      {% endfor %}
+      {% if not g.folders %}<div class="small text-muted px-3 py-2">No APIs synced in {{ g.env.name }} yet.</div>{% endif %}
+    </details>
+    {% empty %}
+    <div class="text-center text-muted small p-4">Select a project and its environments at the top first. Their APIs show here.</div>
+    {% endfor %}
+  </div>
+  <form method="post" class="modal-footer">{% csrf_token %}<input type="hidden" name="action" value="add_apis">
+    <input type="hidden" name="collection" id="apisCollection"><input type="hidden" name="cases" id="apisCases">
+    <span class="small text-muted me-auto"><b id="apisCount">0</b> selected</span>
+    <button type="button" class="btn btn-sm btn-light border" id="apisClear">Clear</button>
+    <button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Cancel</button>
+    <button class="btn btn-sm btn-pf" id="apisAdd" disabled><i class="bi bi-plus"></i> Add to collection</button>
+  </form>
+</div></div></div>
+
+<!-- save to collection -->
+<div class="modal fade" id="saveModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content pf">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-floppy text-success"></i> Save request</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <label class="form-label small fw-semibold">Request name</label>
+    <input id="saveName" class="form-control form-control-sm mb-3" maxlength="600">
+    <label class="form-label small fw-semibold">Save to collection</label>
+    <select id="saveCollection" class="form-select form-select-sm mb-2">
+      {% for col in collections %}<option value="{{ col.pk }}">{{ col.name }}</option>{% endfor %}
+      <option value="">+ New collection...</option>
+    </select>
+    <input id="saveNewCollection" class="form-control form-control-sm" placeholder="New collection name" maxlength="200" {% if collections %}hidden{% endif %}>
+    <div class="small text-danger mt-2" id="saveError"></div>
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Cancel</button>
+    <button type="button" class="btn btn-sm btn-pf" id="saveConfirm">Save</button></div>
+</div></div></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const CSRF = '{{ csrf_token }}';
+  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', rename: '{% url "api_ws_rename" %}',
+                page: '{% url "api_workspace" %}'};
+  const $ = id => document.getElementById(id);
+  let current = null;        // loaded spec (case / item / blank)
+  let lastResponse = null;
+
+  // ---------- left panel ----------
+  document.querySelectorAll('[data-side]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-side]').forEach(x => x.classList.toggle('active', x === b));
+    $('side-apis').hidden = b.dataset.side !== 'apis';
+    $('side-collections').hidden = b.dataset.side !== 'collections';
+    $('treeSearch').dispatchEvent(new Event('input'));
+  }));
+  $('treeSearch').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('.side .tree .req').forEach(r => r.hidden = q && !r.dataset.text.includes(q));
+    document.querySelectorAll('.side .tree details.fold, .side .tree details.grp').forEach(d => {
+      if (!q) return;
+      const any = [...d.querySelectorAll('.req')].some(r => !r.hidden);
+      d.open = any;
+    });
+  });
+  document.querySelectorAll('.side .tree .req').forEach(r => r.addEventListener('click', () => {
+    document.querySelectorAll('.side .tree .req.active').forEach(x => x.classList.remove('active'));
+    r.classList.add('active');
+    load(r.dataset.item ? `item=${r.dataset.item}` : `case=${r.dataset.case}`);
+  }));
+
+  // ---------- add APIs popup (picked order = order in the collection) ----------
+  const apisModal = new bootstrap.Modal($('apisModal'));
+  let picked = [];
+  function renderPicked() {
+    document.querySelectorAll('#apisModal .pick').forEach(l => {
+      const cb = l.querySelector('input'), i = picked.indexOf(cb.value), badge = l.querySelector('.order');
+      cb.checked = i >= 0; badge.hidden = i < 0; badge.textContent = i + 1;
+      l.classList.toggle('active', i >= 0);
+    });
+    $('apisCount').textContent = picked.length;
+    $('apisCases').value = picked.join(',');
+    $('apisAdd').disabled = !picked.length;
+  }
+  document.querySelectorAll('#apisModal .pick input').forEach(cb => cb.addEventListener('change', () => {
+    picked = cb.checked ? picked.concat(cb.value) : picked.filter(v => v !== cb.value);
+    renderPicked();
+  }));
+  $('apisClear').addEventListener('click', () => { picked = []; renderPicked(); });
+  document.querySelectorAll('.add-apis').forEach(b => b.addEventListener('click', () => {
+    $('apisCollection').value = b.dataset.collection;
+    $('apisColName').textContent = b.dataset.name;
+    picked = []; renderPicked();
+    apisModal.show();
+  }));
+  $('apisSearch').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#apisModal .pick').forEach(r => r.hidden = q && !r.dataset.text.includes(q));
+    if (q) document.querySelectorAll('#apisModal details').forEach(d => d.open = [...d.querySelectorAll('.pick')].some(r => !r.hidden));
+  });
+
+  // ---------- context menu (right-click or "...") ----------
+  const ctx = $('ctxMenu');
+  function post(action, field, id) {
+    const f = $('ctxForm');
+    f.action.value = action; f.item.value = field === 'item' ? id : ''; f.collection.value = field === 'collection' ? id : '';
+    f.submit();
+  }
+  function openMenu(x, y, entries) {
+    ctx.innerHTML = '';
+    entries.forEach(e => {
+      if (e === '-') { ctx.insertAdjacentHTML('beforeend', '<hr class="dropdown-divider">'); return; }
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = `dropdown-item ${e.danger ? 'text-danger' : ''}`;
+      b.innerHTML = `<i class="bi bi-${e.icon} me-2"></i>${e.label}`;
+      b.addEventListener('click', () => { closeMenu(); e.run(); });
+      ctx.appendChild(b);
+    });
+    ctx.classList.add('show');
+    ctx.style.left = Math.min(x, window.innerWidth - ctx.offsetWidth - 8) + 'px';
+    ctx.style.top = Math.min(y, window.innerHeight - ctx.offsetHeight - 8) + 'px';
+  }
+  function closeMenu() { ctx.classList.remove('show'); }
+  document.addEventListener('click', e => { if (!ctx.contains(e.target)) closeMenu(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+  window.addEventListener('scroll', closeMenu, true);
+  function itemMenu(row, x, y) {
+    const name = row.dataset.name, col = row.closest('details.col').dataset.name;
+    openMenu(x, y, [
+      {icon: 'box-arrow-up-right', label: 'Open', run: () => row.click()},
+      {icon: 'pencil', label: 'Rename', run: () => renameInline(row.querySelector('.nm'), 'item', row.dataset.item, row)},
+      {icon: 'copy', label: 'Duplicate', run: () => post('duplicate_item', 'item', row.dataset.item)},
+      '-',
+      {icon: 'trash', label: 'Delete', danger: true,
+       run: () => confirm(`Remove "${name}" from ${col}?`) && post('delete_item', 'item', row.dataset.item)},
+    ]);
+  }
+  function collectionMenu(d, x, y) {
+    openMenu(x, y, [
+      {icon: 'play-fill', label: 'Run collection', run: () => window.location = `${URLS.page}collections/${d.dataset.collection}/run/`},
+      {icon: 'calendar-event', label: 'Schedules & history', run: () => window.location = `${URLS.page}collections/${d.dataset.collection}/run/?tab=schedules`},
+      '-',
+      {icon: 'plus-lg', label: 'Add new request', run: () => post('add_request', 'collection', d.dataset.collection)},
+      {icon: 'plug', label: 'Add APIs', run: () => d.querySelector('.add-apis').click()},
+      {icon: 'pencil', label: 'Rename', run: () => renameInline(d.querySelector('.col-name'), 'collection', d.dataset.collection, d)},
+      {icon: 'copy', label: 'Duplicate collection', run: () => post('duplicate_collection', 'collection', d.dataset.collection)},
+      '-',
+      {icon: 'trash', label: 'Delete collection', danger: true,
+       run: () => confirm(`Delete collection ${d.dataset.name} and its saved requests?`) && post('delete_collection', 'collection', d.dataset.collection)},
+    ]);
+  }
+  document.querySelectorAll('details.col').forEach(d => {
+    d.querySelector('summary').addEventListener('contextmenu', e => { e.preventDefault(); collectionMenu(d, e.clientX, e.clientY); });
+  });
+  document.querySelectorAll('details.col .req').forEach(row => {
+    row.addEventListener('contextmenu', e => { e.preventDefault(); itemMenu(row, e.clientX, e.clientY); });
+    row.querySelector('.more').addEventListener('click', e => {
+      e.stopPropagation();
+      const r = e.currentTarget.getBoundingClientRect();
+      itemMenu(row, r.left, r.bottom + 2);
+    });
+  });
+
+  // ---------- inline rename (menu "Rename" or double-click the name) ----------
+  function renameInline(label, kind, id, holder) {
+    const old = label.textContent;
+    const input = document.createElement('input');
+    input.className = 'form-control form-control-sm rename-input flex-grow-1';
+    input.value = old; input.maxLength = kind === 'collection' ? 200 : 600;
+    label.hidden = true; label.after(input);
+    if (holder.draggable) holder.draggable = false;          // let the mouse select text
+    input.focus(); input.select();
+    let done = false;
+    const finish = async save => {
+      if (done) return; done = true;
+      const name = input.value.trim();
+      input.remove(); label.hidden = false;
+      if (kind === 'item') holder.draggable = true;
+      if (!save || !name || name === old) return;
+      label.textContent = name;
+      const res = await fetch(URLS.rename, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+                                            body: JSON.stringify({kind, id, name})});
+      const out = res.ok ? await res.json() : {ok: false};
+      if (!out.ok) { label.textContent = old; return; }
+      label.textContent = out.name;
+      holder.dataset.name = out.name;
+      if (kind === 'item') {
+        holder.dataset.text = holder.dataset.text.replace(old.toLowerCase(), out.name.toLowerCase());
+        if (current && String(current.item) === String(id)) { current.name = out.name; $('reqName').textContent = out.name; }
+      } else {
+        holder.querySelector('.add-apis').dataset.name = out.name;
+        if (current && String(current.collection) === String(id)) current.collection_name = out.name;
+      }
+    };
+    ['click', 'mousedown', 'keyup'].forEach(ev => input.addEventListener(ev, e => e.stopPropagation()));
+    input.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+  document.querySelectorAll('details.col').forEach(d => {
+    d.querySelector('.col-name').addEventListener('dblclick', e => {
+      e.preventDefault(); e.stopPropagation();
+      renameInline(e.currentTarget, 'collection', d.dataset.collection, d);
+    });
+    d.querySelectorAll('.req .nm').forEach(nm => nm.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const row = nm.closest('.req');
+      renameInline(nm, 'item', row.dataset.item, row);
+    }));
+  });
+
+  // ---------- drag and drop: reorder, or move into another collection ----------
+  let dragged = null;
+  function clearMarks() {
+    document.querySelectorAll('.drop-before, .drop-end, .drop-into').forEach(el => el.classList.remove('drop-before', 'drop-end', 'drop-into'));
+  }
+  function dropSpot(items, y) {
+    // the first row whose middle is below the cursor; null = end of the list
+    return [...items.querySelectorAll('.req:not(.dragging)')].find(r => {
+      const b = r.getBoundingClientRect();
+      return y < b.top + b.height / 2;
+    }) || null;
+  }
+  function renumber(d) {
+    const rows = d.querySelectorAll('.items .req');
+    rows.forEach((r, i) => r.querySelector('.num').textContent = i + 1);
+    d.querySelector('summary .text-muted.fw-normal').textContent = rows.length;
+    d.querySelector('.empty-note').hidden = rows.length > 0;
+  }
+  document.querySelectorAll('details.col .req').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragged = row; row.classList.add('dragging'); closeMenu();
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.dataset.item);
+    });
+    row.addEventListener('dragend', () => { row.classList.remove('dragging'); dragged = null; clearMarks(); });
+  });
+  document.querySelectorAll('details.col').forEach(d => {
+    const items = d.querySelector('.items'), summary = d.querySelector('summary');
+    items.addEventListener('dragover', e => {
+      if (!dragged) return;
+      e.preventDefault(); clearMarks();
+      const spot = dropSpot(items, e.clientY);
+      spot ? spot.classList.add('drop-before') : items.classList.add('drop-end');
+    });
+    summary.addEventListener('dragover', e => { if (!dragged) return; e.preventDefault(); clearMarks(); summary.classList.add('drop-into'); });
+    [items, summary].forEach(zone => zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) clearMarks(); }));
+    const drop = async (e, before) => {
+      if (!dragged) return;
+      e.preventDefault(); clearMarks();
+      const row = dragged, from = row.closest('details.col');
+      if (before === row) return;
+      items.insertBefore(row, before || items.querySelector('.empty-note'));
+      d.open = true;
+      renumber(d); if (from !== d) renumber(from);
+      const res = await fetch(URLS.move, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+        body: JSON.stringify({item: row.dataset.item, collection: d.dataset.collection, before: before ? before.dataset.item : null})});
+      if (!res.ok || !(await res.json()).ok) window.location.reload();   // put the list back as the server has it
+    };
+    items.addEventListener('drop', e => drop(e, dropSpot(items, e.clientY)));
+    summary.addEventListener('drop', e => drop(e, null));
+  });
+
+  // ---------- key / value tables ----------
+  function kvTable(table, withType) {
+    const body = document.createElement('tbody');
+    table.innerHTML = `<thead><tr class="small text-muted"><th style="width:28px"></th><th>Key</th>${withType ? '<th style="width:90px"></th>' : ''}<th>Value</th><th style="width:28px"></th></tr></thead>`;
+    table.appendChild(body);
+    const api = {
+      add(row = {}) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><input type="checkbox" class="form-check-input mt-2 en"></td>
+          <td><input class="form-control form-control-sm k" placeholder="Key"></td>
+          ${withType ? '<td><select class="form-select form-select-sm t"><option value="text">Text</option><option value="file">File</option></select></td>' : ''}
+          <td><input class="form-control form-control-sm v" placeholder="Value"><input type="file" class="form-control form-control-sm f" hidden></td>
+          <td><button type="button" class="btn btn-sm btn-link text-muted p-0 mt-1 del"><i class="bi bi-trash"></i></button></td>`;
+        tr.querySelector('.en').checked = row.enabled !== false;
+        tr.querySelector('.k').value = row.key || '';
+        tr.querySelector('.v').value = row.value || '';
+        if (withType) {
+          const t = tr.querySelector('.t');
+          t.value = row.type === 'file' ? 'file' : 'text';
+          const sync = () => { tr.querySelector('.v').hidden = t.value === 'file'; tr.querySelector('.f').hidden = t.value !== 'file'; };
+          t.addEventListener('change', sync); sync();
+        }
+        tr.querySelector('.del').addEventListener('click', () => { tr.remove(); api.ensureBlank(); api.changed(); });
+        tr.querySelectorAll('input,select').forEach(i => i.addEventListener('input', () => {
+          if (i.classList.contains('k') || i.classList.contains('v')) tr.querySelector('.en').checked ||= tr === body.lastElementChild;
+          api.ensureBlank(); api.changed();
+        }));
+        tr.querySelector('.en').addEventListener('change', () => api.changed());
+        body.appendChild(tr);
+      },
+      ensureBlank() {
+        const last = body.lastElementChild;
+        if (!last || last.querySelector('.k').value || last.querySelector('.v').value) api.add({enabled: false});
+      },
+      set(rows) { body.innerHTML = ''; (rows || []).forEach(r => api.add(r)); api.ensureBlank(); },
+      get() {
+        return [...body.children].map(tr => ({
+          key: tr.querySelector('.k').value, value: tr.querySelector('.v').value,
+          enabled: tr.querySelector('.en').checked,
+          ...(withType ? {type: tr.querySelector('.t').value} : {}),
+        })).filter(r => r.key.trim() || r.value.trim());
+      },
+      files() { return [...body.children].map(tr => withType && tr.querySelector('.t').value === 'file' ? tr.querySelector('.f').files[0] : null); },
+      changed() {},
+    };
+    return api;
+  }
+  const kv = {params: kvTable($('kv-params')), headers: kvTable($('kv-headers')),
+              form: kvTable($('kv-form'), true), urlenc: kvTable($('kv-urlenc'))};
+
+  // params table <-> URL query string (like Postman)
+  kv.params.changed = () => {
+    const base = $('url').value.split('?')[0];
+    const q = kv.params.get().filter(p => p.enabled && p.key.trim()).map(p => `${p.key}=${p.value}`).join('&');
+    $('url').value = q ? `${base}?${q}` : base;
+    counts();
+  };
+  $('url').addEventListener('input', () => {
+    const [, query = ''] = $('url').value.split(/\?(.*)/s);
+    const disabled = kv.params.get().filter(p => !p.enabled);
+    const rows = query ? query.split('&').filter(Boolean).map(pair => {
+      const i = pair.indexOf('=');
+      return {key: i < 0 ? pair : pair.slice(0, i), value: i < 0 ? '' : pair.slice(i + 1), enabled: true};
+    }) : [];
+    kv.params.set(rows.concat(disabled));
+    counts();
+  });
+  kv.headers.changed = kv.form.changed = kv.urlenc.changed = () => counts();
+
+  // ---------- request tabs ----------
+  document.querySelectorAll('#reqTabs [data-tab]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#reqTabs [data-tab]').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== b.dataset.tab);
+  }));
+  $('authType').addEventListener('change', () =>
+    document.querySelectorAll('[data-auth]').forEach(d => d.hidden = d.dataset.auth !== $('authType').value));
+  function bodyMode() { return (document.querySelector('input[name=bodyMode]:checked') || {}).value || 'none'; }
+  function showBody() {
+    const mode = bodyMode();
+    document.querySelectorAll('[data-body]').forEach(d => d.hidden = d.dataset.body !== mode);
+    $('rawLang').hidden = mode !== 'raw';
+    $('beautify').hidden = !(mode === 'raw' && $('rawLang').value === 'json');
+    counts();
+  }
+  document.querySelectorAll('input[name=bodyMode]').forEach(r => r.addEventListener('change', showBody));
+  $('rawLang').addEventListener('change', showBody);
+  $('beautify').addEventListener('click', () => {
+    try { $('rawBody').value = JSON.stringify(JSON.parse($('rawBody').value), null, 2); }
+    catch (e) { alertInline('Body is not valid JSON: ' + e.message); }
+  });
+  $('method').addEventListener('change', colorMethod);
+  function colorMethod() { $('method').className = `form-select m-${$('method').value}`; }
+  function counts() {
+    const n = rows => rows.filter(r => r.enabled && r.key.trim()).length || '';
+    $('cnt-params').textContent = n(kv.params.get());
+    $('cnt-headers').textContent = n(kv.headers.get());
+    $('cnt-body').textContent = bodyMode() !== 'none' ? '●' : '';
+  }
+
+  // ---------- load / collect ----------
+  function fill(spec) {
+    current = spec;
+    $('emptyState').hidden = true; $('builder').hidden = false;
+    $('reqName').textContent = spec.name || 'Untitled Request';
+    const where = [spec.collection_name && `<i class="bi bi-collection"></i> ${esc(spec.collection_name)}`,
+                   spec.project_name && `${esc(spec.project_name)} · ${esc(spec.environment_name || 'no environment')}`].filter(Boolean);
+    $('reqCtx').innerHTML = where.join(' &nbsp;|&nbsp; ') + (spec.kind === 'case' ? ' &nbsp;<span class="badge text-bg-light border">synced API (not saved)</span>' : '');
+    $('baseHint').innerHTML = spec.base_url ? `<code>{% templatetag openvariable %}baseUrl{% templatetag closevariable %}</code> = <code>${esc(spec.base_url)}</code>` : '';
+    $('method').value = spec.method || 'GET'; colorMethod();
+    $('url').value = spec.url || '';
+    kv.params.set(spec.params); kv.headers.set(spec.headers);
+    kv.form.set(spec.form_data); kv.urlenc.set(spec.urlencoded);
+    const a = spec.auth || {};
+    $('authType').value = a.type || 'none'; $('authType').dispatchEvent(new Event('change'));
+    $('authToken').value = a.token || ''; $('authUser').value = a.username || ''; $('authPass').value = a.password || '';
+    $('authKey').value = a.key || ''; $('authValue').value = a.value || ''; $('authAddTo').value = a.add_to || 'header';
+    document.querySelectorAll('input[name=bodyMode]').forEach(r => r.checked = r.value === (spec.body_mode || 'none'));
+    $('rawLang').value = spec.raw_language || 'json';
+    $('rawBody').value = spec.body || ''; $('gqlQuery').value = spec.graphql_query || ''; $('gqlVars').value = spec.graphql_variables || '';
+    $('binaryFile').value = '';
+    $('verifySsl').checked = spec.verify_ssl !== false;
+    $('expectedStatus').value = spec.expected_status || '';
+    showBody(); counts(); resetResponse();
+    // open the most useful tab: Body when there is one, else Params
+    document.querySelector(`#reqTabs [data-tab="${spec.body_mode && spec.body_mode !== 'none' ? 'body' : 'params'}"]`).click();
+  }
+  function collect() {
+    const type = $('authType').value;
+    const auth = {type};
+    if (type === 'bearer') auth.token = $('authToken').value;
+    if (type === 'basic') { auth.username = $('authUser').value; auth.password = $('authPass').value; }
+    if (type === 'apikey') { auth.key = $('authKey').value; auth.value = $('authValue').value; auth.add_to = $('authAddTo').value; }
+    return {
+      item: current.item, case: current.case, environment: current.environment,
+      method: $('method').value, url: $('url').value, params: kv.params.get(), headers: kv.headers.get(), auth,
+      body_mode: bodyMode(), raw_language: $('rawLang').value, body: $('rawBody').value,
+      form_data: kv.form.get(), urlencoded: kv.urlenc.get(),
+      graphql_query: $('gqlQuery').value, graphql_variables: $('gqlVars').value, verify_ssl: $('verifySsl').checked,
+      expected_status: $('expectedStatus').value,
+    };
+  }
+  async function load(query) {
+    const res = await fetch(`${URLS.req}?${query}`);
+    if (!res.ok) return alertInline('Could not load this request.');
+    fill(await res.json());
+  }
+  $('newRequest').addEventListener('click', () => fill({kind: 'blank', name: 'Untitled Request', method: 'GET', url: '', body_mode: 'none'}));
+
+  // ---------- send ----------
+  $('sendBtn').addEventListener('click', async () => {
+    const spec = collect();
+    const fd = new FormData();
+    fd.append('spec', JSON.stringify(spec));
+    if (spec.body_mode === 'form-data') {
+      // rows were filtered by get(); match files by the position of the kept rows
+      let i = 0;
+      const kept = [...$('kv-form').querySelectorAll('tbody tr')].filter(tr => tr.querySelector('.k').value.trim() || tr.querySelector('.v').value.trim());
+      kept.forEach(tr => { const f = tr.querySelector('.f').files[0]; if (tr.querySelector('.t').value === 'file' && f) fd.append(`file_${i}`, f); i++; });
+    }
+    if (spec.body_mode === 'binary' && $('binaryFile').files[0]) fd.append('binary', $('binaryFile').files[0]);
+    const btn = $('sendBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sending';
+    try {
+      const res = await fetch(URLS.send, {method: 'POST', headers: {'X-CSRFToken': CSRF}, body: fd});
+      showResponse(await res.json());
+    } catch (e) {
+      showResponse({ok: false, error: 'Could not reach BaigNova: ' + e.message});
+    } finally {
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-send"></i> Send';
+    }
+  });
+
+  // ---------- response ----------
+  function resetResponse() {
+    lastResponse = null;
+    $('respEmpty').hidden = false; $('respError').hidden = true; $('respBody').hidden = true; $('respHeaders').hidden = true;
+    $('respMeta').innerHTML = ''; $('cnt-rh').textContent = '';
+  }
+  function size(n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(2)} KB` : `${(n / 1048576).toFixed(2)} MB`; }
+  function showResponse(r) {
+    lastResponse = r;
+    $('respEmpty').hidden = true;
+    if (!r.ok) {
+      $('respError').hidden = false; $('respError').textContent = r.error;
+      $('respBody').hidden = $('respHeaders').hidden = true;
+      $('respMeta').innerHTML = `<span class="stat stat-0">Error</span>`;
+      return;
+    }
+    $('respError').hidden = true;
+    $('respMeta').innerHTML = `Status: <span class="stat stat-${String(r.status)[0]}">${r.status} ${esc(r.reason)}</span>
+      &nbsp; Time: <b>${r.ms} ms</b> &nbsp; Size: <b>${size(r.size)}</b>${r.truncated ? ' <span class="text-danger">(cut at 5 MB)</span>' : ''}`;
+    $('respLang').value = r.language || 'text';
+    $('respHeaderRows').innerHTML = r.headers.map(([k, v]) => `<tr><td class="fw-semibold text-nowrap">${esc(k)}</td><td class="text-break">${esc(v)}</td></tr>`).join('');
+    $('cnt-rh').textContent = r.headers.length || '';
+    document.querySelector('#respTabs [data-rtab="body"]').click();
+    render();
+  }
+  document.querySelectorAll('#respTabs [data-rtab]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#respTabs [data-rtab]').forEach(x => x.classList.toggle('active', x === b));
+    if (!lastResponse || !lastResponse.ok) return;
+    $('respBody').hidden = b.dataset.rtab !== 'body';
+    $('respHeaders').hidden = b.dataset.rtab !== 'headers';
+  }));
+  let view = 'pretty';
+  document.querySelectorAll('#viewMode [data-view]').forEach(b => b.addEventListener('click', () => {
+    view = b.dataset.view;
+    document.querySelectorAll('#viewMode [data-view]').forEach(x => x.classList.toggle('active', x === b));
+    render();
+  }));
+  $('respLang').addEventListener('change', render);
+  function render() {
+    if (!lastResponse || !lastResponse.ok) return;
+    const body = lastResponse.body || '';
+    const lang = $('respLang').value;
+    $('respFrame').hidden = view !== 'preview'; $('respPre').hidden = view === 'preview';
+    if (view === 'preview') { $('respFrame').srcdoc = body; return; }
+    if (view === 'raw') { $('respPre').textContent = body; return; }
+    if (lang === 'json') {
+      try { $('respPre').innerHTML = highlightJson(JSON.stringify(JSON.parse(body), null, 2)); return; }
+      catch (e) { /* not JSON: fall through to plain text */ }
+    }
+    $('respPre').textContent = (lang === 'xml' || lang === 'html') ? prettyMarkup(body) : body;
+  }
+  $('copyResp').addEventListener('click', () => lastResponse && navigator.clipboard.writeText(lastResponse.body || ''));
+  function highlightJson(text) {
+    return esc(text).replace(/(&quot;(?:\\.|[^\\&]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+      (m, str, colon, lit, num) => str ? `<span class="${colon ? 'j-key' : 'j-str'}">${str}</span>${colon || ''}`
+        : lit ? `<span class="j-lit">${lit}</span>` : `<span class="j-num">${num}</span>`);
+  }
+  function prettyMarkup(text) {
+    let depth = 0;
+    return text.replace(/>\s*</g, '>\n<').split('\n').map(line => {
+      line = line.trim();
+      if (/^<\/[^>]+>/.test(line)) depth = Math.max(depth - 1, 0);
+      const out = '  '.repeat(depth) + line;
+      if (/^<[^!?\/][^>]*[^\/]>$/.test(line) && !/<\/[^>]+>$/.test(line) && !/^<(br|hr|img|input|meta|link)\b/i.test(line)) depth++;
+      return out;
+    }).join('\n');
+  }
+
+  // ---------- save ----------
+  const modal = new bootstrap.Modal($('saveModal'));
+  $('saveCollection').addEventListener('change', () => $('saveNewCollection').hidden = $('saveCollection').value !== '');
+  $('saveBtn').addEventListener('click', () => {
+    if (current.item) return save({});
+    $('saveName').value = current.name || '';
+    $('saveError').textContent = '';
+    modal.show();
+  });
+  $('saveConfirm').addEventListener('click', () => save({name: $('saveName').value, collection: $('saveCollection').value,
+                                                          new_collection: $('saveCollection').value ? '' : $('saveNewCollection').value}));
+  async function save(extra) {
+    const data = {...collect(), name: extra.name ?? current.name, ...extra};
+    const res = await fetch(URLS.save, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+    const out = await res.json();
+    if (!out.ok) { $('saveError').textContent = out.error; if (current.item) alertInline(out.error); return; }
+    if (current.item) {
+      $('saveBtn').innerHTML = '<i class="bi bi-check2"></i> Saved';
+      setTimeout(() => $('saveBtn').innerHTML = '<i class="bi bi-floppy"></i> Save', 1500);
+    } else {
+      window.location = `${URLS.page}?item=${out.item}`;
+    }
+  }
+
+  function alertInline(msg) { $('respEmpty').hidden = true; $('respError').hidden = false; $('respError').textContent = msg; }
+  function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+
+  // open the request named in the URL (?case= / ?item=)
+  const openItem = '{{ open_item|escapejs }}', openCase = '{{ open_case|escapejs }}';
+  const target = openItem ? document.querySelector(`.req[data-item="${openItem}"]`) : openCase ? document.querySelector(`.req[data-case="${openCase}"]`) : null;
+  if (target) { target.closest('details.grp').open = true; (target.closest('details.fold') || {}).open = true; target.click(); target.scrollIntoView({block: 'center'}); }
+})();
+</script>
+{% endblock %}

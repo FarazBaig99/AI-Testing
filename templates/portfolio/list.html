@@ -9,7 +9,14 @@
       <h4 class="fw-bold mb-0">Projects Management <span class="pill-pf align-middle">{{ kpis.total }} Total Projects</span></h4>
       <small class="text-muted">Manage projects, scope, business objectives, team, lifecycle and project-scoped environments.</small>
     </div>
-    <a href="{% url 'portfolio_create' %}" class="btn btn-pf ms-auto"><i class="bi bi-plus-lg"></i> Create Project</a>
+    <div class="ms-auto d-flex flex-wrap align-items-center gap-2">
+      <div class="view-toggle">
+        <a href="{% url 'portfolio_list' %}" class="active">All Projects Listing</a>
+        {% if last_project %}<a href="{% url 'portfolio_workspace' last_project.pk %}" title="Open {{ last_project.name }}">Project Workspace</a>
+        {% else %}<a href="#" class="disabled" title="Open a project first">Project Workspace</a>{% endif %}
+      </div>
+      <a href="{% url 'portfolio_create' %}" class="btn btn-pf"><i class="bi bi-plus-lg"></i> Create Project</a>
+    </div>
   </div>
 
   <div class="row g-3 mb-3">

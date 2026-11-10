@@ -1,0 +1,10 @@
+<div class="row g-2">
+  <div class="col-md-8"><label class="form-label small fw-semibold"><i class="bi bi-envelope"></i> E-mail the report to</label>
+    <input name="emails" class="form-control form-control-sm" value="{{ emails|default:'' }}" placeholder="qa-lead@company.com, manager@company.com">
+    <div class="form-text">Separate addresses with commas. Leave empty for no e-mail.</div></div>
+  <div class="col-md-4"><label class="form-label small fw-semibold">Send</label>
+    <select name="email_when" class="form-select form-select-sm">
+      {% for value, label in email_when %}<option value="{{ value }}" {% if value == when %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+  {% if not mail.is_configured %}<div class="col-12 small text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> Mail settings are not configured yet, so reports are not e-mailed. <a href="{% url 'api_mail_settings' %}" class="text-success">Set up mail →</a></div>{% endif %}
+</div>

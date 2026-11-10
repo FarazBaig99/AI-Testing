@@ -1,0 +1,129 @@
+{% extends "integrations/_layout.html" %}
+{% block actions %}
+  <button class="btn btn-outline-pf" data-bs-toggle="collapse" data-bs-target="#bindRepo"><i class="bi bi-git"></i> Bind Repository</button>
+{% endblock %}
+{% block body %}
+<div class="collapse {% if show_form or not repos %}show{% endif %}" id="bindRepo"><div class="panel mb-3">
+  <h6><i class="bi bi-git text-success"></i> Bind a repository</h6>
+  <form method="post" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="bind">
+    <div class="row g-2">
+      <div class="col-md-3">{% include "portfolio/_field.html" with field=form.provider %}</div>
+      <div class="col-md-5">{% include "portfolio/_field.html" with field=form.url %}</div>
+      <div class="col-md-4">{% include "portfolio/_field.html" with field=form.token %}</div>
+      <div class="col-md-6">{% include "portfolio/_field.html" with field=form.api_url %}</div>
+    </div>
+    <ul class="small text-muted mb-2 ps-3">
+      {% for p in providers %}<li><b>{{ p.label }}</b>: {{ p.example }} · {{ p.token_help }}</li>{% endfor %}
+    </ul>
+    <button class="btn btn-sm btn-pf"><i class="bi bi-link"></i> Bind &amp; Sync</button>
+  </form>
+</div></div>
+
+{# environment board: what is deployed where, from the repositories and from each environment's own version URL #}
+<div class="panel mb-3">
+  <h6 class="mb-0"><i class="bi bi-hdd-stack text-success"></i> Latest deployment per environment</h6>
+  <small class="text-muted d-block mb-3">From the repository tool's deployments, checked against the version each environment reports about itself.</small>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Environment</th><th>Latest deployment (repository)</th><th>When</th><th>Environment reports</th><th>Match</th></tr></thead>
+    <tbody>
+    {% for b in board %}
+      <tr>
+        <td class="fw-semibold">{{ b.env.name }}<div class="small text-muted fw-normal text-break">{{ b.env.base_url }}</div></td>
+        <td>{% if b.latest %}<span class="chip"><i class="bi bi-git"></i> {{ b.latest.ref|default:"-" }}</span> {% if b.latest.sha %}<span class="mono">{{ b.latest.sha|slice:":7" }}</span>{% endif %}
+            <span class="st {{ b.css }}">{{ b.latest.status|default:"-" }}</span>
+            <div class="small text-muted">{{ b.latest.repository }}{% if b.latest.deployed_by %} · by {{ b.latest.deployed_by }}{% endif %}</div>
+          {% else %}<span class="small text-muted">No deployment found for "{{ b.env.name }}"</span>{% endif %}</td>
+        <td class="small text-nowrap">{% if b.latest.deployed_at %}{{ b.latest.deployed_at|date:"Y-m-d H:i" }}<div class="text-muted">{{ b.latest.deployed_at|timesince }} ago</div>{% else %}-{% endif %}</td>
+        <td style="min-width:260px">
+          {% if b.endpoint %}
+            <div class="d-flex align-items-center gap-2">
+              {% if b.endpoint.last_value %}<span class="mono fw-semibold">{{ b.endpoint.last_value|truncatechars:40 }}</span>{% endif %}
+              <span class="st {% if b.endpoint.last_status == 'OK' %}st-OK{% elif b.endpoint.last_status == 'Failed' %}st-Failed{% else %}st-muted{% endif %}">{{ b.endpoint.last_status }}</span>
+              <form method="post" class="ms-auto">{% csrf_token %}<input type="hidden" name="action" value="version_check"><input type="hidden" name="environment" value="{{ b.env.pk }}">
+                <button class="btn btn-sm btn-light border py-0" title="Read the version now"><i class="bi bi-arrow-repeat"></i></button></form>
+              <form method="post">{% csrf_token %}<input type="hidden" name="action" value="version_remove"><input type="hidden" name="environment" value="{{ b.env.pk }}">
+                <button class="btn btn-sm btn-link text-muted p-0" title="Remove version URL"><i class="bi bi-x"></i></button></form>
+            </div>
+            <div class="small text-muted text-break">{{ b.endpoint.url }}{% if b.endpoint.version_key %} → {{ b.endpoint.version_key }}{% endif %}{% if b.endpoint.last_status == 'Failed' %} · <span class="text-danger">{{ b.endpoint.last_message }}</span>{% endif %}</div>
+          {% else %}
+            <form method="post" class="d-flex gap-1">{% csrf_token %}<input type="hidden" name="action" value="version_save"><input type="hidden" name="environment" value="{{ b.env.pk }}">
+              <input name="url" class="form-control form-control-sm" placeholder="https://.../version" required>
+              <input name="version_key" class="form-control form-control-sm" style="max-width:110px" placeholder="JSON key">
+              <button class="btn btn-sm btn-outline-pf text-nowrap">Save &amp; read</button></form>
+          {% endif %}
+        </td>
+        <td>{% if b.match is True %}<span class="st st-Passed"><i class="bi bi-check-lg"></i> Same build</span>
+          {% elif b.match is False %}<span class="st st-Warning" title="The environment reports a different build than the latest deployment"><i class="bi bi-exclamation-triangle"></i> Different</span>
+          {% else %}<span class="small text-muted">-</span>{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="5" class="small text-muted">No environments yet. <a href="{% url 'portfolio_workspace' project.pk 'environments' %}" class="text-success">Add environments</a> first; deployments are matched by environment name.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+{% for r in repos %}
+<div class="int-card mb-3 {% if r.last_status == 'Failed' %}is-failed{% elif r.last_status == 'Success' %}is-passed{% endif %}">
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+    <span class="int-logo"><i class="bi bi-git"></i></span>
+    <div class="me-auto" style="min-width:0">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <b>{{ r.get_provider_display }} Repository: {{ r.name|default:r.url }}</b>
+        <span class="st {% if r.last_status == 'Success' %}st-Success{% elif r.last_status == 'Failed' %}st-Failed{% elif r.last_status == 'Warning' %}st-Warning{% else %}st-muted{% endif %}">{% if r.last_status == 'Success' %}Connected{% else %}{{ r.last_status }}{% endif %}</span>
+      </div>
+      <div class="mono text-muted">Default branch: <b>{{ r.default_branch|default:"-" }}</b> · Last sync: {% if r.last_synced_at %}{{ r.last_synced_at|timesince }} ago{% else %}never{% endif %}{% if r.token %} · token {{ r.masked_token }}{% endif %}</div>
+      {% if r.last_error %}<div class="small {% if r.last_status == 'Failed' %}text-danger{% else %}text-warning{% endif %}">{{ r.last_error }}</div>{% endif %}
+    </div>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync"><input type="hidden" name="repo" value="{{ r.pk }}">
+      <button class="btn btn-sm btn-pf" onclick="this.disabled=true;this.form.submit();this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Syncing...'"><i class="bi bi-arrow-repeat"></i> Sync</button></form>
+    {% if r.provider != 'demo' %}<button class="btn btn-sm btn-light border" data-bs-toggle="collapse" data-bs-target="#token{{ r.pk }}"><i class="bi bi-key"></i> Token</button>{% endif %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="unbind"><input type="hidden" name="repo" value="{{ r.pk }}">
+      <button class="btn btn-sm btn-link text-danger" title="Unbind repository" onclick="return confirm('Unbind this repository? Its synced deployments and pull requests are removed from BaigNova.')"><i class="bi bi-trash"></i></button></form>
+  </div>
+  <div class="collapse" id="token{{ r.pk }}"><form method="post" class="d-flex gap-2 mb-2" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="token"><input type="hidden" name="repo" value="{{ r.pk }}">
+    <input type="password" name="token" class="form-control form-control-sm" style="max-width:340px" placeholder="New access token" autocomplete="new-password" required>
+    <button class="btn btn-sm btn-outline-pf">Update token</button></form></div>
+
+  {% if r.pipelines.all %}
+  <div class="small fw-semibold mb-1">Linked CI/CD pipelines:</div>
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    {% for p in r.pipelines.all %}<span class="chip"><i class="bi {% if p.status == 'success' or p.status == 'succeeded' %}bi-check-circle text-success{% elif p.status == 'failure' or p.status == 'failed' %}bi-x-circle text-danger{% else %}bi-gear{% endif %}"></i>
+      {% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener" class="text-dark text-decoration-none">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}
+      <span class="text-muted">· {{ p.status|default:"-" }}{% if p.branch %} · {{ p.branch }}{% endif %}{% if p.run_at %} · {{ p.run_at|timesince }} ago{% endif %}</span></span>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if r.unmatched %}
+  <div class="small text-muted mb-2"><i class="bi bi-info-circle"></i> Deployments to environments not in this project:
+    {% for d in r.unmatched %}<span class="chip">{{ d.environment_name }} · {{ d.ref }} {% if d.sha %}<span class="mono">{{ d.sha|slice:":7" }}</span>{% endif %}</span> {% endfor %}
+    — add an environment with the same name to see it on the board above.</div>
+  {% endif %}
+
+  <div class="small fw-semibold mb-1">Pull requests &amp; change detection <span class="text-muted fw-normal">· {{ r.open_prs|length }} open, latest {{ r.pull_requests.all|length }}</span></div>
+  {% if r.pull_requests.all %}
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>#</th><th>Title</th><th>State</th><th>Branch</th><th>Author</th><th>Changes</th><th>Updated</th></tr></thead>
+    <tbody>
+    {% for pr in r.pull_requests.all %}
+      <tr>
+        <td class="mono">{{ pr.number }}</td>
+        <td>{% if pr.url %}<a href="{{ pr.url }}" target="_blank" rel="noopener" class="text-dark text-decoration-none">{{ pr.title }} <i class="bi bi-box-arrow-up-right small text-muted"></i></a>{% else %}{{ pr.title }}{% endif %}</td>
+        <td><span class="st {% if pr.state == 'merged' %}st-Passed{% elif pr.state == 'open' %}st-Warning{% else %}st-muted{% endif %}">{{ pr.state }}</span></td>
+        <td class="mono small text-nowrap">{{ pr.source_branch }} → {{ pr.target_branch }}</td>
+        <td class="small">{{ pr.author|default:"-" }}</td>
+        <td class="text-nowrap">{% if pr.files %}<a href="#" class="small text-success text-decoration-none" data-bs-toggle="collapse" data-bs-target="#files{{ pr.pk }}">{{ pr.files|length }} file{{ pr.files|length|pluralize }}</a>{% else %}<span class="small text-muted">-</span>{% endif %}
+          {% if pr.additions or pr.deletions %}<span class="small"><span class="text-success">+{{ pr.additions }}</span> <span class="text-danger">-{{ pr.deletions }}</span></span>{% endif %}</td>
+        <td class="small text-nowrap">{{ pr.updated_on|date:"Y-m-d"|default:"-" }}</td>
+      </tr>
+      {% if pr.files %}<tr class="collapse" id="files{{ pr.pk }}"><td></td><td colspan="6"><ul class="list-unstyled small mb-0">
+        {% for f in pr.files %}<li class="mono"><span class="{% if f.status == 'added' %}text-success{% elif f.status == 'removed' or f.status == 'delete' %}text-danger{% else %}text-muted{% endif %}">{{ f.status|default:"changed" }}</span> {{ f.path }}{% if f.additions or f.deletions %} <span class="text-success">+{{ f.additions }}</span> <span class="text-danger">-{{ f.deletions }}</span>{% endif %}</li>{% endfor %}
+      </ul></td></tr>{% endif %}
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="small text-muted mb-0">No pull requests found.</p>{% endif %}
+</div>
+{% empty %}
+<div class="panel text-center text-muted py-4"><i class="bi bi-git fs-1"></i>
+  <p class="mt-2 mb-0">No repository bound yet. Each project's code can live on GitHub, GitLab or Azure DevOps: choose the provider above. No token yet? Bind a <b>Demo Repository</b> to try the screens.</p></div>
+{% endfor %}
+{% endblock %}

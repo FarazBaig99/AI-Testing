@@ -115,3 +115,182 @@ class ImportSession(models.Model):
     endpoints = models.JSONField(default=list)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+# ---------- API Workspace (Postman-style) ----------
+
+BODY_MODES = [('none', 'none'), ('form-data', 'form-data'), ('urlencoded', 'x-www-form-urlencoded'),
+              ('raw', 'raw'), ('binary', 'binary'), ('graphql', 'GraphQL')]
+RAW_LANGUAGES = [('text', 'Text'), ('javascript', 'JavaScript'), ('json', 'JSON'), ('html', 'HTML'), ('xml', 'XML')]
+
+
+class ApiCollection(models.Model):
+    """A named set of requests; may hold APIs of several projects and environments."""
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class CollectionRequest(models.Model):
+    """A saved request inside a collection. Starts as a copy of a synced API; edits never touch the API."""
+    collection = models.ForeignKey(ApiCollection, on_delete=models.CASCADE, related_name='requests')
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, null=True, blank=True, related_name='+')
+    environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    source = models.ForeignKey(ApiTestCase, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    name = models.CharField(max_length=600)
+    method = models.CharField(max_length=10, default='GET')
+    url = models.CharField(max_length=2000)
+    params = models.JSONField(default=list, blank=True)      # [{key, value, enabled}]
+    headers = models.JSONField(default=list, blank=True)     # [{key, value, enabled}]
+    auth = models.JSONField(default=dict, blank=True)        # {type: none|bearer|basic|apikey, ...}
+    body_mode = models.CharField(max_length=20, choices=BODY_MODES, default='none')
+    raw_language = models.CharField(max_length=20, choices=RAW_LANGUAGES, default='json')
+    body = models.TextField(blank=True)                      # raw body
+    form_data = models.JSONField(default=list, blank=True)   # [{key, value, type: text|file, enabled}]
+    urlencoded = models.JSONField(default=list, blank=True)  # [{key, value, enabled}]
+    graphql_query = models.TextField(blank=True)
+    graphql_variables = models.TextField(blank=True)
+    verify_ssl = models.BooleanField(default=True)
+    # None: the synced API's expected status, else any 2xx
+    expected_status = models.PositiveIntegerField(null=True, blank=True)
+    position = models.PositiveIntegerField(default=0)
+    last_status = models.PositiveIntegerField(null=True, blank=True)
+    last_ms = models.PositiveIntegerField(null=True, blank=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['position', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+# ---------- Collection runner, schedules and mail ----------
+
+RUN_KINDS = [('functional', 'Functional'), ('performance', 'Performance')]
+
+
+class MailSettings(models.Model):
+    """SMTP server used for run reports (one row)."""
+    host = models.CharField('SMTP host', max_length=255, blank=True)
+    port = models.PositiveIntegerField('Port', default=587)
+    security = models.CharField(max_length=10, default='tls',
+                                choices=[('tls', 'STARTTLS'), ('ssl', 'SSL/TLS'), ('none', 'None')])
+    username = models.CharField(max_length=255, blank=True)
+    password = models.CharField(max_length=255, blank=True)
+    from_email = models.CharField('From address', max_length=255, blank=True)
+    site_url = models.CharField('BaigNova URL (for report links)', max_length=255, default='http://127.0.0.1:8000')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def load(cls):
+        return cls.objects.order_by('pk').first() or cls()
+
+    @property
+    def is_configured(self):
+        return bool(self.host and (self.from_email or self.username))
+
+    @property
+    def masked_password(self):
+        return '•' * 8 if self.password else ''
+
+
+class RunSchedule(models.Model):
+    FREQUENCIES = [('interval', 'Every N minutes'), ('hourly', 'Hourly'), ('daily', 'Daily'),
+                   ('weekly', 'Weekly'), ('cron', 'Cron expression')]
+    EMAIL_WHEN = [('always', 'After every run'), ('failure', 'Only when it fails'), ('never', 'Do not email')]
+
+    collection = models.ForeignKey(ApiCollection, on_delete=models.CASCADE, related_name='schedules')
+    name = models.CharField(max_length=200)
+    kind = models.CharField(max_length=20, choices=RUN_KINDS, default='functional')
+    config = models.JSONField(default=dict, blank=True)       # same options as a manual run
+    frequency = models.CharField(max_length=10, choices=FREQUENCIES, default='daily')
+    interval_minutes = models.PositiveIntegerField(default=60)
+    minute = models.PositiveIntegerField(default=0)           # hourly: minute past the hour
+    time = models.TimeField(null=True, blank=True)            # daily / weekly
+    weekdays = models.JSONField(default=list, blank=True)     # weekly: 0=Mon .. 6=Sun
+    cron = models.CharField(max_length=100, blank=True)
+    emails = models.TextField(blank=True)
+    email_when = models.CharField(max_length=10, choices=EMAIL_WHEN, default='always')
+    enabled = models.BooleanField(default=True)
+    next_run_at = models.DateTimeField(null=True, blank=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class CollectionRun(models.Model):
+    STATUSES = [('queued', 'Queued'), ('running', 'Running'), ('passed', 'Passed'), ('failed', 'Failed'),
+                ('stopped', 'Stopped'), ('error', 'Error')]
+
+    collection = models.ForeignKey(ApiCollection, on_delete=models.CASCADE, related_name='runs')
+    schedule = models.ForeignKey(RunSchedule, on_delete=models.SET_NULL, null=True, blank=True, related_name='runs')
+    kind = models.CharField(max_length=20, choices=RUN_KINDS, default='functional')
+    trigger = models.CharField(max_length=10, default='manual', choices=[('manual', 'Manual'), ('schedule', 'Schedule')])
+    status = models.CharField(max_length=10, choices=STATUSES, default='queued')
+    config = models.JSONField(default=dict, blank=True)
+    summary = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    stop_requested = models.BooleanField(default=False)
+    emails = models.TextField(blank=True)
+    email_when = models.CharField(max_length=10, default='always')
+    email_status = models.CharField(max_length=500, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.collection} {self.kind} run #{self.pk}'
+
+    @property
+    def is_active(self):
+        return self.status in ('queued', 'running')
+
+    @property
+    def duration_s(self):
+        if not self.started_at:
+            return None
+        from django.utils import timezone
+        return round(((self.finished_at or timezone.now()) - self.started_at).total_seconds(), 1)
+
+
+class RunResult(models.Model):
+    """One request sent during a functional run."""
+    run = models.ForeignKey(CollectionRun, on_delete=models.CASCADE, related_name='results')
+    request = models.ForeignKey(CollectionRequest, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    iteration = models.PositiveIntegerField(default=1)
+    position = models.PositiveIntegerField(default=0)
+    name = models.CharField(max_length=600)
+    method = models.CharField(max_length=10)
+    url = models.CharField(max_length=2000, blank=True)
+    expected = models.CharField(max_length=20, blank=True)
+    status_code = models.PositiveIntegerField(null=True, blank=True)
+    ms = models.PositiveIntegerField(null=True, blank=True)
+    size = models.PositiveIntegerField(null=True, blank=True)
+    passed = models.BooleanField(default=False)
+    error = models.TextField(blank=True)
+    response_headers = models.JSONField(default=list, blank=True)
+    response_body = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']

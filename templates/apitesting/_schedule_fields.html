@@ -1,0 +1,19 @@
+<div class="row g-2 schedule-fields">
+  <div class="col-md-4"><label class="form-label small fw-semibold">Schedule name</label>
+    <input name="schedule_name" class="form-control form-control-sm" maxlength="200" value="{{ s.name|default:'' }}" placeholder="e.g. Nightly smoke"></div>
+  <div class="col-md-4"><label class="form-label small fw-semibold">Repeat</label>
+    <select name="frequency" class="form-select form-select-sm freq">
+      {% for value, label in frequencies %}<option value="{{ value }}" {% if s.frequency == value or not s and value == 'daily' %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-4" data-freq="interval"><label class="form-label small fw-semibold">Every (minutes)</label>
+    <input type="number" name="interval_minutes" min="5" max="10080" class="form-control form-control-sm" value="{{ s.interval_minutes|default:60 }}"></div>
+  <div class="col-md-4" data-freq="hourly"><label class="form-label small fw-semibold">Minute past the hour</label>
+    <input type="number" name="minute" min="0" max="59" class="form-control form-control-sm" value="{{ s.minute|default:0 }}"></div>
+  <div class="col-md-4" data-freq="daily weekly"><label class="form-label small fw-semibold">Time</label>
+    <input type="time" name="time" class="form-control form-control-sm" value="{% if s.time %}{{ s.time|time:'H:i' }}{% else %}09:00{% endif %}"></div>
+  <div class="col-12" data-freq="weekly"><label class="form-label small fw-semibold d-block">Days</label>
+    {% for i, d in weekdays %}<label class="form-check form-check-inline small"><input type="checkbox" class="form-check-input" name="weekdays" value="{{ i }}" {% if i in s.weekdays %}checked{% endif %}>{{ d }}</label>{% endfor %}</div>
+  <div class="col-md-8" data-freq="cron"><label class="form-label small fw-semibold">Cron expression</label>
+    <input name="cron" class="form-control form-control-sm font-monospace" value="{{ s.cron|default:'' }}" placeholder="0 9 * * 1-5">
+    <div class="form-text">minute hour day-of-month month day-of-week. Example: <code>0 9 * * 1-5</code> = 09:00 Monday to Friday, <code>*/30 * * * *</code> = every 30 minutes.</div></div>
+</div>

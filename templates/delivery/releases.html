@@ -1,0 +1,28 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Releases{% endblock %}
+{% block delivery %}
+{% if releases %}
+<div class="panel p-0"><div class="table-responsive">
+<table class="table table-hover align-middle mb-0">
+  <thead><tr><th class="ps-3">Release</th><th>Status</th><th>Start</th><th>Release date</th><th>Sprints</th><th>Stories</th><th>Bugs (open)</th><th>Points</th><th style="min-width:140px">Progress</th><th></th></tr></thead>
+  <tbody>{% for r in releases %}
+  <tr>
+    <td class="ps-3"><b>{% if r.url %}<a href="{{ r.url }}" target="_blank" rel="noopener" class="text-body text-decoration-none">{{ r.name }} <i class="bi bi-box-arrow-up-right small text-muted"></i></a>{% else %}{{ r.name }}{% endif %}</b>
+      {% if r.description %}<div class="small text-muted">{{ r.description|truncatechars:80 }}</div>{% endif %}</td>
+    <td><span class="cat {% if r.status == 'Released' %}cat-done{% elif r.status == 'In Progress' %}cat-in_progress{% else %}cat-todo{% endif %}">{{ r.status }}</span></td>
+    <td class="text-nowrap">{{ r.start_date|date:"d M Y"|default:"-" }}</td>
+    <td class="text-nowrap">{{ r.release_date|date:"d M Y"|default:"-" }}</td>
+    <td>{{ r.n_sprints }}</td>
+    <td>{{ r.n_stories_done }}/{{ r.n_stories }}</td>
+    <td>{{ r.n_bugs }} {% if r.n_bugs_open %}<span class="text-danger">({{ r.n_bugs_open }})</span>{% endif %}</td>
+    <td>{% if r.points %}{{ r.points_done|default:0|floatformat:"-1" }}/{{ r.points|floatformat:"-1" }}{% else %}-{% endif %}</td>
+    <td>{% if r.progress is not None %}<div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1"><div class="progress-bar" style="width:{{ r.progress }}%"></div></div><small>{{ r.progress }}%</small></div>{% else %}<small class="text-muted">No items</small>{% endif %}</td>
+    <td class="text-nowrap"><a href="{% url 'delivery_section' project.pk 'stories' %}?release={{ r.pk }}" class="small text-success text-decoration-none">Stories</a> ·
+      <a href="{% url 'delivery_section' project.pk 'bugs' %}?release={{ r.pk }}" class="small text-success text-decoration-none">Bugs</a></td>
+  </tr>{% endfor %}
+  </tbody>
+</table></div></div>
+{% else %}
+{% include "delivery/_empty.html" with icon="rocket-takeoff" title="No releases yet" text="Releases (Jira versions, ClickUp release folders or lists, ...) appear here after a sync." %}
+{% endif %}
+{% endblock %}

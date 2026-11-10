@@ -1,0 +1,14 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Bugs & Defects{% endblock %}
+{% block delivery %}
+{% if bug_total %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="kpi"><small>Total bugs</small><b>{{ bug_total }}</b></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><small>Open</small><b>{{ bug_open }}</b></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><small>Critical / high open</small><b class="{% if bug_serious %}text-danger{% endif %}">{{ bug_serious }}</b></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><small>Open by severity</small>
+    <div class="small mt-1">{% for name, n in bug_levels %}<div class="d-flex"><span>{{ name }}</span><b class="ms-auto fs-6 d-inline">{{ n }}</b></div>{% empty %}<span class="text-muted">None open</span>{% endfor %}</div></div></div>
+</div>
+{% endif %}
+{% include "delivery/_item_table.html" with bug_columns=True empty_title="No bugs yet" %}
+{% endblock %}

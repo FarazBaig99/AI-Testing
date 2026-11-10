@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Run {{ collection.name }}{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .cr .m { font-size: .62rem; font-weight: 800; font-family: monospace; width: 50px; display: inline-block; }
+  .cr .m-GET { color: #16a34a; } .cr .m-POST { color: #d97706; } .cr .m-PUT { color: #2563eb; }
+  .cr .m-PATCH { color: #7c3aed; } .cr .m-DELETE { color: #dc2626; } .cr .m-HEAD, .cr .m-OPTIONS { color: #64748b; }
+  .cr .req-table td { vertical-align: middle; font-size: .82rem; }
+  .cr .exp { width: 80px; }
+  .cr .run-st { border-radius: 20px; padding: 2px 10px; font-size: .72rem; font-weight: 600; white-space: nowrap; }
+  .cr .run-passed { background: #dcfce7; color: #15803d; } .cr .run-failed, .cr .run-error { background: #fee2e2; color: #b91c1c; }
+  .cr .run-running, .cr .run-queued { background: #e0f2fe; color: #0369a1; } .cr .run-stopped { background: #f1f5f9; color: #475569; }
+</style>
+<div class="pf cr">
+  <div class="pf-head mb-3 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-auto">
+      <div class="pf-eyebrow">API Testing · Collection Runner</div>
+      <h4 class="fw-bold mb-0"><i class="bi bi-collection-play text-success"></i> {{ collection.name }}</h4>
+      <small class="text-muted">{{ requests|length }} requests · {{ schedules|length }} schedules · {{ runs|length }} recent runs</small>
+    </div>
+    <a href="{% url 'api_workspace' %}?open={{ collection.pk }}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Back to collection</a>
+    <a href="{% url 'api_mail_settings' %}" class="btn btn-sm btn-light border"><i class="bi bi-envelope-gear"></i> Mail Settings</a>
+  </div>
+
+  <div class="ws-tabs mb-3">
+    <a href="?tab=functional" class="{% if tab == 'functional' %}active{% endif %}"><i class="bi bi-check2-circle"></i> Functional Run</a>
+    <a href="?tab=performance" class="{% if tab == 'performance' %}active{% endif %}"><i class="bi bi-speedometer2"></i> Performance Run</a>
+    <a href="?tab=schedules" class="{% if tab == 'schedules' %}active{% endif %}"><i class="bi bi-calendar-event"></i> Schedules ({{ schedules|length }})</a>
+    <a href="?tab=history" class="{% if tab == 'history' %}active{% endif %}"><i class="bi bi-clock-history"></i> Run History</a>
+  </div>
+
+  {% if not requests and tab != 'history' and tab != 'schedules' %}
+  <div class="panel text-center text-muted py-5"><i class="bi bi-collection fs-1"></i>
+    <p class="mt-2 mb-0">This collection has no requests. <a href="{% url 'api_workspace' %}?open={{ collection.pk }}" class="text-success">Add APIs to it first →</a></p></div>
+
+  {% elif tab == 'functional' %}
+  <form method="post" class="panel">{% csrf_token %}
+    <h6 class="mb-1">Requests to run</h6>
+    <p class="small text-muted">They run top to bottom in the collection order. A request <b>passes</b> when it returns the expected status code (empty = the synced API's status, or any 2xx).</p>
+    <div class="table-responsive"><table class="table table-sm req-table">
+      <thead><tr><th style="width:32px"><input type="checkbox" class="form-check-input" data-all="items" checked></th><th>#</th><th>Request</th><th>Environment</th><th>Expected status</th></tr></thead>
+      <tbody>{% for r in requests %}
+        <tr><td><input type="checkbox" class="form-check-input" name="items" value="{{ r.pk }}" checked></td>
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td><span class="m m-{{ r.method }}">{{ r.method }}</span>{{ r.name }}</td>
+          <td class="small text-muted">{% if r.project %}{{ r.project.name }} · {{ r.environment.name|default:"no env" }}{% else %}-{% endif %}</td>
+          <td><input name="expected_{{ r.pk }}" type="number" min="100" max="599" class="form-control form-control-sm exp" value="{{ r.expected_status|default:'' }}" placeholder="{{ r.expected_default|default:'2xx' }}"></td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    <div class="row g-2 mb-3">
+      <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Iterations</label>
+        <input type="number" name="iterations" min="1" max="{{ limits.MAX_ITERATIONS }}" value="1" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Delay between requests (ms)</label>
+        <input type="number" name="delay_ms" min="0" max="{{ limits.MAX_DELAY_MS }}" value="0" class="form-control form-control-sm"></div>
+      <div class="col-md-6 d-flex align-items-end"><label class="form-check small"><input type="checkbox" name="stop_on_fail" class="form-check-input">Stop the run when a request fails</label></div>
+    </div>
+    {% include "apitesting/_email_fields.html" with when='always' %}
+    <div class="collapse mt-3" id="schedFunctional"><div class="border rounded-3 p-3 bg-light">
+      <h6 class="small fw-bold"><i class="bi bi-calendar-event text-success"></i> Schedule this run</h6>
+      {% include "apitesting/_schedule_fields.html" with s=None %}
+      <button name="action" value="schedule_functional" class="btn btn-sm btn-pf mt-2"><i class="bi bi-calendar-check"></i> Save Schedule</button>
+    </div></div>
+    <div class="d-flex gap-2 mt-3">
+      <button name="action" value="run_functional" class="btn btn-pf"><i class="bi bi-play-fill"></i> Run {{ collection.name }}</button>
+      <button type="button" class="btn btn-outline-pf" data-bs-toggle="collapse" data-bs-target="#schedFunctional"><i class="bi bi-calendar-event"></i> Schedule…</button>
+    </div>
+  </form>
+
+  {% elif tab == 'performance' %}
+  <form method="post" class="panel">{% csrf_token %}
+    <div class="alert alert-warning small py-2"><i class="bi bi-exclamation-triangle"></i> A performance run sends many requests at once. Run it only against your own QA / test environments, never production without approval.</div>
+    <h6 class="mb-1">APIs in the load test</h6>
+    <p class="small text-muted mb-2">Each virtual user runs the ticked APIs in collection order. <b>Sequence</b> = one after another. <b>Parallel</b> = APIs next to each other marked Parallel are sent at the same time.</p>
+    <div class="table-responsive"><table class="table table-sm req-table">
+      <thead><tr><th style="width:32px"><input type="checkbox" class="form-check-input" data-all="perf_items" checked></th><th>#</th><th>API</th><th>Environment</th><th style="width:160px">Run mode</th></tr></thead>
+      <tbody>{% for r in requests %}
+        <tr><td><input type="checkbox" class="form-check-input" name="perf_items" value="{{ r.pk }}" checked></td>
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td><span class="m m-{{ r.method }}">{{ r.method }}</span>{{ r.name }}</td>
+          <td class="small text-muted">{% if r.project %}{{ r.project.name }} · {{ r.environment.name|default:"no env" }}{% else %}-{% endif %}</td>
+          <td><select name="mode_{{ r.pk }}" class="form-select form-select-sm"><option value="sequence">Sequence</option><option value="parallel">Parallel</option></select></td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    <div class="row g-2 mb-3">
+      <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Virtual users</label>
+        <input type="number" name="vus" min="1" max="{{ limits.MAX_VUS }}" value="10" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Run for</label>
+        <select name="stop_by" class="form-select form-select-sm" id="stopBy"><option value="duration">Duration</option><option value="iterations">Iterations</option></select></div>
+      <div class="col-6 col-md-2" data-stop="duration"><label class="form-label small fw-semibold">Duration (sec)</label>
+        <input type="number" name="duration" min="5" max="{{ limits.MAX_DURATION }}" value="60" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-2" data-stop="iterations" hidden><label class="form-label small fw-semibold">Iterations per user</label>
+        <input type="number" name="vu_iterations" min="1" max="{{ limits.MAX_VU_ITERATIONS }}" value="10" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Ramp-up (sec)</label>
+        <input type="number" name="ramp_up" min="0" max="{{ limits.MAX_DURATION }}" value="0" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Fail if errors above (%)</label>
+        <input type="number" name="max_error_pct" min="0" max="100" value="1" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Fail if p95 above (ms)</label>
+        <input type="number" name="max_p95" min="1" class="form-control form-control-sm" placeholder="optional"></div>
+      <div class="col-12 small text-muted">Limits: up to {{ limits.MAX_VUS }} virtual users and {{ limits.MAX_DURATION }} seconds. Ramp-up starts the users evenly over that time.</div>
+    </div>
+    {% include "apitesting/_email_fields.html" with when='always' %}
+    <div class="collapse mt-3" id="schedPerformance"><div class="border rounded-3 p-3 bg-light">
+      <h6 class="small fw-bold"><i class="bi bi-calendar-event text-success"></i> Schedule this performance run</h6>
+      {% include "apitesting/_schedule_fields.html" with s=None %}
+      <button name="action" value="schedule_performance" class="btn btn-sm btn-pf mt-2"><i class="bi bi-calendar-check"></i> Save Schedule</button>
+    </div></div>
+    <div class="d-flex gap-2 mt-3">
+      <button name="action" value="run_performance" class="btn btn-pf"><i class="bi bi-speedometer2"></i> Start Performance Run</button>
+      <button type="button" class="btn btn-outline-pf" data-bs-toggle="collapse" data-bs-target="#schedPerformance"><i class="bi bi-calendar-event"></i> Schedule…</button>
+    </div>
+  </form>
+
+  {% elif tab == 'schedules' %}
+  <div class="panel">
+    <h6>Schedules <span class="small text-muted fw-normal">· runs start automatically while the BaigNova server is running</span></h6>
+    {% for s in schedules %}
+    <div class="border rounded-3 p-3 mb-2 {% if not s.enabled %}bg-light{% endif %}">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <b>{{ s.name }}</b>
+        <span class="pill-pf">{{ s.get_kind_display }}</span>
+        {% if s.enabled %}<span class="run-st run-passed">On</span>{% else %}<span class="run-st run-stopped">Paused</span>{% endif %}
+        <span class="small text-muted">{{ s.description }}</span>
+        <div class="ms-auto d-flex gap-1">
+          <form method="post">{% csrf_token %}<input type="hidden" name="schedule" value="{{ s.pk }}"><button name="action" value="run_schedule_now" class="btn btn-sm btn-pf"><i class="bi bi-play-fill"></i> Run now</button></form>
+          <form method="post">{% csrf_token %}<input type="hidden" name="schedule" value="{{ s.pk }}"><button name="action" value="toggle_schedule" class="btn btn-sm btn-light border">{% if s.enabled %}<i class="bi bi-pause"></i> Pause{% else %}<i class="bi bi-play"></i> Turn on{% endif %}</button></form>
+          <button class="btn btn-sm btn-light border" data-bs-toggle="collapse" data-bs-target="#editSched{{ s.pk }}"><i class="bi bi-pencil"></i> Edit</button>
+          <form method="post">{% csrf_token %}<input type="hidden" name="schedule" value="{{ s.pk }}"><button name="action" value="delete_schedule" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete schedule {{ s.name|escapejs }}?')"><i class="bi bi-trash"></i></button></form>
+        </div>
+      </div>
+      <div class="small text-muted mt-1">
+        Next run: <b>{% if s.enabled and s.next_run_at %}{{ s.next_run_at|date:"D d M Y, H:i" }}{% else %}-{% endif %}</b> ·
+        Last run: <b>{{ s.last_run_at|date:"d M Y, H:i"|default:"never" }}</b> ·
+        {% if s.kind == 'performance' %}{{ s.config.vus }} users, {% if s.config.stop_by == 'iterations' %}{{ s.config.iterations }} iterations each{% else %}{{ s.config.duration }} s{% endif %}, {{ s.config.items|length }} APIs
+        {% else %}{{ s.config.items|length }} requests × {{ s.config.iterations }} iteration(s){% endif %} ·
+        E-mail: <b>{{ s.emails|default:"none" }}</b>{% if s.emails %} ({{ s.get_email_when_display|lower }}){% endif %}
+      </div>
+      <div class="collapse mt-2" id="editSched{{ s.pk }}">
+        <form method="post" class="border-top pt-2">{% csrf_token %}<input type="hidden" name="schedule" value="{{ s.pk }}">
+          {% include "apitesting/_schedule_fields.html" %}
+          <div class="mt-2">{% include "apitesting/_email_fields.html" with emails=s.emails when=s.email_when %}</div>
+          <div class="small text-muted mt-1">To change which APIs run, delete this schedule and save a new one from the Functional or Performance tab.</div>
+          <button name="action" value="edit_schedule" class="btn btn-sm btn-pf mt-2">Save changes</button>
+        </form>
+      </div>
+    </div>
+    {% empty %}
+    <div class="text-center text-muted py-4"><i class="bi bi-calendar-event fs-1"></i>
+      <p class="mt-2 mb-0">No schedules yet. Open the Functional or Performance tab, pick the options and press <b>Schedule…</b></p></div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="panel">
+    <h6>Run history</h6>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th>#</th><th>Started</th><th>Type</th><th>Trigger</th><th>Status</th><th>Result</th><th>Duration</th><th>E-mail</th><th></th></tr></thead>
+      <tbody>{% for r in runs %}
+        <tr><td class="text-muted">{{ r.pk }}</td>
+          <td class="small text-nowrap">{{ r.created_at|date:"d M Y, H:i" }}</td>
+          <td class="small">{{ r.get_kind_display }}</td>
+          <td class="small">{% if r.schedule %}<i class="bi bi-calendar-event"></i> {{ r.schedule.name }}{% else %}{{ r.created_by.username|default:"manual" }}{% endif %}</td>
+          <td><span class="run-st run-{{ r.status }}">{{ r.get_status_display }}</span></td>
+          <td class="small">{% if r.kind == 'performance' %}{{ r.summary.totals.requests|default:0 }} req · p95 {{ r.summary.totals.p95|default:"-" }} ms · {{ r.summary.totals.error_pct|default:0 }}% err{% else %}{{ r.summary.passed|default:0 }}/{{ r.summary.done|default:0 }} passed{% endif %}</td>
+          <td class="small">{% if r.duration_s is not None %}{{ r.duration_s }} s{% else %}-{% endif %}</td>
+          <td class="small text-muted text-truncate" style="max-width:200px" title="{{ r.email_status }}">{{ r.email_status|default:"-" }}</td>
+          <td><a href="{% url 'api_run_detail' r.pk %}" class="btn btn-sm btn-light border">Report</a></td></tr>
+      {% empty %}<tr><td colspan="9" class="text-center text-muted py-4">No runs yet.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll('[data-all]').forEach(all => all.addEventListener('change', () =>
+    document.querySelectorAll(`input[name="${all.dataset.all}"]`).forEach(cb => cb.checked = all.checked)));
+  document.querySelectorAll('.schedule-fields').forEach(box => {
+    const freq = box.querySelector('.freq');
+    const sync = () => box.querySelectorAll('[data-freq]').forEach(el => el.hidden = !el.dataset.freq.split(' ').includes(freq.value));
+    freq.addEventListener('change', sync); sync();
+  });
+  const stopBy = document.getElementById('stopBy');
+  if (stopBy) {
+    const sync = () => document.querySelectorAll('[data-stop]').forEach(el => el.hidden = el.dataset.stop !== stopBy.value);
+    stopBy.addEventListener('change', sync); sync();
+  }
+</script>
+{% endblock %}

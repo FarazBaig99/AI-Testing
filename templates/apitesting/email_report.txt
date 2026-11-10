@@ -1,0 +1,26 @@
+{% autoescape off %}BaigNova TestManager - {{ run.get_kind_display }} run #{{ run.pk }}
+Collection: {{ collection.name }}
+Status: {{ run.get_status_display|upper }}
+Started: {{ run.started_at|date:"d M Y, H:i" }} ({{ run.duration_s }} s){% if run.schedule %}
+Schedule: {{ run.schedule.name }}{% endif %}{% if run.error %}
+Error: {{ run.error }}{% endif %}
+{% if run.kind == 'performance' %}
+Virtual users: {{ run.config.vus }}
+Requests: {{ summary.totals.requests }} ({{ summary.totals.rps }} req/s)
+Error rate: {{ summary.totals.error_pct }}%
+Average: {{ summary.totals.avg|default:"-" }} ms, p95: {{ summary.totals.p95|default:"-" }} ms, p99: {{ summary.totals.p99|default:"-" }} ms
+{% for reason in summary.fail_reasons %}{{ reason }}
+{% endfor %}
+Per API:
+{% for a in summary.apis %}- {{ a.method }} {{ a.name }}: {{ a.requests }} requests, {{ a.errors }} errors, avg {{ a.avg|default:"-" }} ms, p95 {{ a.p95|default:"-" }} ms
+{% endfor %}{% else %}
+Requests run: {{ summary.done|default:0 }} / {{ summary.planned|default:0 }}
+Passed: {{ summary.passed|default:0 }}
+Failed: {{ summary.failed|default:0 }}
+Average response: {{ summary.avg_ms|default:"-" }} ms
+{% if failed %}
+Failed requests:
+{% for r in failed %}- {{ r.method }} {{ r.name }}: expected {{ r.expected }}, got {{ r.status_code|default:"-" }} {{ r.error }}
+{% endfor %}{% endif %}{% endif %}{% if link %}
+Full report: {{ link }}{% endif %}
+{% endautoescape %}

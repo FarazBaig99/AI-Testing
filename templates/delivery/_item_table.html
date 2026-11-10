@@ -1,0 +1,53 @@
+{# work item filters + table; `show_parent` adds the parent column, `bug_columns` the severity column #}
+<form class="panel py-2 mb-2 d-flex flex-wrap gap-2 align-items-center" method="get">
+  <input name="q" value="{{ f.q }}" class="form-control form-control-sm" style="max-width:220px" placeholder="Search title, key, label">
+  <select name="status" class="form-select form-select-sm w-auto"><option value="">All statuses</option>
+    {% for v, l in categories %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  {% if kind_filter %}<select name="kind" class="form-select form-select-sm w-auto"><option value="">Tasks & subtasks</option>
+    <option value="task" {% if f.kind == 'task' %}selected{% endif %}>Tasks</option><option value="subtask" {% if f.kind == 'subtask' %}selected{% endif %}>Subtasks</option></select>{% endif %}
+  {% if bug_columns and severities %}<select name="severity" class="form-select form-select-sm w-auto"><option value="">All severities</option>
+    {% for s in severities %}<option {% if f.severity == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>{% endif %}
+  <select name="release" class="form-select form-select-sm w-auto"><option value="">All releases</option><option value="none" {% if f.release == 'none' %}selected{% endif %}>No release</option>
+    {% for r in filter_releases %}<option value="{{ r.pk }}" {% if f.release == r.pk|stringformat:'s' %}selected{% endif %}>{{ r.name }}</option>{% endfor %}</select>
+  <select name="sprint" class="form-select form-select-sm w-auto"><option value="">All sprints</option><option value="none" {% if f.sprint == 'none' %}selected{% endif %}>Backlog (no sprint)</option>
+    {% for s in filter_sprints %}<option value="{{ s.pk }}" {% if f.sprint == s.pk|stringformat:'s' %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+  <select name="assignee" class="form-select form-select-sm w-auto"><option value="">Everyone</option><option value="none" {% if f.assignee == 'none' %}selected{% endif %}>Unassigned</option>
+    {% for p in filter_people %}<option value="{{ p.pk }}" {% if f.assignee == p.pk|stringformat:'s' %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+  <button class="btn btn-sm btn-pf"><i class="bi bi-funnel"></i> Filter</button>
+  {% if filtered %}<a href="?" class="btn btn-sm btn-light border">Clear</a>{% endif %}
+  <span class="ms-auto small text-muted">{{ page.paginator.count }} item{{ page.paginator.count|pluralize }}</span>
+</form>
+{% if page.object_list %}
+<div class="panel p-0"><div class="table-responsive">
+<table class="table table-hover align-middle mb-0">
+  <thead><tr><th class="ps-3">Key</th><th>Title</th>{% if show_parent %}<th>Parent</th>{% endif %}<th>Status</th>{% if qa_column %}<th>QA verification</th>{% endif %}{% if bug_columns %}<th>Severity</th>{% endif %}<th>Priority</th>{% if not bug_columns %}<th>Points</th>{% endif %}<th>Assignee</th><th>Sprint</th><th>Release</th>{% if bug_columns %}<th>Reported</th><th>Resolved</th>{% endif %}</tr></thead>
+  <tbody>{% for i in page %}
+    <tr>
+      <td class="ps-3"><span class="ext-key">{{ i.external_key }}</span></td>
+      <td>{% if i.kind == 'subtask' %}<span class="kind kind-subtask me-1">Sub</span>{% endif %}{% if i.url %}<a href="{{ i.url }}" target="_blank" rel="noopener" class="text-decoration-none text-body">{{ i.title }} <i class="bi bi-box-arrow-up-right small text-muted"></i></a>{% else %}{{ i.title }}{% endif %}
+        {% if i.labels %}<div class="small text-muted">{{ i.labels }}</div>{% endif %}</td>
+      {% if show_parent %}<td class="small">{% if i.parent %}<span class="ext-key">{{ i.parent.external_key }}</span> {{ i.parent.title|truncatechars:40 }}{% else %}<span class="text-muted">-</span>{% endif %}</td>{% endif %}
+      <td><span class="cat cat-{{ i.category }}">{{ i.status|default:i.get_category_display }}</span></td>
+      {% if qa_column %}<td><form method="post" action="{% url 'delivery_qa' project.pk i.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <select name="qa_status" class="form-select form-select-sm w-auto py-0" style="font-size:.76rem" onchange="this.form.submit()">{% for q in qa_statuses %}<option {% if q == i.qa_status %}selected{% endif %}>{{ q }}</option>{% endfor %}</select></form></td>{% endif %}
+      {% if bug_columns %}<td>{{ i.severity|default:"-" }}</td>{% endif %}
+      <td>{{ i.priority|default:"-" }}</td>
+      {% if not bug_columns %}<td>{% if i.story_points is not None %}{{ i.story_points|floatformat:"-1" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>{% endif %}
+      <td class="text-nowrap">{{ i.assignee.name|default:"-" }}</td>
+      <td class="text-nowrap">{{ i.sprint.name|default:"Backlog" }}</td>
+      <td class="text-nowrap">{{ i.release.name|default:"-" }}</td>
+      {% if bug_columns %}<td class="text-nowrap small">{{ i.created_on|date:"d M Y"|default:"-" }}</td><td class="text-nowrap small">{{ i.resolved_on|date:"d M Y"|default:"-" }}</td>{% endif %}
+    </tr>{% endfor %}
+  </tbody>
+</table></div></div>
+{% if page.has_other_pages %}
+<nav class="d-flex justify-content-center gap-2 mt-2 small">
+  {% if page.has_previous %}<a class="btn btn-sm btn-light border" href="?{{ query }}&page={{ page.previous_page_number }}">‹ Previous</a>{% endif %}
+  <span class="align-self-center text-muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn btn-sm btn-light border" href="?{{ query }}&page={{ page.next_page_number }}">Next ›</a>{% endif %}
+</nav>{% endif %}
+{% elif filtered %}
+<div class="panel text-center text-muted py-4">No items match these filters.</div>
+{% else %}
+{% include "delivery/_empty.html" with title=empty_title text="Items appear here after a sync from the linked tool." %}
+{% endif %}

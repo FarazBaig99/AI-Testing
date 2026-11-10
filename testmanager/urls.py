@@ -9,5 +9,7 @@ urlpatterns = [
     path('accounts/', include('accounts.urls')),
     path('projects/', include('projects.urls')),
     path('portfolio/', include('portfolio.urls')),
+    path('org/', include('org.urls')),
+    path('api-testing/', include('apitesting.workspace_urls')),
     path('', RedirectView.as_view(pattern_name='dashboard', permanent=False)),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

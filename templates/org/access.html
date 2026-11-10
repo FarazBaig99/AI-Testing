@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Project Access · Org & Team{% endblock %}
+{% block content %}
+<div class="pf">
+  {% with org_tab='access' %}{% include "org/_head.html" %}{% endwith %}
+  <div class="row g-3">
+    <div class="col-lg-3"><div class="panel">
+      <h6 class="mb-2">Projects</h6>
+      <div class="list-group list-group-flush small">
+        {% for p in projects %}
+        <a href="?project={{ p.pk }}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 px-2 {% if p.pk == project.pk %}active{% endif %}">
+          <span class="key-chip">{{ p.key }}</span><span class="text-truncate">{{ p.name }}</span><span class="ms-auto badge text-bg-light border">{{ p.n_members }}</span></a>
+        {% empty %}<span class="text-muted">No projects yet.</span>{% endfor %}
+      </div>
+    </div></div>
+    <div class="col-lg-9">
+      {% if project %}
+      <div class="panel mb-3">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+          <span class="key-chip">{{ project.key }}</span><h6 class="mb-0">{{ project.name }}</h6><span class="lc lc-{{ project.status|slugify }}">{{ project.status }}</span>
+          <a href="{% url 'portfolio_workspace' project.pk 'team' %}" class="small text-success text-decoration-none fw-semibold ms-auto">Open project Team &amp; Access →</a>
+        </div>
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Employee</th><th>Job title</th><th style="width:190px">Role / permission</th><th>Since</th><th></th></tr></thead>
+          <tbody>
+          {% for m in members %}
+            <tr>
+              <td><a href="{% url 'org_employee' m.user.pk %}" class="text-dark text-decoration-none"><span class="av-lg me-1" style="width:26px;height:26px;font-size:.72rem">{{ m.user.username|first|upper }}</span> {{ m.user.get_full_name|default:m.user.username }}</a></td>
+              <td class="small text-muted">{{ m.user.profile.job_title|default:"-" }}</td>
+              <td><form method="post">{% csrf_token %}<input type="hidden" name="project" value="{{ project.pk }}"><input type="hidden" name="action" value="role"><input type="hidden" name="member" value="{{ m.pk }}">
+                <select name="role" class="form-select form-select-sm" onchange="this.form.submit()">{% for r in roles %}<option {% if r == m.role %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></form></td>
+              <td class="small text-muted">{{ m.added_at|date:"Y-m-d" }}</td>
+              <td class="text-end"><form method="post">{% csrf_token %}<input type="hidden" name="project" value="{{ project.pk }}"><input type="hidden" name="action" value="remove"><input type="hidden" name="member" value="{{ m.pk }}">
+                <button class="btn btn-sm btn-link text-danger" title="Remove from project" onclick="return confirm('Remove this employee from {{ project.name }}?')"><i class="bi bi-person-dash"></i></button></form></td>
+            </tr>
+          {% empty %}<tr><td colspan="5" class="small text-muted">No one has access to this project yet.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+        <form method="post" class="row g-2 align-items-end">{% csrf_token %}<input type="hidden" name="project" value="{{ project.pk }}"><input type="hidden" name="action" value="add">
+          <div class="col-md-6"><label class="form-label small fw-semibold">Add employee</label>{{ form.user }}</div>
+          <div class="col-md-4"><label class="form-label small fw-semibold">Role</label>{{ form.role }}</div>
+          <div class="col-md-2"><button class="btn btn-pf w-100"><i class="bi bi-person-plus"></i> Add</button></div>
+          {% if form.errors %}<div class="col-12 small text-danger">Select an employee who is not already in this project.</div>{% endif %}
+        </form>
+        <div class="small text-muted mt-2">New employee? <a href="{% url 'org_home' %}" class="text-success">Add them in Employees</a> first.</div>
+      </div>
+      <div class="panel mb-3">
+        <h6><i class="bi bi-person-badge text-success"></i> Key Leadership <span class="small text-muted fw-normal">· {{ project.name }}</span></h6>
+        <form method="post">{% csrf_token %}<input type="hidden" name="project" value="{{ project.pk }}"><input type="hidden" name="action" value="leaders">
+          <div class="row g-2">
+            <div class="col-md-4">{% include "portfolio/_field.html" with field=leader_form.manager %}</div>
+            <div class="col-md-4">{% include "portfolio/_field.html" with field=leader_form.qa_lead %}</div>
+            <div class="col-md-4">{% include "portfolio/_field.html" with field=leader_form.ba_lead %}</div>
+          </div>
+          <button class="btn btn-sm btn-pf"><i class="bi bi-check-lg"></i> Save Leadership</button>
+        </form>
+      </div>
+      {% else %}
+      <div class="panel text-center text-muted py-5 mb-3"><i class="bi bi-shield-lock fs-1"></i><p class="mt-2 mb-0">Pick a project on the left to see and manage who can access it.</p></div>
+      {% endif %}
+      {% include "org/_roles.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}

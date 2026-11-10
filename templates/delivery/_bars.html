@@ -1,0 +1,27 @@
+{# grouped bar chart: rows with a `sprint`, keys a / b and their `_h` heights; names a_label / b_label #}
+<div class="bars" role="img" aria-label="{{ a_label }} and {{ b_label }} per sprint">
+  {% for r in rows %}
+  <div class="bars-group">
+    <div class="bars-plot">
+      {% if a == 'committed' %}
+        <div class="bar s1" style="height:{{ r.committed_h }}%" data-tip="{{ r.sprint.name }} · {{ a_label }}: {{ r.committed|floatformat:'-1' }}"></div>
+        <div class="bar s2" style="height:{{ r.completed_h }}%" data-tip="{{ r.sprint.name }} · {{ b_label }}: {{ r.completed|floatformat:'-1' }}"></div>
+      {% else %}
+        <div class="bar s1" style="height:{{ r.created_h }}%" data-tip="{{ r.sprint.name }} · {{ a_label }}: {{ r.created }}"></div>
+        <div class="bar s2" style="height:{{ r.resolved_h }}%" data-tip="{{ r.sprint.name }} · {{ b_label }}: {{ r.resolved }}"></div>
+      {% endif %}
+    </div>
+    <div class="bars-label" title="{{ r.sprint.name }}">{{ r.sprint.name }}</div>
+  </div>
+  {% endfor %}
+</div>
+<div class="d-flex gap-3 small text-muted mt-2">
+  <span><span class="key s1"></span>{{ a_label }}</span><span><span class="key s2"></span>{{ b_label }}</span>
+  <a class="ms-auto text-success text-decoration-none" data-bs-toggle="collapse" href="#{{ table_id }}" role="button">Show table</a>
+</div>
+<div class="collapse" id="{{ table_id }}">
+  <table class="table table-sm mt-2 mb-0"><thead><tr><th>Sprint</th><th>{{ a_label }}</th><th>{{ b_label }}</th></tr></thead>
+  <tbody>{% for r in rows %}<tr><td>{{ r.sprint.name }}</td>
+    {% if a == 'committed' %}<td>{{ r.committed|floatformat:'-1' }}</td><td>{{ r.completed|floatformat:'-1' }}</td>
+    {% else %}<td>{{ r.created }}</td><td>{{ r.resolved }}</td>{% endif %}</tr>{% endfor %}</tbody></table>
+</div>

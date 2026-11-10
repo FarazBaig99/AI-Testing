@@ -41,6 +41,9 @@ INSTALLED_APPS = [
     'projects',
     'apitesting',
     'portfolio',
+    'delivery',
+    'org',
+    'integrations',
 ]
 
 MIDDLEWARE = [

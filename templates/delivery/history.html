@@ -1,0 +1,77 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Sync History & Audit{% endblock %}
+{% block delivery %}
+{% if selected %}
+<div class="panel mb-3" style="border-color:var(--pf-border)">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <h6 class="mb-0">Sync #{{ selected.pk }} · {{ selected.started_at|date:"d M Y H:i:s" }}</h6>
+    <span class="badge text-bg-{% if selected.status == 'Failed' %}danger{% elif selected.status == 'Warning' %}warning{% elif selected.status == 'Success' %}success{% else %}secondary{% endif %}">{{ selected.status }}</span>
+    <a href="?" class="ms-auto small text-secondary">Close ×</a>
+  </div>
+  <div class="meta d-flex flex-wrap gap-3 mb-2">
+    <span>Tool <b>{{ selected.get_tool_display|default:selected.tool }}</b></span><span>Source <b>{{ selected.source_name|default:"-" }}</b></span>
+    <span>By <b>{{ selected.started_by.username|default:"-" }}</b></span>
+    {% if selected.duration is not None %}<span>Took <b>{{ selected.duration|floatformat:1 }}s</b></span>{% endif %}
+    {% for name, n in selected.summary_rows %}<span>{{ name|title }} fetched <b>{{ n }}</b></span>{% endfor %}
+  </div>
+  {% if selected.error %}<div class="alert alert-danger small py-2 mb-2"><b>Error:</b> {{ selected.error }}</div>{% endif %}
+  {% if selected.warnings %}<div class="alert alert-warning small py-2 mb-2"><b>Warnings</b><ul class="mb-0">{% for w in selected.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if selected.status != 'Failed' %}
+  <div class="d-flex flex-wrap gap-1 mb-2">
+    {% for value, label, n in selected.change_tabs %}
+      <a href="?run={{ selected.pk }}{% if value %}&change={{ value }}{% endif %}" class="btn btn-sm {% if selected.change_filter == value %}btn-pf{% else %}btn-light border{% endif %}">{{ label }} ({{ n }})</a>
+    {% endfor %}
+  </div>
+  {% if selected.change_page.object_list %}
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Change</th><th>Record</th><th>Key</th><th>Title</th><th>Fields changed (old → new)</th></tr></thead>
+    <tbody>{% for c in selected.change_page %}
+      <tr><td><span class="cat {% if c.change == 'created' %}cat-done{% elif c.change == 'updated' %}cat-in_progress{% else %}cat-todo{% endif %}">{{ c.change|title }}</span></td>
+        <td class="text-nowrap small">{{ c.entity }}</td><td><span class="ext-key">{{ c.external_key }}</span></td><td>{{ c.title|truncatechars:70 }}</td>
+        <td class="small">{% for field, values in c.fields.items %}<div><b>{{ field }}</b>: <span class="text-muted">{{ values.0|default:"(empty)" }}</span> → {{ values.1|default:"(empty)" }}</div>{% empty %}<span class="text-muted">-</span>{% endfor %}</td></tr>
+    {% endfor %}</tbody></table></div>
+    {% if selected.change_page.has_other_pages %}<div class="small text-center mt-2">
+      {% if selected.change_page.has_previous %}<a href="?run={{ selected.pk }}&change={{ selected.change_filter }}&cpage={{ selected.change_page.previous_page_number }}">‹ Previous</a>{% endif %}
+      <span class="text-muted mx-2">Page {{ selected.change_page.number }} of {{ selected.change_page.paginator.num_pages }}</span>
+      {% if selected.change_page.has_next %}<a href="?run={{ selected.pk }}&change={{ selected.change_filter }}&cpage={{ selected.change_page.next_page_number }}">Next ›</a>{% endif %}</div>{% endif %}
+  {% else %}<p class="small text-muted mb-0">No records changed in this sync; everything was already up to date.</p>{% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="panel mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
+    <h6 class="mb-0 me-2">Sync runs</h6>
+    <a href="?" class="btn btn-sm {% if not status %}btn-pf{% else %}btn-light border{% endif %}">All</a>
+    {% for s in statuses %}{% if s != 'Running' %}<a href="?status={{ s }}" class="btn btn-sm {% if status == s %}btn-pf{% else %}btn-light border{% endif %}">{{ s }}</a>{% endif %}{% endfor %}
+  </div>
+  {% if runs.object_list %}
+  <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+    <thead><tr><th>#</th><th>Started</th><th>Tool · source</th><th>By</th><th>Status</th><th>New</th><th>Updated</th><th>Unchanged</th><th>Removed</th><th></th></tr></thead>
+    <tbody>{% for r in runs %}
+      <tr {% if selected and selected.pk == r.pk %}class="table-success"{% endif %}>
+        <td>{{ r.pk }}</td><td class="text-nowrap">{{ r.started_at|date:"d M Y H:i" }}</td>
+        <td>{{ r.get_tool_display|default:r.tool }} · {{ r.source_name|default:"-" }}</td><td>{{ r.started_by.username|default:"-" }}</td>
+        <td><span class="badge text-bg-{% if r.status == 'Failed' %}danger{% elif r.status == 'Warning' %}warning{% elif r.status == 'Success' %}success{% else %}secondary{% endif %}">{{ r.status }}</span>
+          {% if r.error %}<div class="small text-danger">{{ r.error|truncatechars:70 }}</div>{% endif %}</td>
+        <td>{{ r.created }}</td><td>{{ r.updated }}</td><td>{{ r.unchanged }}</td><td>{{ r.removed }}</td>
+        <td><a href="?run={{ r.pk }}" class="small text-success text-decoration-none">Details →</a></td>
+      </tr>{% endfor %}
+    </tbody></table></div>
+    {% if runs.has_other_pages %}<div class="small text-center mt-2">
+      {% if runs.has_previous %}<a href="?status={{ status }}&page={{ runs.previous_page_number }}">‹ Previous</a>{% endif %}
+      <span class="text-muted mx-2">Page {{ runs.number }} of {{ runs.paginator.num_pages }}</span>
+      {% if runs.has_next %}<a href="?status={{ status }}&page={{ runs.next_page_number }}">Next ›</a>{% endif %}</div>{% endif %}
+  {% else %}<p class="small text-muted mb-0">No syncs {% if status %}with this status {% endif %}yet.</p>{% endif %}
+</div>
+
+<div class="panel">
+  <h6 class="mb-1">Integration audit</h6>
+  <p class="small text-muted">Who connected, linked, changed or disconnected tools. Also shown in the project's Activity & Audit tab.</p>
+  {% for a in activity %}
+    <div class="d-flex small border-bottom py-1"><span class="text-muted text-nowrap me-3">{{ a.created_at|date:"d M Y H:i" }}</span>
+      <span class="flex-grow-1">{{ a.message }}{% if a.reason %}<div class="text-danger">{{ a.reason|truncatechars:150 }}</div>{% endif %}</span>
+      <span class="text-muted ms-2">{{ a.user.username|default:"-" }}</span></div>
+  {% empty %}<p class="small text-muted mb-0">Nothing recorded yet.</p>{% endfor %}
+</div>
+{% endblock %}

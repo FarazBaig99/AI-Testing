@@ -43,7 +43,7 @@ class ProjectCreateForm(UserChoiceMixin, StyledForm):
     INITIAL_STATUSES = ['Draft', 'Pending Approval', 'Active']
 
     members = forms.ModelMultipleChoiceField(queryset=User.objects.none(), required=False, label='Team Members',
-                                             help_text='Added with the Tester role; change roles later in Team & Access.')
+                                             help_text='Added with the Tester role; change roles later in Org & Team.')
     milestones = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 4}),
                                  label='Milestones & Key Deliverables',
                                  help_text='One per line: Title | YYYY-MM-DD (date optional)')
@@ -128,17 +128,6 @@ class LeadershipForm(UserChoiceMixin, StyledForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setup_users('manager', 'qa_lead', 'ba_lead')
-
-
-class MemberForm(UserChoiceMixin, StyledForm):
-    class Meta:
-        model = ProjectMember
-        fields = ['user', 'role']
-
-    def __init__(self, *args, project=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setup_users('user')
-        self.fields['user'].queryset = self.fields['user'].queryset.exclude(project_memberships__project=project)
 
 
 class MilestoneForm(StyledForm):

@@ -1,0 +1,5 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Tasks & Subtasks{% endblock %}
+{% block delivery %}
+{% include "delivery/_item_table.html" with show_parent=True kind_filter=True empty_title="No tasks yet" %}
+{% endblock %}

@@ -1,0 +1,80 @@
+  {# ---------- projects management bar ---------- #}
+  <div class="pf-head d-flex flex-wrap align-items-center gap-3 mb-3">
+    <div>
+      <div class="pf-eyebrow">Central projects &amp; governance foundation</div>
+      <h4 class="fw-bold mb-0">Projects Management <span class="pill-pf align-middle">{{ counts.projects_total }} Total Project{{ counts.projects_total|pluralize }}</span></h4>
+      <small class="text-muted">Manage projects, scope, business objectives, governance, and configure project-scoped environments.</small>
+    </div>
+    <div class="ms-auto d-flex flex-wrap align-items-center gap-2">
+      <div class="view-toggle">
+        <a href="{% url 'portfolio_list' %}">All Projects Listing</a>
+        <a href="{% url 'portfolio_workspace' project.pk %}" class="active">Project Workspace</a>
+      </div>
+      <a href="{% url 'portfolio_create' %}" class="btn btn-pf"><i class="bi bi-plus-lg"></i> Create Project</a>
+    </div>
+  </div>
+
+  {# ---------- project header ---------- #}
+  <div class="pf-head mb-3">
+    <div class="d-flex flex-wrap gap-3">
+      <div class="key-logo">{{ project.key|slice:":4" }}</div>
+      <div class="flex-grow-1" style="min-width:260px">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <h4 class="fw-bold mb-0">{{ project.name }} <span class="fw-bold">({{ project.key }})</span></h4>
+          <span class="badge text-bg-light border">{{ project.project_type }}</span>
+          <span class="lc lc-{{ project.status|slugify }}">{{ project.status }}</span>
+        </div>
+        <div class="mt-1"><span class="crit crit-{{ project.criticality|lower }}">{{ project.criticality }} Criticality</span></div>
+        {% if project.description %}<p class="small text-muted mb-1 mt-1">{{ project.description }}</p>{% endif %}
+        <div class="meta meta-dots d-flex flex-wrap mt-1">
+          <span>Owner / Sponsor: <b>{{ project.sponsor|default:"-" }}</b></span>
+          <span>Manager: <b>{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</b></span>
+          <span>QA Lead: <b class="text-success">{% if project.qa_lead %}{{ project.qa_lead.get_full_name|default:project.qa_lead.username }}{% else %}-{% endif %}</b></span>
+          <span>Model: <b>{{ project.delivery_model }}</b></span>
+          <span>Timeline: <b>{% include "portfolio/_timeline.html" %}</b></span>
+        </div>
+        {% if project.tag_list %}<div class="mt-2">{% for t in project.tag_list %}<span class="badge text-bg-light border me-1">{{ t }}</span>{% endfor %}</div>{% endif %}
+      </div>
+      <div class="d-flex flex-column gap-2 align-items-start">
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{% url 'portfolio_workspace' project.pk 'environments' %}" class="btn btn-sm btn-pf"><i class="bi bi-hdd-stack"></i> Configure Environments →</a>
+          {% if project.status == 'Active' %}
+            <button type="button" class="btn btn-sm btn-hold" data-bs-toggle="modal" data-bs-target="#quickStatus"><i class="bi bi-pause-circle"></i> Put on Hold</button>
+          {% elif project.status == 'On Hold' %}
+            <button type="button" class="btn btn-sm btn-outline-pf" data-bs-toggle="modal" data-bs-target="#quickStatus"><i class="bi bi-play-circle"></i> Resume Project</button>
+          {% else %}
+            <a href="{% url 'portfolio_workspace' project.pk 'lifecycle' %}" class="btn btn-sm btn-outline-pf"><i class="bi bi-arrow-repeat"></i> Change Status</a>
+          {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{% url 'portfolio_list' %}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> All Projects</a>
+          <a href="{% url 'project_detail' project.pk %}" class="btn btn-sm btn-light border"><i class="bi bi-check2-square"></i> Test Management</a>
+        </div>
+      </div>
+    </div>
+    <div class="ws-tabs border-top mt-3 pt-3">
+      {% for slug, label, icon in tabs %}
+        <a href="{% url 'portfolio_workspace' project.pk slug %}" class="{% if slug == tab %}active{% endif %}{% if slug == 'integrations' and counts.integrations %} linked{% endif %}"><i class="bi bi-{{ icon }}"></i> {{ label }}{% if slug == 'team' %} ({{ counts.members }}){% elif slug == 'delivery' %} ({{ counts.sprints }} Sprint{{ counts.sprints|pluralize }}){% elif slug == 'integrations' %} ({{ counts.integrations }}){% if counts.integrations_failed %} <span class="dot dot-fail" title="{{ counts.integrations_failed }} connection(s) failed"></span>{% elif counts.integrations %} <span class="dot"></span>{% endif %}{% elif slug == 'environments' %} ({{ counts.environments }}){% elif slug == 'modules' %} ({{ counts.modules }}){% endif %}{% if slug == 'requirements' %} <span class="soon">· soon</span>{% endif %}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if project.status == 'Active' or project.status == 'On Hold' %}
+  <div class="modal fade" id="quickStatus" tabindex="-1" aria-hidden="true"><div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="{% url 'portfolio_workspace' project.pk 'lifecycle' %}">{% csrf_token %}
+      <input type="hidden" name="action" value="status">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <input type="hidden" name="status" value="{% if project.status == 'Active' %}On Hold{% else %}Active{% endif %}">
+      <div class="modal-header"><h6 class="modal-title fw-bold">{% if project.status == 'Active' %}Put {{ project.name }} on hold{% else %}Resume {{ project.name }}{% endif %}</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body">
+        <p class="small mb-2">Status moves <span class="lc lc-{{ project.status|slugify }}">{{ project.status }}</span> → {% if project.status == 'Active' %}<span class="lc lc-on-hold">On Hold</span>{% else %}<span class="lc lc-active">Active</span>{% endif %}</p>
+        <label class="form-label small fw-semibold">Reason <span class="text-danger">*</span></label>
+        <textarea name="reason" rows="3" class="form-control" required placeholder="Why is the status changing?"></textarea>
+        <div class="form-text">Saved in the lifecycle history and audit trail.</div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-pf">{% if project.status == 'Active' %}Put on Hold{% else %}Resume Project{% endif %}</button></div>
+    </form>
+  </div></div></div>
+  {% endif %}

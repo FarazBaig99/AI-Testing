@@ -47,4 +47,39 @@
   .pf .box-label { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
   .pf .meta b { color: #0f172a; font-weight: 600; }
   .pf .meta { color: #64748b; font-size: .82rem; }
+  .pf .view-toggle { display: inline-flex; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 10px; padding: 3px; }
+  .pf .view-toggle a { padding: 5px 12px; border-radius: 8px; font-size: .8rem; color: #475569; text-decoration: none; font-weight: 500; }
+  .pf .view-toggle a.active { background: #fff; color: var(--pf-dark); font-weight: 600; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+  .pf .view-toggle a.disabled { opacity: .5; pointer-events: none; }
+  .pf .btn-hold { background: #f8fafc; border: 1px solid #e2e8f0; color: #b45309; }
+  .pf .btn-hold:hover { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+  .pf .meta-dots { column-gap: 0; row-gap: 4px; }
+  .pf .meta-dots span:not(:last-child)::after { content: '•'; margin: 0 10px; color: #94a3b8; }
+  .pf .ws-tabs a.linked:not(.active) { background: var(--pf-soft); color: var(--pf-dark); border: 1px solid var(--pf-border); }
+  .pf .ws-tabs a .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--pf); vertical-align: 1px; }
+  .pf .ws-tabs a.active .dot { background: #fff; }
+  .pf .ws-tabs a .dot-fail, .pf .ws-tabs a.active .dot-fail { background: #dc2626; }
+  .pf .kpi-soft { background: #f8fafc; }
+  .pf .text-orange { color: #c2410c; }
+  .pf .avatars { display: flex; align-items: center; }
+  .pf .avatars .av { width: 28px; height: 28px; border-radius: 50%; background: var(--pf-soft); color: var(--pf-dark); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--pf-border); display: inline-flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; margin-right: -6px; }
+  .pf .avatars .av-more { background: #f1f5f9; color: #475569; box-shadow: 0 0 0 1px #e2e8f0; }
+  .pf .ms-row { display: flex; align-items: center; gap: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .pf .ms-num { width: 24px; height: 24px; border-radius: 50%; background: #e2e8f0; color: #475569; font-size: .72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pf .ms-check { background: #dcfce7; color: #15803d; }
+  .pf .ms-pill { appearance: none; -webkit-appearance: none; border-radius: 20px; padding: 2px 10px; font-size: .72rem; font-weight: 600; border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; text-align: center; }
+  .pf .ms-completed { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+  .pf .ms-in-progress { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+  .pf .env-card { background: linear-gradient(180deg, #f0fdf4, #fff); border: 1px solid var(--pf-border); border-radius: 14px; padding: 18px 20px; }
+  .pf .env-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--pf); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 1.15rem; flex-shrink: 0; }
+  .pf .env-icon-sm { background: var(--pf-soft); color: var(--pf-dark); border: 1px solid var(--pf-border); }
+  .pf .env-row { display: flex; justify-content: space-between; gap: 8px; font-size: .8rem; padding: 7px 0; border-bottom: 1px solid #e2e8f0; }
+  .pf .vel-box { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+  .pf .vel-row { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: inherit; text-decoration: none; }
+  .pf .vel-row:last-child { border-bottom: 0; }
+  .pf .vel-row:hover { background: #f8fafc; color: inherit; }
+  .pf .vel-bar { width: 80px; flex-shrink: 0; }
+  .pf .vel-row .cat { border-radius: 6px; padding: 1px 7px; font-size: .66rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
+  .pf .vel-row .state-active { background: #dcfce7; color: #15803d; border-color: #bbf7d0; } .pf .vel-row .state-future { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; } .pf .vel-row .state-closed { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+  @media (max-width: 576px) { .pf .vel-bar { display: none; } }
 </style>

@@ -1,0 +1,60 @@
+{% extends "integrations/_layout.html" %}
+{% block actions %}
+  {% if kpis.total %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="test_all">
+    <button class="btn btn-light border" onclick="this.disabled=true;this.form.submit();this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Testing...'"><i class="bi bi-activity"></i> Test All</button></form>{% endif %}
+  <button class="btn btn-outline-pf" data-bs-toggle="collapse" data-bs-target="#addSystem"><i class="bi bi-plus-lg"></i> Add Integration</button>
+{% endblock %}
+{% block body %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="kpi"><small>System integrations</small><b>{{ kpis.total }}</b><span class="small text-muted">Banks, airlines, GHA, government...</span></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><small>Connection passed</small><b class="text-success">{{ kpis.passed }}</b><span class="small text-muted">Last test reached the system</span></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><small>Connection failed</small><b class="{% if kpis.failed %}text-danger{% endif %}">{{ kpis.failed }}</b><span class="small text-muted">Connection broken at last test</span></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><small>Never tested</small><b class="text-muted">{{ kpis.never }}</b></div></div>
+</div>
+
+<div class="collapse {% if show_form %}show{% endif %}" id="addSystem"><div class="panel mb-3">
+  <h6><i class="bi bi-plus-circle text-success"></i> Add system integration</h6>
+  {% include "integrations/_system_form.html" with action="add" button="Add Integration" %}
+</div></div>
+
+<div class="panel">
+  <form class="d-flex flex-wrap align-items-center gap-2 mb-3" method="get">
+    <h6 class="mb-0 me-2"><i class="bi bi-diagram-3 text-success"></i> Partner systems</h6>
+    <select name="status" class="form-select form-select-sm w-auto" onchange="this.form.submit()"><option value="">Any status</option>
+      {% for s in statuses %}<option {% if s == status %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <select name="env" class="form-select form-select-sm w-auto" onchange="this.form.submit()"><option value="">All environments</option>
+      <option value="none" {% if env == 'none' %}selected{% endif %}>Not environment specific</option>
+      {% for e in environments %}<option value="{{ e.pk }}" {% if env == e.pk|stringformat:'s' %}selected{% endif %}>{{ e.name }}</option>{% endfor %}</select>
+    {% if status or env %}<a href="?" class="btn btn-sm btn-light border">Clear</a>{% endif %}
+  </form>
+  {% for i in systems %}
+  <div class="int-card mb-2 {% if i.last_status == 'Failed' %}is-failed{% elif i.last_status == 'Passed' %}is-passed{% endif %}">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+      <span class="int-logo">{{ i.name|first|upper }}</span>
+      <div class="flex-grow-1" style="min-width:240px">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <a href="{% url 'integrations_system' project.pk i.pk %}" class="fw-bold text-dark text-decoration-none">{{ i.name }}</a>
+          <span class="badge text-bg-light border fw-normal">{{ i.partner_type }}</span>
+          <span class="badge text-bg-light border fw-normal">{{ i.protocol }} · {{ i.direction }}</span>
+          {% if i.environment %}<span class="pill-pf">{{ i.environment.name }}</span>{% endif %}
+          <span class="st {% if i.last_status == 'Never tested' %}st-muted{% else %}st-{{ i.last_status }}{% endif %}">{% if i.last_status == 'Passed' %}● Connection Passed{% elif i.last_status == 'Failed' %}● Connection Failed{% else %}Never tested{% endif %}</span>
+        </div>
+        <div class="mono text-muted text-break mt-1">{% if i.is_url %}{{ i.check_method }} {% endif %}{{ i.endpoint }}{% if i.auth_type != 'none' %} · <i class="bi bi-key"></i> {{ i.get_auth_type_display }}{% endif %}</div>
+        {% if i.last_checked_at %}<div class="small mt-1 {% if i.last_status == 'Failed' %}text-danger{% else %}text-muted{% endif %}">{{ i.last_message }} · tested {{ i.last_checked_at|timesince }} ago</div>{% endif %}
+      </div>
+      <div class="d-flex gap-2">
+        <form method="post" action="{% url 'integrations_system' project.pk i.pk %}">{% csrf_token %}<input type="hidden" name="action" value="test"><input type="hidden" name="next" value="list">
+          <button class="btn btn-sm btn-pf" onclick="this.disabled=true;this.form.submit();this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Testing'"><i class="bi bi-plug"></i> Test Connection</button></form>
+        <a href="{% url 'integrations_system' project.pk i.pk %}" class="btn btn-sm btn-light border">Details &amp; history</a>
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="text-center text-muted py-4">
+    <i class="bi bi-diagram-3 fs-1"></i>
+    <p class="mt-2 mb-1">{% if status or env %}No integrations match these filters.{% else %}No partner systems yet.{% endif %}</p>
+    {% if not status and not env %}<p class="small mb-0">Add the banks, airlines, GHA and government systems {{ project.name }} exchanges data with, then test each connection.</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

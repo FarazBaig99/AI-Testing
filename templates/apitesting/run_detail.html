@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.pk }} - {{ run.collection.name }}{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .rd .m { font-size: .62rem; font-weight: 800; font-family: monospace; width: 50px; display: inline-block; }
+  .rd .m-GET { color: #16a34a; } .rd .m-POST { color: #d97706; } .rd .m-PUT { color: #2563eb; }
+  .rd .m-PATCH { color: #7c3aed; } .rd .m-DELETE { color: #dc2626; } .rd .m-HEAD, .rd .m-OPTIONS { color: #64748b; }
+  .rd .run-st { border-radius: 20px; padding: 3px 12px; font-size: .78rem; font-weight: 700; white-space: nowrap; }
+  .rd .run-passed { background: #dcfce7; color: #15803d; } .rd .run-failed, .rd .run-error { background: #fee2e2; color: #b91c1c; }
+  .rd .run-running, .rd .run-queued { background: #e0f2fe; color: #0369a1; } .rd .run-stopped { background: #f1f5f9; color: #475569; }
+  .rd .res-row { cursor: pointer; }
+  .rd .res-row td { font-size: .82rem; vertical-align: middle; }
+  .rd .detail pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; max-height: 320px; overflow: auto; font-size: .75rem; white-space: pre-wrap; word-break: break-word; }
+  .rd .chart { position: relative; height: 190px; }
+  .rd .chart svg { width: 100%; height: 100%; display: block; }
+  .rd .chart .grid { stroke: #eef2f6; } .rd .chart .axis text { fill: #94a3b8; font-size: 10px; }
+  .rd .chart .tip { position: absolute; pointer-events: none; background: #0f172a; color: #fff; font-size: .72rem; padding: 3px 8px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -110%); }
+  .rd .kpi b.fs-5 { font-size: 1.25rem !important; }
+</style>
+<div class="pf rd">
+  <div class="pf-head mb-3 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-auto">
+      <div class="pf-eyebrow">{{ run.get_kind_display }} run #{{ run.pk }}{% if run.schedule %} · schedule "{{ run.schedule.name }}"{% endif %}</div>
+      <h4 class="fw-bold mb-1"><i class="bi bi-collection-play text-success"></i> {{ run.collection.name }}
+        <span class="run-st run-{{ run.status }} align-middle" id="runStatus">{{ run.get_status_display }}</span></h4>
+      <small class="text-muted">Started {{ run.started_at|date:"d M Y, H:i:s"|default:"-" }} by {{ run.created_by.username|default:"scheduler" }} ·
+        Duration <b id="runDuration">{{ run.duration_s|default:"-" }}</b> s
+        {% if run.emails %} · <i class="bi bi-envelope"></i> <span id="emailStatus">{{ run.email_status|default:"report e-mail after the run" }}</span>{% endif %}</small>
+    </div>
+    {% if run.is_active %}
+    <form method="post" action="{% url 'api_run_stop' run.pk %}" id="stopForm">{% csrf_token %}
+      <button class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-fill"></i> Stop run</button></form>
+    {% endif %}
+    <a href="{% url 'api_collection_run' run.collection.pk %}?tab={{ run.kind }}" class="btn btn-sm btn-pf"><i class="bi bi-arrow-repeat"></i> Run again</a>
+    <a href="{% url 'api_collection_run' run.collection.pk %}?tab=history" class="btn btn-sm btn-light border">Run history</a>
+  </div>
+  <div class="alert alert-danger small" id="runError" {% if not run.error %}hidden{% endif %}>{{ run.error }}</div>
+
+  {% if run.kind == 'functional' %}
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-3"><div class="kpi"><small>Requests</small><b class="fs-5"><span id="kDone">{{ run.summary.done|default:0 }}</span> / <span id="kPlanned">{{ run.summary.planned|default:"-" }}</span></b></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><small>Passed</small><b class="fs-5 text-success" id="kPassed">{{ run.summary.passed|default:0 }}</b></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><small>Failed</small><b class="fs-5 text-danger" id="kFailed">{{ run.summary.failed|default:0 }}</b></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><small>Avg response</small><b class="fs-5"><span id="kAvg">{{ run.summary.avg_ms|default:"-" }}</span> ms</b></div></div>
+  </div>
+  <div class="progress mb-3" style="height:6px"><div class="progress-bar" id="progress" style="width:0%"></div></div>
+  <div class="panel">
+    <h6>Results <span class="small text-muted fw-normal">· click a row to see the response</span></h6>
+    <div class="table-responsive"><table class="table table-sm mb-0">
+      <thead><tr><th>Iter.</th><th>#</th><th>Request</th><th>Expected</th><th>Status</th><th>Time</th><th>Size</th><th>Result</th></tr></thead>
+      <tbody id="resultRows"></tbody>
+    </table></div>
+    <div class="text-center text-muted small py-3" id="noResults">Waiting for the first response…</div>
+  </div>
+
+  {% else %}
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-2"><div class="kpi"><small>Requests</small><b class="fs-5" id="pReq">-</b></div></div>
+    <div class="col-6 col-md-2"><div class="kpi"><small>Throughput</small><b class="fs-5"><span id="pRps">-</span> <span class="small fw-normal">req/s</span></b></div></div>
+    <div class="col-6 col-md-2"><div class="kpi"><small>Errors</small><b class="fs-5"><span id="pErr">-</span>%</b></div></div>
+    <div class="col-6 col-md-2"><div class="kpi"><small>Avg response</small><b class="fs-5"><span id="pAvg">-</span> ms</b></div></div>
+    <div class="col-6 col-md-2"><div class="kpi"><small>p95</small><b class="fs-5"><span id="pP95">-</span> ms</b></div></div>
+    <div class="col-6 col-md-2"><div class="kpi"><small>Active users</small><b class="fs-5"><span id="pVus">-</span> / {{ run.config.vus }}</b></div></div>
+  </div>
+  <div class="small text-muted mb-2">
+    {{ run.config.vus }} virtual users ·
+    {% if run.config.stop_by == 'iterations' %}{{ run.config.iterations }} iterations each{% else %}{{ run.config.duration }} s{% endif %} ·
+    ramp-up {{ run.config.ramp_up }} s · fail above {{ run.config.max_error_pct }}% errors{% if run.config.max_p95 %} or p95 {{ run.config.max_p95 }} ms{% endif %} ·
+    elapsed <b id="pElapsed">-</b> s
+  </div>
+  <div class="alert alert-danger small py-2" id="failReasons" hidden></div>
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6"><div class="panel"><h6 class="small fw-bold mb-1">Average response time per second (ms)</h6><div class="chart" id="chartRt"></div></div></div>
+    <div class="col-lg-6"><div class="panel"><h6 class="small fw-bold mb-1">Throughput (requests per second)</h6><div class="chart" id="chartRps"></div></div></div>
+  </div>
+  <div class="panel mb-3">
+    <h6>Per API</h6>
+    <div class="table-responsive"><table class="table table-sm mb-0 small">
+      <thead><tr><th>API</th><th class="text-end">Requests</th><th class="text-end">Errors</th><th class="text-end">req/s</th><th class="text-end">Avg</th><th class="text-end">Min</th><th class="text-end">Max</th><th class="text-end">p90</th><th class="text-end">p95</th><th class="text-end">p99</th><th>Status codes</th></tr></thead>
+      <tbody id="apiRows"></tbody>
+    </table></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const STATUS_URL = '{% url "api_run_status" run.pk %}';
+  const KIND = '{{ run.kind }}';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const size = n => n == null ? '-' : n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+  let after = 0;
+
+  // ---------- functional ----------
+  function addResult(r) {
+    $('noResults').hidden = true;
+    const tr = document.createElement('tr');
+    tr.className = 'res-row';
+    tr.innerHTML = `<td class="text-muted">${r.iteration}</td><td class="text-muted">${r.position}</td>
+      <td><span class="m m-${esc(r.method)}">${esc(r.method)}</span>${esc(r.name)}</td><td>${esc(r.expected)}</td>
+      <td class="fw-semibold">${r.status_code ?? '-'}</td><td>${r.ms ?? '-'} ms</td><td>${size(r.size)}</td>
+      <td>${r.passed ? '<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill"></i> Pass</span>' : '<span class="text-danger fw-semibold"><i class="bi bi-x-circle-fill"></i> Fail</span>'}</td>`;
+    const detail = document.createElement('tr');
+    detail.className = 'detail'; detail.hidden = true;
+    detail.innerHTML = `<td colspan="8"><div class="small mb-1"><code>${esc(r.method)} ${esc(r.url)}</code></div>
+      ${r.error ? `<div class="alert alert-danger small py-1 mb-2">${esc(r.error)}</div>` : ''}
+      <div class="row g-2"><div class="col-lg-8"><div class="small fw-semibold">Response body</div><pre>${esc(pretty(r.body)) || '(empty)'}</pre></div>
+      <div class="col-lg-4"><div class="small fw-semibold">Response headers</div><pre>${(r.headers || []).map(([k, v]) => esc(`${k}: ${v}`)).join('\n') || '-'}</pre></div></div></td>`;
+    tr.addEventListener('click', () => detail.hidden = !detail.hidden);
+    $('resultRows').append(tr, detail);
+  }
+  function pretty(body) { try { return JSON.stringify(JSON.parse(body), null, 2); } catch (e) { return body || ''; } }
+  function showFunctional(s) {
+    $('kDone').textContent = s.done ?? 0; $('kPlanned').textContent = s.planned ?? '-'; $('kPassed').textContent = s.passed ?? 0;
+    $('kFailed').textContent = s.failed ?? 0; $('kAvg').textContent = s.avg_ms ?? '-';
+    $('progress').style.width = s.planned ? `${Math.round((s.done || 0) * 100 / s.planned)}%` : '0%';
+  }
+
+  // ---------- performance ----------
+  function niceMax(v) {
+    if (!v) return 1;
+    const p = 10 ** Math.floor(Math.log10(v)), n = v / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+  }
+  function lineChart(box, points, unit) {
+    const w = box.clientWidth || 500, h = box.clientHeight || 190, pad = {l: 44, r: 10, t: 10, b: 22};
+    const pts = points.filter(p => p.v != null);
+    const maxX = Math.max(1, points.length - 1), maxY = niceMax(Math.max(0, ...pts.map(p => p.v)));
+    const x = t => pad.l + (w - pad.l - pad.r) * t / maxX, y = v => h - pad.b - (h - pad.t - pad.b) * v / maxY;
+    let grid = '';
+    for (let i = 0; i <= 4; i++) {
+      const v = maxY * i / 4;
+      grid += `<line class="grid" x1="${pad.l}" x2="${w - pad.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${pad.l - 6}" y="${y(v) + 3}" text-anchor="end">${Math.round(v)}</text>`;
+    }
+    const step = Math.max(1, Math.ceil(maxX / 6));
+    for (let t = 0; t <= maxX; t += step) grid += `<text x="${x(t)}" y="${h - 6}" text-anchor="middle">${t}s</text>`;
+    const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
+    box.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><g class="axis">${grid}</g>
+      ${pts.length ? `<path d="${path}" fill="none" stroke="#059669" stroke-width="2" stroke-linejoin="round"/>` : `<text x="${w / 2}" y="${h / 2}" text-anchor="middle" fill="#94a3b8" font-size="12">No data yet</text>`}
+      <line class="cross" y1="${pad.t}" y2="${h - pad.b}" stroke="#94a3b8" stroke-dasharray="3 3" visibility="hidden"/>
+      <circle class="dot" r="4" fill="#059669" stroke="#fff" stroke-width="2" visibility="hidden"/></svg><div class="tip" hidden></div>`;
+    const svg = box.querySelector('svg'), cross = svg.querySelector('.cross'), dot = svg.querySelector('.dot'), tip = box.querySelector('.tip');
+    svg.addEventListener('mousemove', e => {
+      if (!pts.length) return;
+      const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * w / r.width;
+      const t = Math.round((px - pad.l) * maxX / (w - pad.l - pad.r));
+      const p = pts.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a);
+      cross.setAttribute('x1', x(p.t)); cross.setAttribute('x2', x(p.t)); cross.setAttribute('visibility', 'visible');
+      dot.setAttribute('cx', x(p.t)); dot.setAttribute('cy', y(p.v)); dot.setAttribute('visibility', 'visible');
+      tip.hidden = false; tip.textContent = `${p.t}s · ${p.v} ${unit}`;
+      tip.style.left = `${x(p.t) * r.width / w}px`; tip.style.top = `${y(p.v) * r.height / h}px`;
+    });
+    svg.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); tip.hidden = true; });
+  }
+  let lastPerf = null;
+  function showPerformance(s) {
+    lastPerf = s;
+    const t = s.totals || {};
+    $('pReq').textContent = t.requests ?? '-'; $('pRps').textContent = t.rps ?? '-'; $('pErr').textContent = t.error_pct ?? '-';
+    $('pAvg').textContent = t.avg ?? '-'; $('pP95').textContent = t.p95 ?? '-'; $('pVus').textContent = s.active_vus ?? 0;
+    $('pElapsed').textContent = s.elapsed ?? '-';
+    const series = s.series || [];
+    lineChart($('chartRt'), series.map(b => ({t: b.t, v: b.avg})), 'ms');
+    lineChart($('chartRps'), series.map(b => ({t: b.t, v: b.count})), 'req/s');
+    $('apiRows').innerHTML = (s.apis || []).map(a => `<tr><td><span class="m m-${esc(a.method)}">${esc(a.method)}</span>${esc(a.name)}</td>
+      <td class="text-end">${a.requests}</td><td class="text-end ${a.errors ? 'text-danger fw-semibold' : ''}">${a.errors} (${a.error_pct}%)</td>
+      <td class="text-end">${a.rps}</td><td class="text-end">${a.avg ?? '-'}</td><td class="text-end">${a.min ?? '-'}</td><td class="text-end">${a.max ?? '-'}</td>
+      <td class="text-end">${a.p90 ?? '-'}</td><td class="text-end">${a.p95 ?? '-'}</td><td class="text-end">${a.p99 ?? '-'}</td>
+      <td>${Object.entries(a.codes || {}).map(([c, n]) => `<span class="badge ${!a.errors || c.startsWith('2') ? 'text-bg-success' : 'text-bg-danger'} me-1">${esc(c)}: ${n}</span>`).join('')}</td></tr>`).join('')
+      || '<tr><td colspan="11" class="text-center text-muted">Waiting for the first responses…</td></tr>';
+    const reasons = s.fail_reasons || [];
+    $('failReasons').hidden = !reasons.length; $('failReasons').innerHTML = reasons.map(esc).join('<br>');
+  }
+
+  // ---------- polling ----------
+  async function poll() {
+    let data;
+    try { data = await (await fetch(`${STATUS_URL}?after=${after}`)).json(); } catch (e) { return setTimeout(poll, 2000); }
+    $('runStatus').className = `run-st run-${data.status} align-middle`;
+    $('runStatus').textContent = data.status_label;
+    $('runDuration').textContent = data.duration ?? '-';
+    if ($('emailStatus') && data.email_status) $('emailStatus').textContent = data.email_status;
+    $('runError').hidden = !data.error; $('runError').textContent = data.error;
+    if (KIND === 'functional') {
+      data.results.forEach(r => { addResult(r); after = r.id; });
+      showFunctional(data.summary || {});
+      if (!data.active && !$('resultRows').children.length) $('noResults').textContent = 'No request was run.';
+    } else {
+      showPerformance(data.summary || {});
+    }
+    if (!data.active && $('stopForm')) $('stopForm').remove();
+    if (data.active || (data.results && data.results.length === 500)) setTimeout(poll, 1000);
+    else if (!data.email_status && '{{ run.emails|escapejs }}') setTimeout(poll, 2000);   // the e-mail goes out just after the run
+  }
+  poll();
+  window.addEventListener('resize', () => { if (lastPerf) showPerformance(lastPerf); });
+})();
+</script>
+{% endblock %}

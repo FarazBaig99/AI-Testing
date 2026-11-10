@@ -1,0 +1,72 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Delivery Analytics & AI Insights{% endblock %}
+{% block delivery %}
+<style>
+  /* chart series: validated categorical slots 1 (blue) and 2 (orange) */
+  .bars { --series-1: #2a78d6; --series-2: #eb6834; display: flex; }
+  .bars-group { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .bars-plot { height: 150px; border-bottom: 1px solid #cbd5e1; display: flex; align-items: flex-end; justify-content: center; gap: 2px; }
+  .bar { width: 38%; max-width: 26px; min-height: 2px; border-radius: 4px 4px 0 0; cursor: default; position: relative; }
+  .bar.s1, .key.s1 { background: var(--series-1, #2a78d6); }
+  .bar.s2, .key.s2 { background: var(--series-2, #eb6834); }
+  .bar:hover { filter: brightness(1.1); }
+  .bars-label { font-size: .7rem; color: #64748b; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; padding: 0 4px; }
+  .key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  #barTip { position: fixed; z-index: 1080; background: #0f172a; color: #fff; font-size: .75rem; padding: 4px 8px; border-radius: 6px; pointer-events: none; display: none; white-space: nowrap; }
+</style>
+{% if not has_data %}
+  {% include "delivery/_empty.html" with icon="stars" title="Nothing to analyse yet" text="Velocity, bug trends, QA readiness and insights are calculated from synced data." %}
+{% else %}
+<div class="row g-3 mb-3">
+  <div class="col-xl-6"><div class="panel h-100">
+    <h6 class="mb-0">Velocity</h6>
+    <p class="small text-muted mb-3">Committed vs completed {{ velocity.unit }} per sprint{% if velocity.average is not None %} · average completed in closed sprints <b>{{ velocity.average }}</b>{% endif %}.</p>
+    {% if velocity.rows %}{% include "delivery/_bars.html" with rows=velocity.rows a="committed" a_label="Committed" b_label="Completed" table_id="velTable" %}
+    {% else %}<p class="small text-muted mb-0">No started sprints yet.</p>{% endif %}
+  </div></div>
+  <div class="col-xl-6"><div class="panel h-100">
+    <h6 class="mb-0">Bug trend</h6>
+    <p class="small text-muted mb-3">Bugs reported vs resolved during each sprint.</p>
+    {% if bug_trend.rows %}{% include "delivery/_bars.html" with rows=bug_trend.rows a="created" a_label="Reported" b_label="Resolved" table_id="bugTable" %}
+    {% else %}<p class="small text-muted mb-0">No started sprints yet.</p>{% endif %}
+  </div></div>
+</div>
+
+<div class="panel mb-3">
+  <h6 class="mb-0">QA readiness</h6>
+  <p class="small text-muted">For each upcoming release: stories done (50%), no open critical / high bugs (25%), bugs closed (15%), nothing blocked (10%).</p>
+  {% if readiness %}
+  <div class="row g-3">
+    {% for r in readiness %}
+    <div class="col-md-6 col-xl-4"><div class="border rounded-3 p-3 h-100">
+      <div class="d-flex align-items-baseline"><b>{{ r.release.name }}</b><span class="ms-auto fs-4 fw-bold text-{{ r.css }}">{{ r.score }}%</span></div>
+      <div class="small mb-2"><span class="badge text-bg-{{ r.css }}">{{ r.level }}</span>{% if r.release.release_date %} <span class="text-muted">due {{ r.release.release_date|date:"d M Y" }}</span>{% endif %}</div>
+      {% for c in r.checks %}<div class="d-flex small py-1 border-top">
+        <i class="bi {% if c.ok %}bi-check-circle-fill text-success{% else %}bi-x-circle-fill text-danger{% endif %} me-2"></i>{{ c.label }}<span class="ms-auto text-muted">{{ c.value }}</span></div>{% endfor %}
+    </div></div>
+    {% endfor %}
+  </div>
+  {% else %}<p class="small text-muted mb-0">No upcoming release.</p>{% endif %}
+</div>
+
+<div class="panel">
+  <h6 class="mb-0"><i class="bi bi-stars text-success"></i> Insights</h6>
+  <p class="small text-muted">Risks found by rules on the synced data. AI-written insights come in Phase 3.</p>
+  {% for i in insights %}{% include "delivery/_insight.html" %}
+  {% empty %}<p class="small text-muted mb-0"><i class="bi bi-check-circle text-success"></i> No delivery risks found.</p>{% endfor %}
+</div>
+<div id="barTip"></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const tip = document.getElementById('barTip');
+  document.querySelectorAll('.bar[data-tip]').forEach(bar => {
+    bar.addEventListener('mousemove', e => {
+      tip.textContent = bar.dataset.tip; tip.style.display = 'block';
+      tip.style.left = (e.clientX + 12) + 'px'; tip.style.top = (e.clientY - 28) + 'px';
+    });
+    bar.addEventListener('mouseleave', () => tip.style.display = 'none');
+  });
+</script>
+{% endblock %}

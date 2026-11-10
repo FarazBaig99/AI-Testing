@@ -1,0 +1,59 @@
+{% extends "delivery/_layout.html" %}
+{% block heading %}Sprints & Iterations{% endblock %}
+{% block delivery %}
+<style>
+  .sp-card { display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 18px; color: inherit; text-decoration: none; transition: border-color .15s, box-shadow .15s; }
+  .sp-card:hover { border-color: var(--pf); box-shadow: 0 4px 14px rgba(5,150,105,.12); color: inherit; }
+  .sp-card.is-active { border-color: var(--pf-border); }
+  .sp-goal { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 10px; font-size: .8rem; }
+  .sp-meta { font-size: .8rem; color: #64748b; }
+  .sp-meta b { color: #0f172a; }
+</style>
+{% if kpis.n_sprints %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3"><div class="kpi"><small>Active iteration</small>
+    {% if kpis.active %}<b class="fs-5">{{ kpis.active.name }}</b><span class="small text-success">{{ kpis.active.n_verified }}/{{ kpis.active.n_stories }} stories verified</span>
+    {% else %}<b class="fs-5 text-muted">None</b><span class="small text-muted">No sprint running</span>{% endif %}</div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><small>Total story points</small><b>{{ kpis.points|floatformat:"-1" }} SP</b><span class="small text-muted">Across {{ kpis.n_sprints }} sprint{{ kpis.n_sprints|pluralize }}</span></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><small>Active sprint velocity</small>
+    <b class="text-success">{% if kpis.velocity is not None %}{{ kpis.velocity }}%{% else %}-{% endif %}</b>
+    <span class="small text-muted">{% if kpis.active and kpis.active.points %}{{ kpis.active.points_done|default:0|floatformat:"-1" }} / {{ kpis.active.points|floatformat:"-1" }} SP completed{% else %}No estimated active sprint{% endif %}</span></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><small>QA verification rate</small>
+    <b>{% if kpis.qa.rate is not None %}{{ kpis.qa.rate }}%{% else %}-{% endif %}</b>
+    <span class="small {% if kpis.qa.failed or kpis.qa.blocked %}text-danger{% else %}text-muted{% endif %}">{{ kpis.qa.passed }} passed · {{ kpis.qa.failed }} failed · {{ kpis.qa.blocked }} blocked</span></div></div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <span class="small fw-semibold">Filter sprints by state:</span>
+    <a href="?" class="btn btn-sm {% if not state %}btn-pf{% else %}btn-light border{% endif %}">All</a>
+    <a href="?state=active" class="btn btn-sm {% if state == 'active' %}btn-pf{% else %}btn-light border{% endif %}">Active ({{ state_counts.active }})</a>
+    <a href="?state=future" class="btn btn-sm {% if state == 'future' %}btn-pf{% else %}btn-light border{% endif %}">Future ({{ state_counts.future }})</a>
+    <a href="?state=closed" class="btn btn-sm {% if state == 'closed' %}btn-pf{% else %}btn-light border{% endif %}">Closed ({{ state_counts.closed }})</a>
+    <span class="ms-auto small text-muted">Source of truth: the linked tool (sprints & dates). Click a sprint for its stories, tasks and bugs.</span>
+  </div>
+  {% for s in sprints %}
+  <a href="{% url 'delivery_sprint' project.pk s.pk %}" class="sp-card mb-2 {% if s.state == 'active' %}is-active{% endif %}">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <span class="cat state-{{ s.state }} text-uppercase">{{ s.state }}</span>
+      <b>{{ s.name }}</b>
+      {% if s.release %}<span class="small text-muted">· {{ s.release.name }}</span>{% endif %}
+      <span class="ms-auto ext-key">{{ s.start_date|date:"Y-m-d"|default:"?" }} – {{ s.end_date|date:"Y-m-d"|default:"?" }}{% if s.days_left is not None %} · {{ s.days_left }} day{{ s.days_left|pluralize }} left{% endif %}</span>
+    </div>
+    {% if s.goal %}<div class="sp-goal mb-2"><b>Sprint goal:</b> {{ s.goal }}</div>{% endif %}
+    <div class="d-flex flex-wrap align-items-center gap-3 sp-meta">
+      <span>Total stories: <b>{{ s.n_stories }}</b></span>
+      <span>Completed: <b class="text-success">{{ s.n_stories_done }}</b></span>
+      <span>QA verified: <b>{{ s.n_verified }}</b></span>
+      <span>Story points: <b>{{ s.points_done|default:0|floatformat:"-1" }} / {{ s.points|default:0|floatformat:"-1" }} SP</b></span>
+      <span>Bugs: <b>{{ s.n_bugs }}</b>{% if s.n_bugs_open %} <span class="text-danger">({{ s.n_bugs_open }} open)</span>{% endif %}</span>
+      <span class="ms-auto d-flex align-items-center gap-2" style="min-width:180px"><span class="progress flex-grow-1"><span class="progress-bar d-block h-100" style="width:{{ s.done_pct|default:0 }}%"></span></span><b>{{ s.done_pct|default:0 }}%</b></span>
+    </div>
+  </a>
+  {% empty %}
+    {% if state %}<p class="text-center text-muted py-4 mb-0">No {{ state }} sprints.</p>
+    {% else %}{% include "delivery/_empty.html" with icon="arrow-repeat" title="No sprints yet" text="Sprints and iterations of the linked project appear here after a sync, with their start and end dates and progress." %}{% endif %}
+  {% endfor %}
+</div>
+{% endblock %}

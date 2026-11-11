@@ -88,6 +88,8 @@ class ApiTestCase(models.Model):
     body = models.TextField(blank=True)
     expected_status = models.PositiveIntegerField(default=200)
     fingerprint = models.CharField(max_length=64, blank=True)
+    # what the API Testing builder saved for this API (params, headers, auth, body, scripts...); empty = as synced
+    spec = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, default='not_run',
                               choices=[('not_run', 'Not Run'), ('pass', 'Pass'), ('fail', 'Fail')])
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)

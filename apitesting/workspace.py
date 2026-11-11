@@ -93,13 +93,14 @@ RAW_TYPES_KEYS = {k for k, _ in RAW_LANGUAGES}
 
 
 def case_spec(case):
+    """The builder's spec of a synced API: what Save stored on it, else the values from the sync."""
     params = _kv(case.query_params, enabled=lambda v: v not in ('', None))
     query = '&'.join(f"{p['key']}={p['value']}" for p in params if p['enabled'])
     mode, language, body, form_data, urlencoded = _body_from_case(case)
     headers = [h for h in _kv(case.headers)
                if not (mode in ('form-data', 'urlencoded') and h['key'].lower() == 'content-type')]
-    return {
-        'kind': 'case', 'case': case.pk, 'item': None, 'name': case.name,
+    spec = {
+        'kind': 'case', 'case': case.pk, 'item': None, 'name': case.name, 'saved': bool(case.spec),
         'project': case.project_id, 'project_name': case.project.name,
         'environment': case.environment_id, 'environment_name': case.environment.name if case.environment else '',
         'base_url': case.environment.base_url if case.environment else '',
@@ -109,6 +110,9 @@ def case_spec(case):
         'urlencoded': urlencoded, 'graphql_query': '', 'graphql_variables': '', 'verify_ssl': True,
         'expected_status': case.expected_status, 'pre_request_script': '', 'test_script': '',
     }
+    if case.spec:
+        spec.update({f: case.spec[f] for f in SPEC_FIELDS if f in case.spec})
+    return spec
 
 
 def item_spec(item):
@@ -747,6 +751,13 @@ def api_ws_save(request):
     spec = clean_spec(data)
     name = str(data.get('name') or '').strip()[:600]
     item = CollectionRequest.objects.filter(pk=data.get('item') or 0).first() if not data.get('save_as') else None
+    if item is None and data.get('case') and not (data.get('collection') or data.get('new_collection') or data.get('save_as')):
+        # a synced API (APIs tab): Save keeps the values on the API itself
+        case = get_object_or_404(ApiTestCase, pk=data.get('case'))
+        case.spec = spec
+        case.expected_status = spec['expected_status'] or case.expected_status
+        case.save(update_fields=['spec', 'expected_status', 'updated_at'])
+        return JsonResponse({'ok': True, 'case': case.pk, 'saved': True})
     if item is None:
         new_name = str(data.get('new_collection') or '').strip()
         if new_name:

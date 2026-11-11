@@ -929,7 +929,7 @@
     $('reqName').textContent = spec.name || 'Untitled Request';
     const where = [spec.collection_name && `<i class="bi bi-collection"></i> ${esc(spec.collection_name)}`,
                    spec.project_name && `${esc(spec.project_name)} · ${esc(spec.environment_name || 'no environment')}`].filter(Boolean);
-    $('reqCtx').innerHTML = where.join(' &nbsp;|&nbsp; ') + (spec.kind === 'case' ? ' &nbsp;<span class="badge text-bg-light border">synced API (not saved)</span>' : '');
+    $('reqCtx').innerHTML = where.join(' &nbsp;|&nbsp; ') + (spec.kind === 'case' ? ` &nbsp;<span class="badge text-bg-light border" id="caseBadge">${spec.saved ? 'synced API · saved values' : 'synced API · as synced'}</span>` : '');
     $('baseHint').innerHTML = spec.base_url ? `<code>{% templatetag openvariable %}baseUrl{% templatetag closevariable %}</code> = <code>${esc(spec.base_url)}</code>` : '';
     $('method').value = spec.method || 'GET'; colorMethod();
     $('url').value = spec.url || '';
@@ -1349,7 +1349,7 @@
   const modal = new bootstrap.Modal($('saveModal'));
   $('saveCollection').addEventListener('change', () => $('saveNewCollection').hidden = $('saveCollection').value !== '');
   $('saveBtn').addEventListener('click', () => {
-    if (current.item) return save({});
+    if (current.item || current.case) return save({});      // saved request or synced API: save in place
     $('saveName').value = current.name || '';
     $('saveError').textContent = '';
     modal.show();
@@ -1360,10 +1360,11 @@
     const data = {...collect(), name: extra.name ?? current.name, ...extra};
     const res = await fetch(URLS.save, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(data)});
     const out = await res.json();
-    if (!out.ok) { $('saveError').textContent = out.error; if (current.item) alertInline(out.error); return; }
-    if (current.item) {
+    if (!out.ok) { $('saveError').textContent = out.error; if (current.item || current.case) alertInline(out.error); return; }
+    if (current.item || current.case) {
       $('saveBtn').innerHTML = '<i class="bi bi-check2"></i> Saved';
       setTimeout(() => $('saveBtn').innerHTML = '<i class="bi bi-floppy"></i> Save', 1500);
+      if (out.saved) { current.saved = true; const b = $('caseBadge'); if (b) b.textContent = 'synced API · saved values'; }
     } else {
       window.location = `${URLS.page}?item=${out.item}`;
     }

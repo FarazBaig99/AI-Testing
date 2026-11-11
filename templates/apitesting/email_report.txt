@@ -17,10 +17,12 @@ Per API:
 Requests run: {{ summary.done|default:0 }} / {{ summary.planned|default:0 }}
 Passed: {{ summary.passed|default:0 }}
 Failed: {{ summary.failed|default:0 }}
-Average response: {{ summary.avg_ms|default:"-" }} ms
+Average response: {{ summary.avg_ms|default:"-" }} ms{% if summary.tests_total %}
+Tests passed: {{ summary.tests_passed }} / {{ summary.tests_total }}{% endif %}
 {% if failed %}
 Failed requests:
 {% for r in failed %}- {{ r.method }} {{ r.name }}: expected {{ r.expected }}, got {{ r.status_code|default:"-" }} {{ r.error }}
-{% endfor %}{% endif %}{% endif %}{% if link %}
+{% for t in r.tests %}{% if not t.passed %}    x {{ t.name }}: {{ t.error }}
+{% endif %}{% endfor %}{% endfor %}{% endif %}{% endif %}{% if link %}
 Full report: {{ link }}{% endif %}
 {% endautoescape %}

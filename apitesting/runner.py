@@ -12,14 +12,16 @@ import time
 import uuid
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
-from urllib.request import HTTPSHandler, Request, build_opener
+from urllib.request import HTTPCookieProcessor, HTTPSHandler, Request, build_opener
 
 from .models import BASE_URL_VAR
+from .parsers import is_empty_body
 
 TIMEOUT = 30
 MAX_BODY = 5 * 1024 * 1024
 RAW_TYPES = {'text': 'text/plain', 'javascript': 'application/javascript', 'json': 'application/json',
              'html': 'text/html', 'xml': 'application/xml'}
+NO_BODY_METHODS = ('GET', 'HEAD')
 FIXED_TYPE_MODES = ('form-data', 'urlencoded', 'graphql')
 TEXT_HINTS = ('text/', 'json', 'xml', 'javascript', 'html', 'x-www-form-urlencoded', 'graphql')
 
@@ -94,7 +96,9 @@ def build(spec, env=None, files=None):
 
     mode = spec.get('body_mode', 'none')
     data, content_type = None, None
-    if mode == 'raw':
+    if mode == 'raw' and method in NO_BODY_METHODS and is_empty_body(spec.get('body')):
+        pass                    # the {} / <root/> template of a GET is not sent
+    elif mode == 'raw':
         data = (spec.get('body') or '').encode()
         content_type = RAW_TYPES.get(spec.get('raw_language'), 'text/plain')
     elif mode == 'urlencoded':
@@ -123,12 +127,19 @@ def build(spec, env=None, files=None):
     return method, url, headers, data
 
 
-def _open(req, timeout, verify_ssl):
+def ssl_context(verify_ssl=True):
     context = ssl.create_default_context()
     if not verify_ssl:
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
-    return build_opener(HTTPSHandler(context=context)).open(req, timeout=timeout)
+    return context
+
+
+def _open(req, timeout, verify_ssl, jar=None):
+    handlers = [HTTPSHandler(context=ssl_context(verify_ssl))]
+    if jar is not None:              # cookie jar: send stored cookies, keep the ones the server sets
+        handlers.append(HTTPCookieProcessor(jar))
+    return build_opener(*handlers).open(req, timeout=timeout)
 
 
 def guess_language(content_type, body):
@@ -166,7 +177,7 @@ def _response(resp, started):
             'language': guess_language(content_type, body) if is_text else 'text', 'truncated': truncated}
 
 
-def send(spec, env=None, files=None, opener=None):
+def send(spec, env=None, files=None, opener=None, jar=None):
     """Send the request; never raises. Returns the response dict or {'ok': False, 'error': ...}."""
     started = time.monotonic()
     try:
@@ -175,7 +186,8 @@ def send(spec, env=None, files=None, opener=None):
         return {'ok': False, 'error': str(exc), 'ms': 0}
     req = Request(url, data=data, headers=headers, method=method)
     try:
-        resp = (opener or _open)(req, TIMEOUT, spec.get('verify_ssl', True))
+        verify = spec.get('verify_ssl', True)
+        resp = (opener or _open)(req, TIMEOUT, verify) if jar is None else (opener or _open)(req, TIMEOUT, verify, jar=jar)
         with resp:
             result = _response(resp, started)
     except HTTPError as exc:

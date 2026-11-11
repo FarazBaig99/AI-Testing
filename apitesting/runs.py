@@ -43,7 +43,8 @@ def functional_config(request, collection, errors):
     return {'items': [i.pk for i in items],
             'iterations': _int(request.POST.get('iterations'), 1, 1, engine.MAX_ITERATIONS),
             'delay_ms': _int(request.POST.get('delay_ms'), 0, 0, engine.MAX_DELAY_MS),
-            'stop_on_fail': request.POST.get('stop_on_fail') == 'on'}
+            'stop_on_fail': request.POST.get('stop_on_fail') == 'on',
+            'keep_variables': request.POST.get('keep_variables') == 'on'}
 
 
 def performance_config(request, collection, errors):
@@ -183,7 +184,8 @@ def run_status(request, run_id):
     after = _int(request.GET.get('after'), 0, 0, 10 ** 12)
     results = [{'id': r.pk, 'iteration': r.iteration, 'position': r.position, 'name': r.name, 'method': r.method,
                 'url': r.url, 'expected': r.expected, 'status_code': r.status_code, 'ms': r.ms, 'size': r.size,
-                'passed': r.passed, 'error': r.error, 'headers': r.response_headers, 'body': r.response_body}
+                'passed': r.passed, 'error': r.error, 'headers': r.response_headers, 'body': r.response_body,
+                'tests': r.tests, 'console': r.console}
                for r in run.results.filter(pk__gt=after)[:500]]
     return JsonResponse({'status': run.status, 'status_label': run.get_status_display(), 'active': run.is_active,
                          'summary': run.summary, 'error': run.error, 'email_status': run.email_status,

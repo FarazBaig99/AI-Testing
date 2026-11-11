@@ -53,7 +53,10 @@
         <input type="number" name="iterations" min="1" max="{{ limits.MAX_ITERATIONS }}" value="1" class="form-control form-control-sm"></div>
       <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Delay between requests (ms)</label>
         <input type="number" name="delay_ms" min="0" max="{{ limits.MAX_DELAY_MS }}" value="0" class="form-control form-control-sm"></div>
-      <div class="col-md-6 d-flex align-items-end"><label class="form-check small"><input type="checkbox" name="stop_on_fail" class="form-check-input">Stop the run when a request fails</label></div>
+      <div class="col-md-6 d-flex flex-column justify-content-end">
+        <label class="form-check small"><input type="checkbox" name="stop_on_fail" class="form-check-input">Stop the run when a request fails</label>
+        <label class="form-check small"><input type="checkbox" name="keep_variables" class="form-check-input" checked>Keep variable values set by scripts after the run</label></div>
+      <div class="col-12 small text-muted"><i class="bi bi-code-slash"></i> Pre-request and post-response scripts of the collection and of each request run here. A request also fails when one of its tests fails.</div>
     </div>
     {% include "apitesting/_email_fields.html" with when='always' %}
     <div class="collapse mt-3" id="schedFunctional"><div class="border rounded-3 p-3 bg-light">
@@ -97,7 +100,8 @@
         <input type="number" name="max_error_pct" min="0" max="100" value="1" class="form-control form-control-sm"></div>
       <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Fail if p95 above (ms)</label>
         <input type="number" name="max_p95" min="1" class="form-control form-control-sm" placeholder="optional"></div>
-      <div class="col-12 small text-muted">Limits: up to {{ limits.MAX_VUS }} virtual users and {{ limits.MAX_DURATION }} seconds. Ramp-up starts the users evenly over that time.</div>
+      <div class="col-12 small text-muted">Limits: up to {{ limits.MAX_VUS }} virtual users and {{ limits.MAX_DURATION }} seconds. Ramp-up starts the users evenly over that time.
+        <br><i class="bi bi-code-slash"></i> {% templatetag openvariable %}variables{% templatetag closevariable %} are filled in once at the start. Scripts do not run in a performance run, so they do not change the timings.</div>
     </div>
     {% include "apitesting/_email_fields.html" with when='always' %}
     <div class="collapse mt-3" id="schedPerformance"><div class="border rounded-3 p-3 bg-light">

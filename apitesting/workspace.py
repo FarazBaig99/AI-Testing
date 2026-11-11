@@ -1,6 +1,8 @@
 """API Testing workspace (Postman-style): pick projects + environments, browse their APIs, build collections,
 send requests and read the response."""
 import json
+import re
+from datetime import datetime
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -14,13 +16,17 @@ from django.views.decorators.http import require_POST
 
 from projects.models import Project
 
-from . import runner
-from .models import BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiTestCase, CollectionRequest, Environment
+from . import auth, runner, scripting
+from .parsers import is_empty_body
+from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiTestCase, AuthProfile, ProjectVariables,
+                     CollectionRequest, Environment)
 
 SESSION_KEY = 'api_ws'
 METHODS = [m for m, _ in ApiTestCase.METHOD_CHOICES]
 SPEC_FIELDS = ['method', 'url', 'params', 'headers', 'auth', 'body_mode', 'raw_language', 'body', 'form_data',
-               'urlencoded', 'graphql_query', 'graphql_variables', 'verify_ssl', 'expected_status']
+               'urlencoded', 'graphql_query', 'graphql_variables', 'verify_ssl', 'expected_status',
+               'pre_request_script', 'test_script']
+SCRIPT_LIMIT = 100000
 
 
 # ---------- selection (projects + environments, kept in the session) ----------
@@ -76,7 +82,11 @@ def _body_from_case(case):
     if not body.strip():
         return 'none', 'json', '', [], []
     language = runner.guess_language(ct, body)
-    return 'raw', language if language in RAW_TYPES_KEYS else 'text', body, [], []
+    language = language if language in RAW_TYPES_KEYS else 'text'
+    if case.method in runner.NO_BODY_METHODS and is_empty_body(body):
+        # GET / HEAD: no body by default; the template stays ready under "raw"
+        return 'none', language, body, [], []
+    return 'raw', language, body, [], []
 
 
 RAW_TYPES_KEYS = {k for k, _ in RAW_LANGUAGES}
@@ -97,7 +107,7 @@ def case_spec(case):
         'params': params, 'headers': headers, 'auth': {'type': 'none'},
         'body_mode': mode, 'raw_language': language, 'body': body, 'form_data': form_data,
         'urlencoded': urlencoded, 'graphql_query': '', 'graphql_variables': '', 'verify_ssl': True,
-        'expected_status': case.expected_status,
+        'expected_status': case.expected_status, 'pre_request_script': '', 'test_script': '',
     }
 
 
@@ -138,7 +148,9 @@ def clean_spec(data):
         'params': _clean_rows(data.get('params')),
         'headers': _clean_rows(data.get('headers')),
         'auth': {'type': auth_type, **{k: str(auth.get(k, '')) for k in
-                                         ('token', 'username', 'password', 'key', 'value', 'add_to') if k in auth}},
+                                         ('token', 'username', 'password', 'key', 'value', 'add_to') if k in auth},
+                 # which of the environment's logins the request is sent with ('' = default, 'none' = no login)
+                 **({'profile': str(auth['profile'])[:100]} if auth.get('profile') else {})},
         'body_mode': data.get('body_mode') if data.get('body_mode') in dict(BODY_MODES) else 'none',
         'raw_language': data.get('raw_language') if data.get('raw_language') in RAW_TYPES_KEYS else 'json',
         'body': str(data.get('body') or ''),
@@ -148,6 +160,8 @@ def clean_spec(data):
         'graphql_variables': str(data.get('graphql_variables') or ''),
         'verify_ssl': bool(data.get('verify_ssl', True)),
         'expected_status': _status_code(data.get('expected_status')),
+        'pre_request_script': str(data.get('pre_request_script') or '')[:SCRIPT_LIMIT],
+        'test_script': str(data.get('test_script') or '')[:SCRIPT_LIMIT],
     }
 
 
@@ -193,7 +207,8 @@ def duplicate_item(item, collection=None, position=None):
 
 def duplicate_collection(collection, user):
     copy = ApiCollection.objects.create(name=_copy_name(collection.name, 200), description=collection.description,
-                                        created_by=user)
+                                        variables=collection.variables, pre_request_script=collection.pre_request_script,
+                                        test_script=collection.test_script, created_by=user)
     for i, item in enumerate(collection.requests.all(), 1):
         duplicate_item(item, copy, i)
     return copy
@@ -293,6 +308,7 @@ def api_workspace(request):
     collections = ApiCollection.objects.prefetch_related('requests')
     return render(request, 'apitesting/workspace.html', {
         'selected': selected, 'groups': groups, 'collections': collections,
+        'auth_profiles_json': json.dumps(_profiles_by_env(Environment.objects.filter(project_id__in=selection))),
         'other_projects': Project.objects.exclude(pk__in=selection).order_by('name'),
         'methods': METHODS, 'body_modes': BODY_MODES, 'raw_languages': RAW_LANGUAGES,
         'open_case': request.GET.get('case', ''), 'open_item': request.GET.get('item', ''),
@@ -314,19 +330,376 @@ def api_ws_request(request):
 
 @login_required
 @require_POST
-def api_ws_send(request, opener=None):
+def api_ws_send(request, opener=None, login_opener=None):
     try:
         data = json.loads(request.POST.get('spec') or '{}')
     except ValueError:
         return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
     spec = clean_spec(data)
     env = _environment(data.get('environment'))
-    result = runner.send(spec, env, request.FILES, opener=opener)
-    item = CollectionRequest.objects.filter(pk=data.get('item') or 0).first()
+    item = CollectionRequest.objects.select_related('collection').filter(pk=data.get('item') or 0).first()
+    collection = item.collection if item else None
+    scopes = scripting.load_scopes(env, collection)
+    with scripting.ScriptEngine() as engine:       # Node only starts when the request has scripts
+        out = scripting.execute(
+            spec, env, scopes, engine, collection, files=request.FILES,
+            send=auth.sender(opener=opener, login_opener=login_opener),
+            info={'requestName': item.name if item else data.get('name', ''), 'requestId': str(item.pk if item else '')})
+    scripting.save_scopes(scopes, env, collection)
+    result = out['result']
     if item and result.get('ok'):
         item.last_status, item.last_ms, item.last_run_at = result['status'], result['ms'], timezone.now()
         item.save(update_fields=['last_status', 'last_ms', 'last_run_at'])
-    return JsonResponse(result)
+    return JsonResponse(dict(result, tests=out['tests'], console=out['console'], script_errors=out['errors']))
+
+
+# ---------- variables and collection settings ----------
+
+def clean_variable_rows(rows):
+    out = []
+    for r in rows if isinstance(rows, list) else []:
+        if isinstance(r, dict) and str(r.get('key', '')).strip():
+            out.append({'key': str(r['key']).strip()[:200], 'value': str(r.get('value', ''))[:10000],
+                        'enabled': bool(r.get('enabled', True))})
+    return out
+
+
+# ---------- environment logins (Keycloak) and the cookie jar ----------
+
+def _profile_brief(profile):
+    return {'id': profile.pk, 'name': profile.name, 'is_default': profile.is_default, 'kind': profile.kind,
+            'active': profile.is_active, 'last_status': profile.last_status}
+
+
+def _profiles_by_env(envs):
+    """{environment id: [login, ...]} for the request builder's Login menu."""
+    out = {str(e.pk): [] for e in envs}
+    for p in AuthProfile.objects.filter(environment__in=envs):
+        out[str(p.environment_id)].append(_profile_brief(p))
+    return out
+
+
+def _profile_json(env, profile):
+    out = {'environment': env.pk, 'name': env.name, 'project': env.project.name, 'base_url': env.base_url,
+           'profiles': [_profile_brief(p) for p in AuthProfile.objects.filter(environment=env)], 'profile': None}
+    if profile is not None:
+        out['profile'] = {
+            'id': profile.pk, 'login_name': profile.name, 'is_default': profile.is_default,
+            'kind': profile.kind, 'login_url': profile.login_url, 'username': profile.username,
+            'has_password': bool(profile.password), 'check_url': profile.check_url,
+            'auto_relogin': profile.auto_relogin, 'verify_ssl': profile.verify_ssl,
+            'last_status': profile.last_status, 'last_message': profile.last_message,
+            'last_login_at': timezone.localtime(profile.last_login_at).strftime('%d %b %Y, %H:%M:%S')
+            if profile.last_login_at else ''}
+    return out
+
+
+def _when(dt):
+    return timezone.localtime(dt).strftime('%d %b %Y, %H:%M:%S') if dt else ''
+
+
+def _overview(request):
+    """The projects and environments the workspace shows (the top-bar selection), and the logins of those
+    environments, for the Auth & Cookies dialog."""
+    selection = get_selection(request)
+    env_ids = {e for envs in selection.values() for e in envs}
+    projects = []
+    for project in Project.objects.filter(pk__in=selection).prefetch_related('api_environments').order_by('name'):
+        envs = [e for e in project.api_environments.all() if e.pk in env_ids]
+        projects.append({'id': project.pk, 'name': project.name,   # a project without a selected environment is listed too
+                         'environments': [{'id': e.pk, 'name': e.name, 'base_url': e.base_url} for e in envs]})
+    logins = [dict(_profile_brief(pr), environment=pr.environment_id, environment_name=pr.environment.name,
+                   project=pr.environment.project_id, project_name=pr.environment.project.name,
+                   username=pr.username, last_message=pr.last_message, last_login_at=_when(pr.last_login_at))
+              for pr in AuthProfile.objects.filter(environment_id__in=env_ids).select_related('environment__project')
+              .order_by('environment__project__name', 'environment__name', '-is_default', 'name')]
+    return {'projects': projects, 'logins': logins}
+
+
+def _make_default(profile):
+    AuthProfile.objects.filter(environment=profile.environment).exclude(pk=profile.pk).update(is_default=False)
+    if not profile.is_default:
+        profile.is_default = True
+        profile.save(update_fields=['is_default'])
+
+
+@login_required
+def api_ws_auth(request, login_opener=None):
+    """GET without parameters: all logins + projects with environments (the dialog's list). GET ?environment=
+    [&profile=]: one login to edit.
+
+    POST actions: test (try the login, save nothing), save (without `profile` it creates a new login, so an
+    environment can have "Application client", "Backoffice client"...), login (save and log in), login_now (log
+    in with the saved settings), delete, set_default.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body or b'{}')
+        except ValueError:
+            return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+        env = get_object_or_404(Environment.objects.select_related('project'), pk=data.get('environment') or 0)
+    else:
+        data = request.GET
+        if not data.get('environment'):
+            return JsonResponse(_overview(request))
+        env = get_object_or_404(Environment.objects.select_related('project'), pk=data.get('environment'))
+    profiles = AuthProfile.objects.filter(environment=env)
+    profile = profiles.filter(pk=data.get('profile') or 0).first()
+    if request.method == 'GET':
+        if profile is None and not data.get('profile'):
+            profile = profiles.first()           # ordering: the default first
+        return JsonResponse(_profile_json(env, profile))
+
+    action = data.get('action') or 'save'
+    if action in ('delete', 'set_default', 'login_now'):
+        if profile is None:
+            return JsonResponse({'ok': False, 'error': 'This login no longer exists.'})
+        if action == 'delete':
+            name, was_default = profile.name, profile.is_default
+            profile.delete()
+            if was_default and profiles.exists():
+                _make_default(profiles.first())
+            return JsonResponse(dict(_profile_json(env, profiles.first()), ok=True, message=f'Login "{name}" deleted.',
+                                     **_overview(request)))
+        if action == 'login_now':
+            if not profile.is_active:
+                return JsonResponse({'ok': False, 'error': f'"{profile.name}" has no Keycloak login set up yet. Edit it first.'})
+            ok, message = auth.login(profile, opener=login_opener)
+            profile.refresh_from_db()
+            return JsonResponse(dict(_profile_json(env, profile), ok=ok, **({'message': message} if ok else {'error': message}),
+                                     **_overview(request)))
+        _make_default(profile)
+        return JsonResponse(dict(_profile_json(env, profile), ok=True, message=f'"{profile.name}" is now the default login.',
+                                 **_overview(request)))
+
+    if profile is None:
+        if data.get('profile'):
+            return JsonResponse({'ok': False, 'error': 'This login no longer exists. Reopen Auth & Cookies.'})
+        profile = AuthProfile(environment=env)
+    name = str(data.get('name') or '').strip()[:100] or profile.name or 'Default'
+    if profiles.exclude(pk=profile.pk).filter(name__iexact=name).exists():
+        return JsonResponse({'ok': False, 'error': f'{env.project.name} · {env.name} already has a login named "{name}".',
+                             'fields': ['name']})
+    kind = data.get('kind') if data.get('kind') in dict(AuthProfile.KINDS) else 'none'
+    if kind == 'keycloak':
+        has_password = data.get('password') or (profile.password and not data.get('clear_password'))
+        missing = [field for field, present in (('Username', str(data.get('username') or '').strip()),
+                                                ('Password', has_password)) if not present]
+        if missing:
+            verb = 'is' if len(missing) == 1 else 'are'
+            return JsonResponse({'ok': False, 'error': f'{" and ".join(missing)} {verb} required.',
+                                 'fields': [m.lower() for m in missing]})
+    if action == 'test':                         # try it with a throw-away profile: nothing is saved
+        if kind != 'keycloak':
+            return JsonResponse({'ok': False, 'error': 'Choose "Keycloak / OpenID Connect login" to test a login.'})
+        probe = AuthProfile(environment=env, kind=kind, login_url=str(data.get('login_url') or '{{baseUrl}}/login').strip(),
+                            username=str(data.get('username') or '').strip(),
+                            password=str(data.get('password') or profile.password or ''),
+                            check_url=str(data.get('check_url') or '').strip(), verify_ssl=bool(data.get('verify_ssl', True)))
+        ok, message = auth.test_login(probe, login_opener)
+        return JsonResponse({'ok': ok, 'tested': True, **({'message': message} if ok else {'error': message})})
+    profile.name = name
+    profile.kind = kind
+    profile.login_url = str(data.get('login_url') or '{{baseUrl}}/login').strip()[:1000]
+    profile.username = str(data.get('username') or '').strip()[:255]
+    if data.get('password'):                     # empty keeps the saved password
+        profile.password = str(data['password'])[:255]
+    if data.get('clear_password'):
+        profile.password = ''
+    profile.check_url = str(data.get('check_url') or '').strip()[:1000]
+    profile.auto_relogin = bool(data.get('auto_relogin', True))
+    profile.verify_ssl = bool(data.get('verify_ssl', True))
+    # the first login of an environment is its default; "Default" ticked moves the default here
+    profile.is_default = profile.is_default or bool(data.get('is_default')) or not profiles.exclude(pk=profile.pk).exists()
+    profile.save()
+    if data.get('is_default') or profile.is_default:
+        _make_default(profile)
+    result = {'ok': True, 'saved': True}
+    if action == 'login':
+        if profile.kind != 'keycloak':
+            result = {'ok': False, 'error': 'Choose "Keycloak / OpenID Connect login" first.'}
+        else:
+            ok, message = auth.login(profile, opener=login_opener)
+            result = {'ok': ok, 'message': message} if ok else {'ok': False, 'error': message}
+    profile.refresh_from_db()
+    return JsonResponse(dict(_profile_json(env, profile), **result, **_overview(request)))
+
+
+@login_required
+def api_ws_cookies(request):
+    """The cookie jar: list (values shortened), add a cookie by hand, delete one, or clear a domain."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body or b'{}')
+        except ValueError:
+            return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+        domain = str(data.get('domain') or '').strip().lower()
+        domain = re.sub(r'^https?://', '', domain).split('/')[0].split(':')[0]
+        action = data.get('action')
+        profile = AuthProfile.objects.filter(pk=data.get('profile') or 0).first()   # a login's own cookies
+        if not domain:
+            return JsonResponse({'ok': False, 'error': 'Enter the domain, e.g. qa-app.acs.gov.pk'})
+        if action == 'add':
+            name = str(data.get('name') or '').strip()
+            if not name:
+                return JsonResponse({'ok': False, 'error': 'Enter the cookie name.'})
+            auth.add_cookie(domain, name, str(data.get('value') or ''), str(data.get('path') or '/'),
+                            bool(data.get('secure')))
+        elif action == 'delete':
+            auth.remove_cookies(domain, str(data.get('name') or ''), profile)
+        elif action == 'clear':
+            auth.remove_cookies(domain, profile=profile)
+        else:
+            return JsonResponse({'ok': False, 'error': 'Unknown action.'}, status=400)
+    groups = auth.cookie_list()
+    for g in groups:
+        for ck in g['cookies']:
+            v = ck['value']
+            ck['value'] = v if len(v) <= 24 else f'{v[:12]}…{v[-6:]} ({len(v)} chars)'
+            ck['expires'] = (datetime.fromtimestamp(ck['expires'], tz=timezone.get_current_timezone())
+                             .strftime('%d %b %Y, %H:%M') if ck.get('expires') else 'Session')
+    return JsonResponse({'ok': True, 'domains': groups})
+
+
+@login_required
+def api_ws_resolve(request):
+    """Variables a request can use, by scope, for the {{name}} hover in the request builder."""
+    env = _environment(request.GET.get('environment'))
+    collection = ApiCollection.objects.filter(pk=request.GET.get('collection') or 0).first()
+    scopes = []
+    if env:
+        values = scripting.rows_to_dict(env.variables)
+        values.setdefault('baseUrl', env.base_url.rstrip('/'))
+        scopes.append({'scope': 'Environment', 'source': f'{env.project.name} · {env.name}', 'values': values})
+    if collection:
+        scopes.append({'scope': 'Collection', 'source': collection.name,
+                       'values': scripting.rows_to_dict(collection.variables)})
+    if env:
+        scopes.append({'scope': 'Project', 'source': env.project.name,
+                       'values': scripting.rows_to_dict(scripting.project_rows(env))})
+    scopes.append({'scope': 'Global', 'source': 'Globals', 'values': scripting.rows_to_dict(ApiGlobals.load().variables)})
+    return JsonResponse({'scopes': scopes})
+
+
+VARIABLE_NAME_RE = re.compile(r'^[\w.\-]{1,200}$')
+
+
+def _scope_target(scope, pk, env=None):
+    """(holder object, label) of a variable scope: the environment, its project, or the globals."""
+    if scope == 'globals':
+        return ApiGlobals.load(), 'Globals'
+    if scope == 'environment':
+        target = env or get_object_or_404(Environment, pk=pk or 0)
+        return target, f'Environment {target.project.name} · {target.name}'
+    if scope == 'project':
+        project = env.project if env is not None else get_object_or_404(Project, pk=pk or 0)
+        return ProjectVariables.for_project(project), f'Project {project.name}'
+    return None, ''
+
+
+@login_required
+@require_POST
+def api_ws_variable_set(request):
+    """Save one value from a response as a variable: {scope: environment|project|globals, environment, key, value,
+    overwrite}. Refuses a name that already exists in the chosen scope (or in another scope the request can
+    see) unless `overwrite` is set, so duplicates are caught before they shadow each other."""
+    try:
+        data = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+    key = str(data.get('key') or '').strip()
+    value = data.get('value')
+    value = value if isinstance(value, str) else json.dumps(value)
+    scope = str(data.get('scope') or '')
+    env = _environment(data.get('environment'))
+    if not VARIABLE_NAME_RE.match(key) or key.startswith('$'):
+        return JsonResponse({'ok': False, 'error': 'Variable name: letters, digits, dot, dash or underscore only.'})
+    if scope in ('environment', 'project') and env is None:
+        return JsonResponse({'ok': False, 'error': 'This request has no environment; use a global variable.'})
+    holder, label = _scope_target(scope, None, env)
+    if holder is None:
+        return JsonResponse({'ok': False, 'error': 'Unknown scope.'}, status=400)
+    # where does this name already exist?
+    found = []
+    for other_scope in ('environment', 'project', 'globals'):
+        if other_scope != 'globals' and env is None:
+            continue
+        other, other_label = _scope_target(other_scope, None, env)
+        row = next((r for r in other.variables if r.get('key') == key), None)
+        if row is not None:
+            found.append({'scope': other_scope, 'label': other_label, 'value': str(row.get('value', ''))[:200],
+                          'same': other_scope == scope})
+    if found and not data.get('overwrite'):
+        same = [f for f in found if f['same']]
+        msg = (f'"{key}" already exists in {same[0]["label"]} (value: {same[0]["value"] or "empty"}).' if same
+               else f'"{key}" is already defined in ' + ', '.join(f['label'] for f in found) + '.')
+        return JsonResponse({'ok': False, 'duplicate': True, 'found': found, 'error': msg})
+    rows = list(holder.variables)
+    row = next((r for r in rows if r.get('key') == key), None)
+    if row is not None:
+        row['value'], row['enabled'] = value[:10000], True
+    else:
+        rows.append({'key': key, 'value': value[:10000], 'enabled': True})
+    holder.variables = rows
+    holder.save(update_fields=['variables'])
+    return JsonResponse({'ok': True, 'scope': scope, 'label': label, 'key': key, 'replaced': row is not None})
+
+
+@login_required
+def api_ws_variables(request):
+    """Globals and the variables of the environments selected in the workspace."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body or b'{}')
+        except ValueError:
+            return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+        rows = clean_variable_rows(data.get('rows'))
+        if data.get('scope') == 'globals':
+            g = ApiGlobals.load()
+            g.variables = rows
+            g.save(update_fields=['variables'])
+        elif data.get('scope') == 'environment':
+            env = get_object_or_404(Environment, pk=data.get('id') or 0)
+            env.variables = rows
+            env.save(update_fields=['variables'])
+        elif data.get('scope') == 'project':
+            pv = ProjectVariables.for_project(get_object_or_404(Project, pk=data.get('id') or 0))
+            pv.variables = rows
+            pv.save(update_fields=['variables'])
+        else:
+            return JsonResponse({'ok': False, 'error': 'Unknown scope.'}, status=400)
+        return JsonResponse({'ok': True, 'rows': rows})
+    selection = get_selection(request)
+    envs = (Environment.objects.filter(project_id__in=selection).select_related('project')
+            .order_by('project__name', 'created_at'))
+    projects = Project.objects.filter(pk__in=selection).order_by('name')
+    stored = {pv.project_id: pv.variables for pv in ProjectVariables.objects.filter(project__in=projects)}
+    return JsonResponse({
+        'globals': ApiGlobals.load().variables,
+        'projects': [{'id': p.pk, 'name': p.name, 'variables': stored.get(p.pk, [])} for p in projects],
+        'environments': [{'id': e.pk, 'name': e.name, 'project': e.project.name, 'base_url': e.base_url,
+                          'variables': e.variables} for e in envs if e.pk in selection.get(e.project_id, [])],
+    })
+
+
+@login_required
+def api_ws_collection_settings(request, collection_id):
+    """Collection variables and the scripts that run around every request of the collection."""
+    collection = get_object_or_404(ApiCollection, pk=collection_id)
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body or b'{}')
+        except ValueError:
+            return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+        collection.variables = clean_variable_rows(data.get('variables'))
+        collection.pre_request_script = str(data.get('pre_request_script') or '')[:SCRIPT_LIMIT]
+        collection.test_script = str(data.get('test_script') or '')[:SCRIPT_LIMIT]
+        collection.description = str(data.get('description') or '')[:5000]
+        collection.save(update_fields=['variables', 'pre_request_script', 'test_script', 'description'])
+        return JsonResponse({'ok': True})
+    return JsonResponse({'id': collection.pk, 'name': collection.name, 'description': collection.description,
+                         'variables': collection.variables, 'pre_request_script': collection.pre_request_script,
+                         'test_script': collection.test_script})
 
 
 @login_required

@@ -15,6 +15,7 @@ import urllib.request
 from urllib.parse import unquote_plus, urljoin, urlparse
 
 import yaml
+from xml.sax.saxutils import escape as xml_escape
 
 HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 VAR_RE = re.compile(r'\{\{\s*([\w.\-]+)\s*\}\}')
@@ -145,9 +146,54 @@ def fingerprint(ep):
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+# ---------- request body templates ----------
+
+XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n'
+
+
+def is_xml(content_type):
+    return 'xml' in (content_type or '').lower()
+
+
+def _xml_name(name):
+    name = re.sub(r'[^\w.\-]', '_', str(name)) or 'item'
+    return name if re.match(r'[A-Za-z_]', name) else '_' + name
+
+
+def to_xml(value, name='root', indent=0):
+    pad, tag = '  ' * indent, _xml_name(name)
+    if isinstance(value, dict):
+        inner = ''.join(to_xml(v, k, indent + 1) for k, v in value.items())
+        return f'{pad}<{tag}>\n{inner}{pad}</{tag}>\n' if inner else f'{pad}<{tag}/>\n'
+    if isinstance(value, list):
+        return ''.join(to_xml(v, name, indent) for v in value) or f'{pad}<{tag}/>\n'
+    if value is None:
+        return f'{pad}<{tag}/>\n'
+    text = str(value).lower() if isinstance(value, bool) else str(value)
+    return f'{pad}<{tag}>{xml_escape(text)}</{tag}>\n'
+
+
+def xml_document(value, root='root'):
+    if isinstance(value, dict) and len(value) == 1 and isinstance(next(iter(value.values())), (dict, list)):
+        root, value = next(iter(value.items()))
+    return XML_DECLARATION + to_xml(value, root).rstrip('\n')
+
+
+def empty_body(xml=False):
+    """Template shown in the Body tab of an API whose spec has no request body."""
+    return XML_DECLARATION + '<root/>' if xml else '{}'
+
+
+def is_empty_body(body):
+    text = (body or '').strip()
+    return text in ('', '{}', '[]') or text == empty_body(xml=True)
+
+
 def make_endpoint(folder, method, path, url, summary='', content_type='', headers=None,
-                  path_params=None, query_params=None, body='', expected_status=200):
+                  path_params=None, query_params=None, body='', expected_status=200, body_xml=None):
     method = method.upper()
+    if not (body or '').strip():
+        body = empty_body(is_xml(content_type) if body_xml is None else body_xml)
     ep = {
         'folder': folder or 'Default',
         'key': f'{method} {path}',
@@ -172,6 +218,18 @@ def make_endpoint(folder, method, path, url, summary='', content_type='', header
 class SchemaExample:
     def __init__(self, doc):
         self.doc = doc
+
+    def root_name(self, schema):
+        """XML root element: the schema's xml.name, else the name of the referenced schema."""
+        if isinstance(schema, dict):
+            if isinstance(schema.get('xml'), dict) and schema['xml'].get('name'):
+                return schema['xml']['name']
+            if '$ref' in schema:
+                target = self.resolve(schema)
+                if isinstance(target.get('xml'), dict) and target['xml'].get('name'):
+                    return target['xml']['name']
+                return schema['$ref'].rsplit('/', 1)[-1]
+        return 'root'
 
     def resolve(self, obj, depth=0):
         while isinstance(obj, dict) and '$ref' in obj and depth < 20:
@@ -302,8 +360,11 @@ def parse_openapi(doc, source_url=''):
             if is_swagger2:
                 body_param = next((p for p in params.values() if p.get('in') == 'body'), None)
                 if body_param:
-                    content_type = (op.get('consumes') or doc.get('consumes') or ['application/json'])[0]
-                    body = json.dumps(examples.example(body_param.get('schema', {})), indent=2)
+                    consumes = op.get('consumes') or doc.get('consumes') or ['application/json']
+                    content_type = 'application/json' if 'application/json' in consumes else consumes[0]
+                    schema = body_param.get('schema', {})
+                    body = format_body(examples.example(schema), content_type, examples.root_name(schema))
+                produces = op.get('produces') or doc.get('produces') or []
             else:
                 content = examples.resolve(op.get('requestBody', {})).get('content', {})
                 if content:
@@ -312,8 +373,12 @@ def parse_openapi(doc, source_url=''):
                     value = media.get('example')
                     if value is None:
                         value = examples.example(media.get('schema', {}))
-                    if value is not None:
-                        body = json.dumps(value, indent=2) if not isinstance(value, str) else value
+                    body = format_body(value, content_type, examples.root_name(media.get('schema', {})))
+                produces = [ct for r in (op.get('responses') or {}).values()
+                            for ct in (examples.resolve(r).get('content') or {})]
+            # no request body in the spec: the template follows the format the API answers in
+            speaks_xml = is_xml(content_type) or (not content_type and any(is_xml(p) for p in produces)
+                                                  and not any('json' in p for p in produces))
             if content_type:
                 headers.setdefault('Content-Type', content_type)
 
@@ -322,8 +387,19 @@ def parse_openapi(doc, source_url=''):
             folder = tags[0] if tags else (path.strip('/').split('/')[0] or 'Default')
             endpoints.append(make_endpoint(
                 folder, method, path, base_url + url_path, op.get('summary', ''), content_type,
-                headers, path_params, query_params, body, success[0] if success else 200))
+                headers, path_params, query_params, body, success[0] if success else 200, body_xml=speaks_xml))
     return endpoints
+
+
+def format_body(value, content_type, root='root'):
+    """Example value -> body text in the request's format (JSON, XML or plain text)."""
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value
+    if is_xml(content_type):
+        return xml_document(value, root)
+    return json.dumps(value, indent=2)
 
 
 # ---------- Postman v2.0 / v2.1 ----------
@@ -481,6 +557,8 @@ def parse_curl(command):
         except ValueError:
             pass
     base = url.split('?', 1)[0].split('#', 1)[0]
+    if not body.strip():
+        body = empty_body(is_xml(content_type) or is_xml(headers.get('Accept', '')))
     return {
         'method': method,
         'url': base,

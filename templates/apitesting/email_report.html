@@ -28,13 +28,14 @@
     <table role="presentation" width="100%" cellpadding="8" style="border-collapse:collapse;font-size:13px">
       <tr style="background:#f8fafc"><td>Requests run</td><td><b>{{ summary.done|default:0 }} / {{ summary.planned|default:0 }}</b></td><td>Iterations</td><td><b>{{ summary.iterations|default:1 }}</b></td></tr>
       <tr><td>Passed</td><td><b style="color:#15803d">{{ summary.passed|default:0 }}</b></td><td>Failed</td><td><b style="color:#b91c1c">{{ summary.failed|default:0 }}</b></td></tr>
-      <tr style="background:#f8fafc"><td>Average response</td><td><b>{{ summary.avg_ms|default:"-" }} ms</b></td><td></td><td></td></tr>
+      <tr style="background:#f8fafc"><td>Average response</td><td><b>{{ summary.avg_ms|default:"-" }} ms</b></td><td>Tests passed</td><td><b>{% if summary.tests_total %}{{ summary.tests_passed }} / {{ summary.tests_total }}{% else %}-{% endif %}</b></td></tr>
     </table>
     {% if failed %}
     <h3 style="font-size:14px;margin:20px 0 8px;color:#b91c1c">Failed requests</h3>
     <table role="presentation" width="100%" cellpadding="6" style="border-collapse:collapse;font-size:12px">
       <tr style="background:#f1f5f9;text-align:left"><th>Request</th><th>Expected</th><th>Got</th><th>Details</th></tr>
-      {% for r in failed %}<tr style="border-top:1px solid #e2e8f0"><td>{{ r.method }} {{ r.name }}</td><td>{{ r.expected }}</td><td>{{ r.status_code|default:"-" }}</td><td>{{ r.error|default:""|truncatechars:120 }}</td></tr>{% endfor %}
+      {% for r in failed %}<tr style="border-top:1px solid #e2e8f0"><td>{{ r.method }} {{ r.name }}</td><td>{{ r.expected }}</td><td>{{ r.status_code|default:"-" }}</td>
+        <td>{{ r.error|default:""|truncatechars:120 }}{% for t in r.tests %}{% if not t.passed %}<div style="color:#b91c1c">✗ {{ t.name }}: {{ t.error|truncatechars:100 }}</div>{% endif %}{% endfor %}</td></tr>{% endfor %}
     </table>
     {% endif %}
     {% endif %}

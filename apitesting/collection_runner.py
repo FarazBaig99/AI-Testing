@@ -10,8 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 from django.db import close_old_connections, connection
 from django.utils import timezone
 
-from . import runner
-from .models import CollectionRequest, CollectionRun, RunResult, RunSchedule
+from . import auth, runner, scripting
+from .models import ApiGlobals, CollectionRequest, CollectionRun, RunResult, RunSchedule
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ MAX_VU_ITERATIONS = 10000
 BODY_LIMIT = 20000          # response body kept per functional result
 SAMPLE_CAP = 50000          # response times kept per API for percentiles (reservoir sampling)
 SPEC_FIELDS = ['method', 'url', 'params', 'headers', 'auth', 'body_mode', 'raw_language', 'body', 'form_data',
-               'urlencoded', 'graphql_query', 'graphql_variables', 'verify_ssl']
+               'urlencoded', 'graphql_query', 'graphql_variables', 'verify_ssl', 'pre_request_script', 'test_script']
 
 
 # ---------- pass rule ----------
@@ -64,30 +64,92 @@ def _stop_requested(run):
 
 # ---------- functional ----------
 
+class RunVariables:
+    """Variables shared by the requests of one run: one environment scope per environment, plus the
+    collection variables and globals. Kept in the database at the end when the run asks for it."""
+
+    def __init__(self, collection):
+        self.collection = collection
+        self.globals_obj = ApiGlobals.load()
+        self.shared = scripting.Scopes(collection=scripting.rows_to_dict(collection.variables),
+                                       globals_=scripting.rows_to_dict(self.globals_obj.variables))
+        self.envs = {}          # env id -> (env, Scopes holding that environment's values)
+        self.projects = {}      # project id -> (project, {project variables}); shared by its environments
+
+    def scopes_for(self, env):
+        """A Scopes object for one request; environment values are kept per environment, project values per project."""
+        scopes = scripting.Scopes(collection=self.shared.collection, globals_=self.shared.globals,
+                                  local=self.shared.local)
+        if env is not None:
+            if env.pk not in self.envs:
+                self.envs[env.pk] = (env, scripting.Scopes(scripting.rows_to_dict(env.variables), env=env))
+            if env.project_id not in self.projects:
+                self.projects[env.project_id] = (env.project, scripting.rows_to_dict(scripting.project_rows(env)))
+            held = self.envs[env.pk][1]
+            scopes.environment, scopes.injected = held.environment, held.injected
+            scopes.project = self.projects[env.project_id][1]
+        return scopes
+
+    def keep(self, scopes, env):
+        self.shared.collection, self.shared.globals, self.shared.local = scopes.collection, scopes.globals, scopes.local
+        if env is not None:
+            self.envs[env.pk][1].environment = scopes.environment
+            self.projects[env.project_id] = (self.projects[env.project_id][0], scopes.project)
+
+    def save(self):
+        for env, held in self.envs.values():
+            scripting.save_scopes(held, env=env, save_globals=False, save_project=False)
+        for project, values in self.projects.values():
+            scripting.save_project_scope(values, project)
+        scripting.save_scopes(self.shared, collection=self.collection)
+
+
 def run_functional(run, sender=None):
-    send = sender or runner.send
+    send = sender or auth.sender()                     # one cookie jar per login + automatic Keycloak re-login
     cfg = run.config
     items = _ordered_items(run.collection, cfg.get('items', []))
     iterations = cfg.get('iterations', 1)
     summary = {'planned': len(items) * iterations, 'done': 0, 'passed': 0, 'failed': 0, 'total_ms': 0,
-               'iterations': iterations, 'current_iteration': 0}
+               'iterations': iterations, 'current_iteration': 0, 'tests_total': 0, 'tests_passed': 0}
+    variables = RunVariables(run.collection)
     stopped = False
+    with scripting.ScriptEngine() as engine:
+        stopped = _functional_loop(run, items, iterations, cfg, summary, variables, engine, send)
+    if cfg.get('keep_variables', True):
+        variables.save()
+    run.summary = summary
+    if stopped and _stop_requested(run):
+        return 'stopped'
+    return 'passed' if summary['failed'] == 0 and summary['done'] else 'failed'
+
+
+def _functional_loop(run, items, iterations, cfg, summary, variables, engine, send):
     for iteration in range(1, iterations + 1):
         summary['current_iteration'] = iteration
         for position, item in enumerate(items, 1):
             if _stop_requested(run):
-                stopped = True
-                break
+                return True
             expected = expected_status(item)
-            result = send(_spec(item), item.environment)
-            passed = is_pass(result, expected)
+            scopes = variables.scopes_for(item.environment)
+            out = scripting.execute(_spec(item), item.environment, scopes, engine, run.collection,
+                                    send=lambda s, e, files=None: send(s, e),
+                                    info={'requestName': item.name, 'requestId': str(item.pk),
+                                          'iteration': iteration - 1, 'iterationCount': iterations})
+            variables.keep(scopes, item.environment)
+            result, tests, errors = out['result'], out['tests'], out['errors']
+            failed_tests = [t for t in tests if not t.get('passed')]
+            passed = is_pass(result, expected) and not failed_tests and not errors
             body = result.get('body') or ''
+            problems = [result.get('error', '')] + [f"{e['script']}: {e['message']}" for e in errors]
             RunResult.objects.create(
                 run=run, request=item, iteration=iteration, position=position, name=item.name, method=item.method,
-                url=result.get('url') or item.url, expected=expected_label(item), status_code=result.get('status'),
-                ms=result.get('ms'), size=result.get('size'), passed=passed, error=result.get('error', ''),
-                response_headers=result.get('headers', []),
-                response_body=body[:BODY_LIMIT] + ('\n... (cut)' if len(body) > BODY_LIMIT else ''))
+                url=result.get('url') or out['request'].get('url') or item.url, expected=expected_label(item),
+                status_code=result.get('status'), ms=result.get('ms'), size=result.get('size'), passed=passed,
+                error='\n'.join(p for p in problems if p), response_headers=result.get('headers', []),
+                response_body=body[:BODY_LIMIT] + ('\n... (cut)' if len(body) > BODY_LIMIT else ''),
+                tests=tests, console=out['console'])
+            summary['tests_total'] += len(tests)
+            summary['tests_passed'] += len(tests) - len(failed_tests)
             summary['done'] += 1
             summary['passed' if passed else 'failed'] += 1
             summary['total_ms'] += result.get('ms') or 0
@@ -95,17 +157,11 @@ def run_functional(run, sender=None):
             run.summary = summary
             run.save(update_fields=['summary'])
             if not passed and cfg.get('stop_on_fail'):
-                stopped = True
                 summary['stopped_on'] = item.name
-                break
+                return True
             if cfg.get('delay_ms'):
                 time.sleep(cfg['delay_ms'] / 1000)
-        if stopped:
-            break
-    run.summary = summary
-    if stopped and _stop_requested(run):
-        return 'stopped'
-    return 'passed' if summary['failed'] == 0 and summary['done'] else 'failed'
+    return False
 
 
 # ---------- performance ----------
@@ -198,14 +254,19 @@ def _steps(items, modes):
 
 
 def run_performance(run, sender=None, tick=1.0):
-    send = sender or runner.send
     cfg = run.config
     items = _ordered_items(run.collection, [e['id'] for e in cfg.get('items', [])])
+    send = sender or _performance_sender(items)
     modes = {str(e['id']): e.get('mode', 'sequence') for e in cfg.get('items', [])}
     vus, ramp_up = cfg.get('vus', 1), cfg.get('ramp_up', 0)
     by_duration = cfg.get('stop_by', 'duration') == 'duration'
     duration, vu_iterations = cfg.get('duration', 60), cfg.get('iterations', 1)
-    prepared = {i.pk: (_spec(i), i.environment, expected_status(i)) for i in items}
+    variables = RunVariables(run.collection)
+    prepared = {}
+    for i in items:
+        scopes = variables.scopes_for(i.environment)
+        spec = {k: v for k, v in _spec(i).items() if k not in ('pre_request_script', 'test_script')}
+        prepared[i.pk] = (scopes.substitute(spec), i.environment, expected_status(i))
     steps = _steps(items, modes)
     stats = Stats(items)
     stop = threading.Event()
@@ -272,6 +333,26 @@ def run_performance(run, sender=None, tick=1.0):
     if stopped:
         return 'stopped'
     return 'failed' if reasons else 'passed'
+
+
+def _performance_sender(items):
+    """One cookie jar per login; every login the items use logs in once before the load starts."""
+    jars, keys = {}, {}
+    for item in items:
+        choice = auth.choice_of({'auth': item.auth})
+        profile = auth.profile_for(item.environment, choice)
+        key = profile.pk if profile else None
+        keys[(item.environment_id, choice)] = key
+        if key not in jars:
+            jars[key] = auth.load_jar(profile)
+            if profile:
+                auth.login(profile, jars[key], save=False)
+                auth.save_jar(jars[key], profile)
+
+    def send(spec, env, files=None):
+        key = keys.get((env.pk if env else None, auth.choice_of(spec)))
+        return runner.send(spec, env, jar=jars.setdefault(key, auth.load_jar()))
+    return send
 
 
 # ---------- execution ----------

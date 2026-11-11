@@ -42,7 +42,8 @@
     <div class="col-6 col-md-3"><div class="kpi"><small>Requests</small><b class="fs-5"><span id="kDone">{{ run.summary.done|default:0 }}</span> / <span id="kPlanned">{{ run.summary.planned|default:"-" }}</span></b></div></div>
     <div class="col-6 col-md-3"><div class="kpi"><small>Passed</small><b class="fs-5 text-success" id="kPassed">{{ run.summary.passed|default:0 }}</b></div></div>
     <div class="col-6 col-md-3"><div class="kpi"><small>Failed</small><b class="fs-5 text-danger" id="kFailed">{{ run.summary.failed|default:0 }}</b></div></div>
-    <div class="col-6 col-md-3"><div class="kpi"><small>Avg response</small><b class="fs-5"><span id="kAvg">{{ run.summary.avg_ms|default:"-" }}</span> ms</b></div></div>
+    <div class="col-6 col-md-3"><div class="kpi"><small>Avg response</small><b class="fs-5"><span id="kAvg">{{ run.summary.avg_ms|default:"-" }}</span> ms</b>
+      <span class="small text-muted">Tests: <b id="kTests">-</b></span></div></div>
   </div>
   <div class="progress mb-3" style="height:6px"><div class="progress-bar" id="progress" style="width:0%"></div></div>
   <div class="panel">
@@ -102,12 +103,14 @@
     tr.className = 'res-row';
     tr.innerHTML = `<td class="text-muted">${r.iteration}</td><td class="text-muted">${r.position}</td>
       <td><span class="m m-${esc(r.method)}">${esc(r.method)}</span>${esc(r.name)}</td><td>${esc(r.expected)}</td>
-      <td class="fw-semibold">${r.status_code ?? '-'}</td><td>${r.ms ?? '-'} ms</td><td>${size(r.size)}</td>
+      <td class="fw-semibold">${r.status_code ?? '-'}${(r.tests || []).length ? ` <span class="badge ${r.tests.every(t => t.passed) ? 'text-bg-success' : 'text-bg-danger'}">${r.tests.filter(t => t.passed).length}/${r.tests.length} tests</span>` : ''}</td><td>${r.ms ?? '-'} ms</td><td>${size(r.size)}</td>
       <td>${r.passed ? '<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill"></i> Pass</span>' : '<span class="text-danger fw-semibold"><i class="bi bi-x-circle-fill"></i> Fail</span>'}</td>`;
     const detail = document.createElement('tr');
     detail.className = 'detail'; detail.hidden = true;
     detail.innerHTML = `<td colspan="8"><div class="small mb-1"><code>${esc(r.method)} ${esc(r.url)}</code></div>
-      ${r.error ? `<div class="alert alert-danger small py-1 mb-2">${esc(r.error)}</div>` : ''}
+      ${r.error ? `<div class="alert alert-danger small py-1 mb-2" style="white-space:pre-wrap">${esc(r.error)}</div>` : ''}
+      ${(r.tests || []).length ? `<div class="small fw-semibold">Tests</div><ul class="list-unstyled small mb-2">${r.tests.map(t => `<li>${t.passed ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle-fill text-danger"></i>'} ${esc(t.name)}${t.error ? ` <span class="text-danger">: ${esc(t.error)}</span>` : ''}</li>`).join('')}</ul>` : ''}
+      ${(r.console || []).length ? `<div class="small fw-semibold">Console</div><pre>${r.console.map(c => esc(`[${c.level}] ${c.text}`)).join('\n')}</pre>` : ''}
       <div class="row g-2"><div class="col-lg-8"><div class="small fw-semibold">Response body</div><pre>${esc(pretty(r.body)) || '(empty)'}</pre></div>
       <div class="col-lg-4"><div class="small fw-semibold">Response headers</div><pre>${(r.headers || []).map(([k, v]) => esc(`${k}: ${v}`)).join('\n') || '-'}</pre></div></div></td>`;
     tr.addEventListener('click', () => detail.hidden = !detail.hidden);
@@ -117,6 +120,7 @@
   function showFunctional(s) {
     $('kDone').textContent = s.done ?? 0; $('kPlanned').textContent = s.planned ?? '-'; $('kPassed').textContent = s.passed ?? 0;
     $('kFailed').textContent = s.failed ?? 0; $('kAvg').textContent = s.avg_ms ?? '-';
+    $('kTests').textContent = s.tests_total ? `${s.tests_passed}/${s.tests_total} passed` : 'none';
     $('progress').style.width = s.planned ? `${Math.round((s.done || 0) * 100 / s.planned)}%` : '0%';
   }
 

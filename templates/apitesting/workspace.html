@@ -38,9 +38,26 @@
   .aw textarea.code { min-height: 220px; tab-size: 2; }
   .aw .resp-pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; max-height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
   .aw .j-key { color: #a21caf; } .aw .j-str { color: #15803d; } .aw .j-num { color: #2563eb; } .aw .j-lit { color: #c2410c; }
+  .aw .j-val { cursor: pointer; border-bottom: 1px dotted #cbd5e1; border-radius: 3px; }
+  .aw .j-val:hover, .aw .j-val.picked { background: #fef3c7; border-bottom-color: #f59e0b; }
+  #valPop { position: fixed; z-index: 2150; width: 360px; max-width: calc(100vw - 24px); background: #fff; border: 1px solid #cbd5e1;
+    border-radius: 10px; box-shadow: 0 12px 32px rgba(15, 23, 42, .18); padding: 12px; font-size: .8rem; }
+  #valPop .vp-path { font-family: monospace; color: #64748b; word-break: break-all; }
+  #valPop .vp-value { font-family: monospace; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 6px;
+    margin: 6px 0; max-height: 72px; overflow: auto; word-break: break-all; color: #0f172a; }
+  #valPop .vp-scope { display: flex; align-items: flex-start; gap: 6px; padding: 4px 6px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 4px; cursor: pointer; }
+  #valPop .vp-scope:has(input:checked) { border-color: #16a34a; background: #f0fdf4; }
+  #valPop .vp-scope.off { opacity: .5; cursor: not-allowed; }
+  #valPop .vp-scope small { display: block; color: #64748b; }
   .aw .stat { font-weight: 700; }
   .aw .stat-2 { color: #16a34a; } .aw .stat-3 { color: #2563eb; } .aw .stat-4 { color: #d97706; } .aw .stat-5, .aw .stat-0 { color: #dc2626; }
   .aw .ctx { font-size: .75rem; color: #64748b; }
+  #varTip { position: fixed; z-index: 2100; max-width: 460px; background: #0f172a; color: #fff; border-radius: 8px;
+            padding: 8px 10px; font-size: .75rem; box-shadow: 0 6px 20px rgba(15,23,42,.25); pointer-events: none; }
+  #varTip .vt-name { font-family: monospace; font-weight: 700; color: #fbbf24; }
+  #varTip .vt-value { font-family: monospace; word-break: break-all; margin: 4px 0; color: #e2e8f0; }
+  #varTip .vt-scope { color: #94a3b8; }
+  #varTip .vt-missing { color: #fca5a5; }
   .aw .items { min-height: 8px; }
   .aw .req[draggable=true] { cursor: grab; }
   .aw .req.dragging { opacity: .4; }
@@ -50,6 +67,12 @@
   .aw .req .more { visibility: hidden; }
   .aw .rename-input { font-size: .82rem; padding: 0 4px; height: 22px; }
   .aw .req:hover .more, .aw .req.active .more { visibility: visible; }
+  .aw textarea.script { min-height: 260px; tab-size: 2; }
+  .aw .snippets a { display: block; font-size: .75rem; color: var(--pf-dark); text-decoration: none; padding: 3px 6px; border-radius: 6px; }
+  .aw .snippets a:hover { background: var(--pf-soft); }
+  .aw .test-row { display: flex; gap: 8px; align-items: baseline; padding: 5px 8px; border-bottom: 1px solid #f1f5f9; font-size: .82rem; }
+  .aw .test-badge { font-size: .65rem; font-weight: 800; border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
+  .aw .test-pass { background: #dcfce7; color: #15803d; } .aw .test-fail { background: #fee2e2; color: #b91c1c; } .aw .test-skip { background: #f1f5f9; color: #64748b; }
   #ctxMenu { position: fixed; z-index: 2000; min-width: 190px; display: none; }
   #ctxMenu.show { display: block; }
 </style>
@@ -86,7 +109,9 @@
       </ul>
     </div>
     {% endif %}
-    <a href="{% url 'api_mail_settings' %}" class="btn btn-sm btn-light border ms-auto" title="SMTP server for run reports"><i class="bi bi-envelope-gear"></i> Mail Settings</a>
+    <button type="button" class="btn btn-sm btn-light border ms-auto" id="authBtn" title="Environment login (Keycloak) and cookies"><i class="bi bi-shield-lock"></i> Auth &amp; Cookies</button>
+    <button type="button" class="btn btn-sm btn-light border" id="varsBtn" title="Global and environment variables"><i class="bi bi-braces"></i> Variables</button>
+    <a href="{% url 'api_mail_settings' %}" class="btn btn-sm btn-light border" title="SMTP server for run reports"><i class="bi bi-envelope-gear"></i> Mail Settings</a>
     <div class="dropdown">
       <button class="btn btn-sm btn-pf dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-upload"></i> Import API</button>
       <ul class="dropdown-menu dropdown-menu-end small">
@@ -152,6 +177,7 @@
                   <form method="post" class="d-flex gap-1 mb-2">{% csrf_token %}<input type="hidden" name="action" value="rename_collection"><input type="hidden" name="collection" value="{{ col.pk }}">
                     <input name="name" value="{{ col.name }}" class="form-control form-control-sm" required><button class="btn btn-sm btn-light border">Rename</button></form>
                   <a href="{% url 'api_collection_run' col.pk %}" class="btn btn-sm btn-pf w-100 mb-2"><i class="bi bi-play-fill"></i> Run collection</a>
+                  <button type="button" class="btn btn-sm btn-light border w-100 mb-2 edit-col" data-collection="{{ col.pk }}"><i class="bi bi-sliders"></i> Variables &amp; scripts</button>
                   <form method="post" class="mb-2">{% csrf_token %}<input type="hidden" name="action" value="duplicate_collection"><input type="hidden" name="collection" value="{{ col.pk }}">
                     <button class="btn btn-sm btn-light border w-100"><i class="bi bi-copy"></i> Duplicate collection</button></form>
                   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete_collection"><input type="hidden" name="collection" value="{{ col.pk }}">
@@ -190,6 +216,10 @@
           <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
             <h6 class="fw-bold mb-0" id="reqName">Request</h6>
             <span class="ctx" id="reqCtx"></span>
+            <div class="dropdown ms-auto" id="loginPick" title="The login (session cookies) this request is sent with">
+              <button type="button" class="btn btn-sm btn-light border dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-person-badge"></i> Login: <span id="loginPickLabel" class="fw-semibold"></span></button>
+              <ul class="dropdown-menu dropdown-menu-end small" id="loginPickMenu"></ul>
+            </div>
           </div>
           <div class="input-group url-row mb-1">
             <select id="method" class="form-select">{% for m in methods %}<option>{{ m }}</option>{% endfor %}</select>
@@ -204,6 +234,8 @@
             <button type="button" data-tab="auth">Authorization</button>
             <button type="button" data-tab="headers">Headers <sup id="cnt-headers"></sup></button>
             <button type="button" data-tab="body">Body <sup id="cnt-body"></sup></button>
+            <button type="button" data-tab="pre">Pre-request <sup id="cnt-pre"></sup></button>
+            <button type="button" data-tab="post">Post-response <sup id="cnt-post"></sup></button>
             <button type="button" data-tab="settings">Settings</button>
           </div>
 
@@ -217,7 +249,7 @@
                   <option value="none">No Auth</option><option value="bearer">Bearer Token</option>
                   <option value="basic">Basic Auth</option><option value="apikey">API Key</option>
                 </select>
-                <div class="small text-muted mt-2">The authorization header is generated when you send the request.</div>
+                <div class="small text-muted mt-2">The authorization header is generated when you send the request. A session login (Keycloak) is picked in the <b>Login</b> menu next to the request name.</div>
               </div>
               <div class="col-md-8">
                 <div data-auth="none" class="small text-muted pt-4">This request does not use any authorization.</div>
@@ -247,12 +279,28 @@
             <div data-body="none" class="small text-muted py-3">This request does not have a body.</div>
             <div data-body="form-data" hidden><table class="table table-sm kv mb-0" id="kv-form"></table></div>
             <div data-body="urlencoded" hidden><table class="table table-sm kv mb-0" id="kv-urlenc"></table></div>
-            <div data-body="raw" hidden><textarea id="rawBody" class="form-control code" spellcheck="false"></textarea></div>
+            <div data-body="raw" hidden><textarea id="rawBody" class="form-control code" spellcheck="false"></textarea>
+              <div class="small text-muted mt-1" id="getHint" hidden><i class="bi bi-info-circle"></i> GET / HEAD: an empty body template ({} or &lt;root/&gt;) is not sent. Type real content to send a body.</div></div>
             <div data-body="binary" hidden><input type="file" id="binaryFile" class="form-control form-control-sm"><div class="small text-muted mt-1">The file is sent as the request body. It is not saved with the request.</div></div>
             <div data-body="graphql" hidden><div class="row g-2">
               <div class="col-md-7"><label class="small fw-semibold">Query</label><textarea id="gqlQuery" class="form-control code" spellcheck="false" placeholder="query { ... }"></textarea></div>
               <div class="col-md-5"><label class="small fw-semibold">GraphQL Variables (JSON)</label><textarea id="gqlVars" class="form-control code" spellcheck="false" placeholder="{ }"></textarea></div>
             </div></div>
+          </div>
+
+          <div data-pane="pre" hidden>
+            <div class="row g-2">
+              <div class="col-lg-9"><textarea id="preScript" class="form-control code script" spellcheck="false" placeholder="// Runs before the request is sent, e.g.&#10;pm.environment.set('timestamp', Date.now());"></textarea>
+                <div class="small text-muted mt-1">JavaScript with the Postman <code>pm</code> API. Runs before the request is sent: set variables, add headers, change the body. Use <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code> in the request to read a variable.</div></div>
+              <div class="col-lg-3"><div class="small fw-semibold mb-1">Snippets</div><div class="snippets" data-target="preScript" data-kind="pre"></div></div>
+            </div>
+          </div>
+          <div data-pane="post" hidden>
+            <div class="row g-2">
+              <div class="col-lg-9"><textarea id="postScript" class="form-control code script" spellcheck="false" placeholder="// Runs after the response arrives, e.g.&#10;pm.test('Status code is 200', function () {&#10;  pm.response.to.have.status(200);&#10;});"></textarea>
+                <div class="small text-muted mt-1">Write tests with <code>pm.test()</code> and <code>pm.expect()</code>, read the response with <code>pm.response.json()</code>, <code>.text()</code> or <code>.xml()</code>, and save values with <code>pm.environment.set()</code>. Results show under <b>Test Results</b>.</div></div>
+              <div class="col-lg-3"><div class="small fw-semibold mb-1">Snippets</div><div class="snippets" data-target="postScript" data-kind="post"></div></div>
+            </div>
           </div>
 
           <div data-pane="settings" hidden>
@@ -270,10 +318,15 @@
               <div class="rtabs border-0" id="respTabs">
                 <button type="button" data-rtab="body" class="active">Body</button>
                 <button type="button" data-rtab="headers">Headers <sup id="cnt-rh"></sup></button>
+                <button type="button" data-rtab="tests">Test Results <sup id="cnt-tests"></sup></button>
+                <button type="button" data-rtab="console">Console <sup id="cnt-console"></sup></button>
               </div>
               <div class="ms-auto small" id="respMeta"></div>
             </div>
             <div id="respEmpty" class="text-center text-muted small py-4"><i class="bi bi-arrow-up-circle"></i> Press <b>Send</b> to get a response.</div>
+            <div id="authHint" class="alert alert-warning small py-2 d-none align-items-center gap-2">
+              <i class="bi bi-shield-exclamation"></i><span id="authHintText"></span>
+              <button type="button" class="btn btn-sm btn-pf ms-auto text-nowrap" id="authHintBtn"><i class="bi bi-shield-lock"></i> Set up login</button></div>
             <div id="respError" class="alert alert-danger small" hidden></div>
             <div id="respBody" hidden>
               <div class="d-flex align-items-center gap-2 mb-1 small">
@@ -291,12 +344,127 @@
               <iframe id="respFrame" sandbox="" class="w-100 border rounded" style="height:420px" hidden></iframe>
             </div>
             <div id="respHeaders" hidden><table class="table table-sm small mb-0"><tbody id="respHeaderRows"></tbody></table></div>
+            <div id="respTests" hidden></div>
+            <div id="respConsole" hidden><pre class="resp-pre code" id="consolePre"></pre></div>
           </div>
         </div>
       </div>
     </div>
   </div>
 </div>
+
+<!-- environment login (Keycloak) + cookie jar -->
+<div class="modal fade" id="authModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-shield-lock text-success"></i> Auth &amp; Cookies</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="rtabs mb-3" id="authTabs">
+      <button type="button" data-atab="login" class="active">Environment Login</button>
+      <button type="button" data-atab="cookies">Cookies</button>
+    </div>
+    <div data-apane="login">
+      <div id="authList">
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+          <div class="small text-muted">The logins BaigNova uses to call the APIs. An environment can have several, e.g. <i>Application client</i>, <i>Backoffice client</i>, <i>Integration client</i>; each keeps its own session cookies. Every request picks its login in the <b>Login</b> menu next to the request name. Only the projects and environments selected in the top bar are listed here.</div>
+          <button type="button" class="btn btn-sm btn-pf ms-auto text-nowrap" id="authNew"><i class="bi bi-plus-lg"></i> New login</button>
+        </div>
+        <div id="authTable"></div>
+      </div>
+      <div id="authForm" hidden>
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <button type="button" class="btn btn-sm btn-light border" id="authBack"><i class="bi bi-arrow-left"></i> All logins</button>
+          <b class="small" id="authFormTitle">New login</b>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-md-6"><label class="form-label small fw-semibold">Project</label><select id="authProject" class="form-select form-select-sm"></select></div>
+          <div class="col-md-6"><label class="form-label small fw-semibold">Environment</label><select id="authEnv" class="form-select form-select-sm"></select></div>
+        </div>
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-md-5"><label class="form-label small fw-semibold">Login name</label>
+            <input id="authName" class="form-control form-control-sm" placeholder="e.g. Backoffice client" maxlength="100"><div class="invalid-feedback">Give the login a name.</div></div>
+          <div class="col-md-5"><label class="form-label small fw-semibold">Login type</label>
+            <select id="authKind" class="form-select form-select-sm"><option value="none">No login</option><option value="keycloak">Keycloak / OpenID Connect login (session cookie)</option></select></div>
+          <div class="col-md-2 d-flex align-items-center pb-1">
+            <label class="form-check small mb-0" title="Requests that do not pick a login use the default"><input type="checkbox" id="authDefault" class="form-check-input">Default</label></div>
+        </div>
+        <div id="authFields">
+          <div class="small text-muted mb-2">BaigNova opens the Login URL, fills Keycloak's login form with this test user and keeps the session cookie the app sets.
+            Requests to this environment then send the cookie. <code>{% templatetag openvariable %}baseUrl{% templatetag closevariable %}</code> = <code id="authBase"></code></div>
+          <div class="row g-2">
+            <div class="col-12"><label class="form-label small fw-semibold">Login URL</label>
+              <input id="authLoginUrl" class="form-control form-control-sm font-monospace" placeholder="{% templatetag openvariable %}baseUrl{% templatetag closevariable %}/login">
+              <div class="form-text">The app's login address. It may answer with Keycloak's address (like ACS <code>/login</code>) or redirect to Keycloak.</div></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Username <span class="text-danger">*</span></label>
+              <input id="authUsername" class="form-control form-control-sm" autocomplete="off"><div class="invalid-feedback">Username is required.</div></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Password <span class="text-danger">*</span></label>
+              <div class="input-group input-group-sm has-validation">
+                <input id="authPassword" type="password" class="form-control form-control-sm" autocomplete="new-password">
+                <button type="button" class="btn btn-light border" id="authEye" title="Show password"><i class="bi bi-eye"></i></button>
+                <div class="invalid-feedback">Password is required.</div></div></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Login check URL (optional)</label>
+              <input id="authCheckUrl" class="form-control form-control-sm font-monospace" placeholder="{% templatetag openvariable %}baseUrl{% templatetag closevariable %}/session">
+              <div class="form-text">A page that only works when logged in. After the login it must answer 2xx.</div></div>
+            <div class="col-12">
+              <label class="form-check small"><input type="checkbox" id="authRelogin" class="form-check-input">When a request gets 401, log in again and send it once more</label>
+              <label class="form-check small"><input type="checkbox" id="authVerify" class="form-check-input">Verify SSL certificates during login</label></div>
+          </div>
+          <div class="small mt-2 text-muted"><i class="bi bi-info-circle"></i> Use a test user without OTP / MFA. The password is only sent over HTTPS and is never shown again.</div>
+        </div>
+        <div class="small border rounded-3 p-2 mt-3 bg-light" id="authStatus"></div>
+        <div class="d-flex gap-2 mt-3 align-items-center">
+          <button type="button" class="btn btn-sm btn-link text-danger p-0 text-nowrap" id="authDelete" title="Delete this login"><i class="bi bi-trash"></i> Delete</button>
+          <button type="button" class="btn btn-sm btn-light border ms-auto" id="authTest" title="Try the login now; nothing is saved"><i class="bi bi-plug"></i> Test connection</button>
+          <button type="button" class="btn btn-sm btn-pf" id="authSave"><i class="bi bi-floppy"></i> Save</button>
+        </div>
+      </div>
+    </div>
+    <div data-apane="cookies" hidden>
+      <div id="cookieList"></div>
+      <div class="border rounded-3 p-2 bg-light">
+        <div class="small fw-semibold mb-1">Add a cookie by hand <span class="fw-normal text-muted">(for example copied from the browser's DevTools after logging in)</span></div>
+        <div class="row g-2">
+          <div class="col-md-4"><input id="cookieDomain" class="form-control form-control-sm" placeholder="qa-app.acs.gov.pk"></div>
+          <div class="col-md-3"><input id="cookieName" class="form-control form-control-sm font-monospace" placeholder="Name"></div>
+          <div class="col-md-5"><input id="cookieValue" class="form-control form-control-sm font-monospace" placeholder="Value"></div>
+          <div class="col-md-3"><input id="cookiePath" class="form-control form-control-sm" placeholder="Path /"></div>
+          <div class="col-md-3 d-flex align-items-center"><label class="form-check small mb-0"><input type="checkbox" id="cookieSecure" class="form-check-input" checked>Secure (HTTPS only)</label></div>
+          <div class="col-md-6 d-flex gap-2 align-items-center"><button type="button" class="btn btn-sm btn-pf" id="cookieAdd"><i class="bi bi-plus"></i> Add cookie</button><span class="small text-danger" id="cookieError"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+
+<!-- variables: globals + environments -->
+<div class="modal fade" id="varsModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-braces text-success"></i> Variables</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="varsBody"></div>
+  <div class="modal-footer small text-muted justify-content-start">Use a variable as <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code> in the URL, params, headers, auth or body. Scripts read and set them with
+    <code>pm.environment</code>, <code>pm.collectionVariables</code>, <code>pm.projectVariables</code> and <code>pm.globals</code>. When the same name exists twice: environment wins over collection, collection over project, project over globals. Collection variables are in each collection's menu.</div>
+</div></div></div>
+
+<!-- collection: variables, scripts, description -->
+<div class="modal fade" id="colModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-collection text-success"></i> <span id="colName"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="rtabs mb-3" id="colTabs">
+      <button type="button" data-ctab="vars" class="active">Variables</button>
+      <button type="button" data-ctab="pre">Pre-request</button>
+      <button type="button" data-ctab="post">Post-response</button>
+      <button type="button" data-ctab="desc">Description</button>
+    </div>
+    <div data-cpane="vars"><p class="small text-muted mb-1">Collection variables, for every request in this collection (<code>pm.collectionVariables</code>).</p><table class="table table-sm kv mb-0" id="colVars"></table></div>
+    <div data-cpane="pre" hidden><div class="row g-2">
+      <div class="col-lg-9"><textarea id="colPre" class="form-control code script" spellcheck="false" placeholder="// Runs before every request in this collection"></textarea></div>
+      <div class="col-lg-3"><div class="small fw-semibold mb-1">Snippets</div><div class="snippets" data-target="colPre" data-kind="pre"></div></div></div></div>
+    <div data-cpane="post" hidden><div class="row g-2">
+      <div class="col-lg-9"><textarea id="colPost" class="form-control code script" spellcheck="false" placeholder="// Runs after every response in this collection"></textarea></div>
+      <div class="col-lg-3"><div class="small fw-semibold mb-1">Snippets</div><div class="snippets" data-target="colPost" data-kind="post"></div></div></div></div>
+    <div data-cpane="desc" hidden><textarea id="colDesc" class="form-control" rows="6" placeholder="What this collection tests"></textarea></div>
+  </div>
+  <div class="modal-footer"><span class="small text-success me-auto" id="colStatus"></span>
+    <button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Close</button>
+    <button type="button" class="btn btn-sm btn-pf" id="colSave"><i class="bi bi-floppy"></i> Save</button></div>
+</div></div></div>
 
 <!-- right-click / "..." menu for requests and collections -->
 <div id="ctxMenu" class="dropdown-menu shadow small"></div>
@@ -359,11 +527,13 @@
 <script>
 (() => {
   const CSRF = '{{ csrf_token }}';
-  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', rename: '{% url "api_ws_rename" %}',
+  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}',
+                auth: '{% url "api_ws_auth" %}', cookies: '{% url "api_ws_cookies" %}', rename: '{% url "api_ws_rename" %}',
                 page: '{% url "api_workspace" %}'};
   const $ = id => document.getElementById(id);
   let current = null;        // loaded spec (case / item / blank)
   let lastResponse = null;
+  const PROFILES = {{ auth_profiles_json|safe }};   // {environment id: [login, ...]}: the logins of the selected environments
 
   // ---------- left panel ----------
   document.querySelectorAll('[data-side]').forEach(b => b.addEventListener('click', () => {
@@ -461,6 +631,7 @@
       {icon: 'plus-lg', label: 'Add new request', run: () => post('add_request', 'collection', d.dataset.collection)},
       {icon: 'plug', label: 'Add APIs', run: () => d.querySelector('.add-apis').click()},
       {icon: 'pencil', label: 'Rename', run: () => renameInline(d.querySelector('.col-name'), 'collection', d.dataset.collection, d)},
+      {icon: 'sliders', label: 'Variables & scripts', run: () => openCollection(d.dataset.collection)},
       {icon: 'copy', label: 'Duplicate collection', run: () => post('duplicate_collection', 'collection', d.dataset.collection)},
       '-',
       {icon: 'trash', label: 'Delete collection', danger: true,
@@ -582,6 +753,53 @@
     summary.addEventListener('drop', e => drop(e, null));
   });
 
+  // ---------- script snippets ----------
+  const O = '{' + '{', C = '}' + '}';      // written this way so the page template leaves them alone
+  const SNIPPETS = {
+    pre: [
+      ['Set an environment variable', 'pm.environment.set("variable_key", "variable_value");'],
+      ['Set a collection variable', 'pm.collectionVariables.set("variable_key", "variable_value");'],
+      ['Set a global variable', 'pm.globals.set("variable_key", "variable_value");'],
+      ['Get a variable', 'const value = pm.variables.get("variable_key");'],
+      ['Add a request header', `pm.request.headers.upsert({ key: "X-Request-Id", value: pm.variables.replaceIn("${O}$guid${C}") });`],
+      ['Save a timestamp', 'pm.environment.set("timestamp", Date.now());'],
+      ['Log the request URL', 'console.log(pm.request.url.toString());'],
+    ],
+    post: [
+      ['Status code is 200', 'pm.test("Status code is 200", function () {\n  pm.response.to.have.status(200);\n});'],
+      ['Successful request (2xx)', 'pm.test("Successful request", function () {\n  pm.response.to.be.success;\n});'],
+      ['Response time below 500 ms', 'pm.test("Response time is less than 500ms", function () {\n  pm.expect(pm.response.responseTime).to.be.below(500);\n});'],
+      ['JSON value check', 'pm.test("Check a JSON value", function () {\n  const jsonData = pm.response.json();\n  pm.expect(jsonData.value).to.eql(100);\n});'],
+      ['Body contains a string', 'pm.test("Body contains a string", function () {\n  pm.expect(pm.response.text()).to.include("string_you_want_to_search");\n});'],
+      ['Content-Type header is present', 'pm.test("Content-Type header is present", function () {\n  pm.response.to.have.header("Content-Type");\n});'],
+      ['Save a value from the response', 'const jsonData = pm.response.json();\npm.environment.set("token", jsonData.token);'],
+      ['Read an XML response', 'const data = pm.response.xml();\nconsole.log(data);'],
+    ],
+  };
+  function insertSnippet(ta, code) {
+    const start = ta.selectionStart ?? ta.value.length, end = ta.selectionEnd ?? start;
+    const before = ta.value.slice(0, start), after = ta.value.slice(end);
+    ta.value = before + (before && !before.endsWith('\n') ? '\n' : '') + code + '\n' + after;
+    ta.focus(); ta.dispatchEvent(new Event('input'));
+  }
+  function fillSnippets(box) {
+    box.innerHTML = '';
+    SNIPPETS[box.dataset.kind].forEach(([label, code]) => {
+      const a = document.createElement('a');
+      a.href = '#'; a.textContent = label;
+      a.addEventListener('click', e => { e.preventDefault(); insertSnippet($(box.dataset.target), code); });
+      box.appendChild(a);
+    });
+  }
+  document.querySelectorAll('.snippets').forEach(fillSnippets);
+  document.querySelectorAll('textarea.script').forEach(ta => ta.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const s = ta.selectionStart;
+    ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = s + 2;
+  }));
+
   // ---------- key / value tables ----------
   function kvTable(table, withType) {
     const body = document.createElement('tbody');
@@ -679,7 +897,12 @@
     $('cnt-params').textContent = n(kv.params.get());
     $('cnt-headers').textContent = n(kv.headers.get());
     $('cnt-body').textContent = bodyMode() !== 'none' ? '●' : '';
+    $('cnt-pre').textContent = $('preScript').value.trim() ? '●' : '';
+    $('cnt-post').textContent = $('postScript').value.trim() ? '●' : '';
+    $('getHint').hidden = !(bodyMode() === 'raw' && ['GET', 'HEAD'].includes($('method').value));
   }
+  ['preScript', 'postScript'].forEach(id => $(id).addEventListener('input', counts));
+  $('method').addEventListener('change', counts);
 
   // ---------- load / collect ----------
   function fill(spec) {
@@ -698,12 +921,14 @@
     $('authType').value = a.type || 'none'; $('authType').dispatchEvent(new Event('change'));
     $('authToken').value = a.token || ''; $('authUser').value = a.username || ''; $('authPass').value = a.password || '';
     $('authKey').value = a.key || ''; $('authValue').value = a.value || ''; $('authAddTo').value = a.add_to || 'header';
+    renderLoginPick();
     document.querySelectorAll('input[name=bodyMode]').forEach(r => r.checked = r.value === (spec.body_mode || 'none'));
     $('rawLang').value = spec.raw_language || 'json';
     $('rawBody').value = spec.body || ''; $('gqlQuery').value = spec.graphql_query || ''; $('gqlVars').value = spec.graphql_variables || '';
     $('binaryFile').value = '';
     $('verifySsl').checked = spec.verify_ssl !== false;
     $('expectedStatus').value = spec.expected_status || '';
+    $('preScript').value = spec.pre_request_script || ''; $('postScript').value = spec.test_script || '';
     showBody(); counts(); resetResponse();
     // open the most useful tab: Body when there is one, else Params
     document.querySelector(`#reqTabs [data-tab="${spec.body_mode && spec.body_mode !== 'none' ? 'body' : 'params'}"]`).click();
@@ -714,19 +939,108 @@
     if (type === 'bearer') auth.token = $('authToken').value;
     if (type === 'basic') { auth.username = $('authUser').value; auth.password = $('authPass').value; }
     if (type === 'apikey') { auth.key = $('authKey').value; auth.value = $('authValue').value; auth.add_to = $('authAddTo').value; }
+    if (loginChoice()) auth.profile = loginChoice();     // '' = the environment's default login, 'none' = no login
     return {
       item: current.item, case: current.case, environment: current.environment,
       method: $('method').value, url: $('url').value, params: kv.params.get(), headers: kv.headers.get(), auth,
       body_mode: bodyMode(), raw_language: $('rawLang').value, body: $('rawBody').value,
       form_data: kv.form.get(), urlencoded: kv.urlenc.get(),
       graphql_query: $('gqlQuery').value, graphql_variables: $('gqlVars').value, verify_ssl: $('verifySsl').checked,
-      expected_status: $('expectedStatus').value,
+      expected_status: $('expectedStatus').value, name: current.name,
+      pre_request_script: $('preScript').value, test_script: $('postScript').value,
     };
   }
+  // ---------- which login (session cookies) the request is sent with ----------
+  function loginChoice() { return (current && current.auth && current.auth.profile) || ''; }
+  function renderLoginPick() {
+    const list = (current && current.environment && PROFILES[current.environment]) || [];
+    const choice = loginChoice(), def = list.find(p => p.is_default && p.active) || list.find(p => p.active);
+    const known = list.some(p => p.name === choice);
+    $('loginPickLabel').textContent = choice === 'none' ? 'none' : choice ? choice + (known ? '' : ' (missing)')
+      : def ? `${def.name} (default)` : 'none set up';
+    $('loginPick').querySelector('button').classList.toggle('border-warning', !!choice && choice !== 'none' && !known);
+    const row = (v, text, sub) => `<li><button type="button" class="dropdown-item small d-flex align-items-start gap-2" data-login="${esc(v)}">
+      <i class="bi bi-check2 ${choice === v ? '' : 'invisible'}"></i><span>${text}${sub ? `<div class="text-muted" style="font-size:.7rem">${sub}</div>` : ''}</span></button></li>`;
+    $('loginPickMenu').innerHTML = row('', 'Environment default', def ? esc(def.name) : 'no login set up yet')
+      + (list.length ? '<li><hr class="dropdown-divider"></li>' : '')
+      + list.map(p => row(p.name, esc(p.name), p.active ? (p.is_default ? 'default' : '') : 'not set up yet')).join('')
+      + (choice && choice !== 'none' && !known ? row(choice, esc(choice), 'not in this environment · the default is used') : '')
+      + row('none', 'No login', 'send without a session')
+      + '<li><hr class="dropdown-divider"></li><li><button type="button" class="dropdown-item small" id="loginManage"><i class="bi bi-shield-lock"></i> Manage logins…</button></li>';
+    $('loginPickMenu').querySelectorAll('[data-login]').forEach(b => b.addEventListener('click', () => {
+      current.auth = {...(current.auth || {}), profile: b.dataset.login};
+      if (!b.dataset.login) delete current.auth.profile;
+      renderLoginPick();
+    }));
+    $('loginManage').addEventListener('click', () => $('authBtn').click());
+  }
+
+  // ---------- hover a {{variable}} to see its value ----------
+  let varScopes = [];
+  const VAR_TOKEN = /\{\{\s*([\w.\-$]+)\s*\}\}/g;
+  const DYNAMIC = {'$guid': 'a new random UUID', '$randomUUID': 'a new random UUID', '$timestamp': 'the current Unix time',
+                   '$isoTimestamp': 'the current time (ISO)', '$randomInt': 'a random number 0-1000'};
+  async function loadVarScopes() {
+    if (!current) return;
+    const q = new URLSearchParams({environment: current.environment || '', collection: current.collection || ''});
+    try { varScopes = (await (await fetch(`${URLS.resolve}?${q}`)).json()).scopes; } catch (e) { varScopes = []; }
+  }
+  function describeVar(name) {
+    if (DYNAMIC[name]) return {value: `Filled with ${DYNAMIC[name]} when the request is sent`, scope: 'Dynamic variable', source: ''};
+    const hits = varScopes.filter(s => Object.prototype.hasOwnProperty.call(s.values, name));
+    if (!hits.length) return null;
+    return {value: hits[0].values[name], scope: hits[0].scope, source: hits[0].source,
+            hidden: hits.slice(1).map(h => `${h.scope} (${h.source})`)};
+  }
+  const tip = document.createElement('div');
+  tip.id = 'varTip'; tip.hidden = true;
+  document.body.appendChild(tip);
+  const measure = document.createElement('canvas').getContext('2d');
+  function charAt(input, clientX) {
+    // index of the character under the mouse in a one-line input
+    const st = getComputedStyle(input), r = input.getBoundingClientRect();
+    measure.font = `${st.fontStyle} ${st.fontWeight} ${st.fontSize} ${st.fontFamily}`;
+    const x = clientX - r.left - parseFloat(st.paddingLeft) - parseFloat(st.borderLeftWidth) + input.scrollLeft;
+    const text = input.value;
+    for (let i = 1; i <= text.length; i++) if (measure.measureText(text.slice(0, i)).width > x) return i - 1;
+    return -1;
+  }
+  function varUnder(input, clientX) {
+    const i = charAt(input, clientX);
+    if (i < 0) return null;
+    for (const m of input.value.matchAll(VAR_TOKEN)) if (i >= m.index && i < m.index + m[0].length) return m[1];
+    return null;
+  }
+  function showTip(name, e) {
+    const d = describeVar(name);
+    tip.innerHTML = d
+      ? `<div><span class="vt-name">${esc(name)}</span> <span class="vt-scope">· ${esc(d.scope)}${d.source ? ` · ${esc(d.source)}` : ''}</span></div>
+         <div class="vt-value">${esc(d.value) || '<i>(empty)</i>'}</div>
+         ${d.hidden && d.hidden.length ? `<div class="vt-scope">Also defined in ${d.hidden.map(esc).join(', ')} (not used)</div>` : ''}`
+      : `<div><span class="vt-name">${esc(name)}</span></div><div class="vt-missing">Not defined. It is sent as written unless a pre-request script sets it.</div>`;
+    tip.hidden = false;
+    tip.style.left = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8) + 'px';
+    tip.style.top = (e.clientY + 18) + 'px';
+  }
+  function watchVars(input) {
+    if (input.dataset.varHover) return;
+    input.dataset.varHover = '1';
+    input.addEventListener('mousemove', e => {
+      const name = input.value.includes('{' + '{') ? varUnder(input, e.clientX) : null;
+      name ? showTip(name, e) : tip.hidden = true;
+    });
+    input.addEventListener('mouseleave', () => tip.hidden = true);
+  }
+  watchVars($('url'));
+  // key/value rows are created later; watch their inputs as they appear
+  new MutationObserver(() => document.querySelectorAll('.kv input.v, .kv input.k').forEach(watchVars))
+    .observe(document.body, {childList: true, subtree: true});
+
   async function load(query) {
     const res = await fetch(`${URLS.req}?${query}`);
     if (!res.ok) return alertInline('Could not load this request.');
     fill(await res.json());
+    loadVarScopes();
   }
   $('newRequest').addEventListener('click', () => fill({kind: 'blank', name: 'Untitled Request', method: 'GET', url: '', body_mode: 'none'}));
 
@@ -747,6 +1061,7 @@
     try {
       const res = await fetch(URLS.send, {method: 'POST', headers: {'X-CSRFToken': CSRF}, body: fd});
       showResponse(await res.json());
+      loadVarScopes();              // scripts may have changed variable values
     } catch (e) {
       showResponse({ok: false, error: 'Could not reach BaigNova: ' + e.message});
     } finally {
@@ -757,34 +1072,58 @@
   // ---------- response ----------
   function resetResponse() {
     lastResponse = null;
-    $('respEmpty').hidden = false; $('respError').hidden = true; $('respBody').hidden = true; $('respHeaders').hidden = true;
-    $('respMeta').innerHTML = ''; $('cnt-rh').textContent = '';
+    ['respError', 'respBody', 'respHeaders', 'respTests', 'respConsole'].forEach(id => $(id).hidden = true);
+    $('respEmpty').hidden = false;
+    $('respMeta').innerHTML = ''; $('authHint').classList.add('d-none'); $('authHint').classList.remove('d-flex');
+    ['cnt-rh', 'cnt-tests', 'cnt-console'].forEach(id => $(id).textContent = '');
+  }
+  function renderTests(r) {
+    const tests = r.tests || [], errors = r.script_errors || [];
+    const passed = tests.filter(t => t.passed).length;
+    $('cnt-tests').textContent = tests.length ? `${passed}/${tests.length}` : errors.length ? '!' : '';
+    $('cnt-tests').style.color = (tests.length && passed < tests.length) || errors.length ? '#dc2626' : '';
+    let html = errors.map(e => `<div class="alert alert-danger small py-1 mb-2"><b>${esc(e.script)}:</b> ${esc(e.message)}</div>`).join('');
+    html += tests.map(t => `<div class="test-row"><span class="test-badge ${t.skipped ? 'test-skip' : t.passed ? 'test-pass' : 'test-fail'}">${t.skipped ? 'SKIPPED' : t.passed ? 'PASS' : 'FAIL'}</span>
+      <span>${esc(t.name)}${t.error ? `<div class="text-danger small">${esc(t.error)}</div>` : ''}</span></div>`).join('');
+    $('respTests').innerHTML = html || '<div class="text-muted small py-3 text-center">No tests for this request. Add <code>pm.test()</code> in the Post-response tab.</div>';
+  }
+  function renderConsole(r) {
+    const lines = (r.console || []).map(c => `[${c.level}] ${c.text}`)
+      .concat((r.script_errors || []).map(e => `[error] ${e.script}: ${e.message}`));
+    $('cnt-console').textContent = lines.length || '';
+    $('consolePre').textContent = lines.join('\n') || 'Nothing logged. Use console.log() in a script.';
+  }
+  function showRespTab(name) {
+    document.querySelectorAll('#respTabs [data-rtab]').forEach(x => x.classList.toggle('active', x.dataset.rtab === name));
+    const has = !!lastResponse, ok = has && lastResponse.ok;
+    $('respBody').hidden = !(ok && name === 'body');
+    $('respHeaders').hidden = !(ok && name === 'headers');
+    $('respError').hidden = !(has && !ok && (name === 'body' || name === 'headers'));
+    $('respTests').hidden = !(has && name === 'tests');
+    $('respConsole').hidden = !(has && name === 'console');
   }
   function size(n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(2)} KB` : `${(n / 1048576).toFixed(2)} MB`; }
   function showResponse(r) {
     lastResponse = r;
     $('respEmpty').hidden = true;
+    renderTests(r); renderConsole(r);
+    $('authHint').classList.toggle('d-none', !r.auth_hint); $('authHint').classList.toggle('d-flex', !!r.auth_hint);
+    $('authHintText').textContent = r.auth_hint || '';
     if (!r.ok) {
-      $('respError').hidden = false; $('respError').textContent = r.error;
-      $('respBody').hidden = $('respHeaders').hidden = true;
+      $('respError').textContent = r.error;
       $('respMeta').innerHTML = `<span class="stat stat-0">Error</span>`;
+      showRespTab('body');
       return;
     }
-    $('respError').hidden = true;
-    $('respMeta').innerHTML = `Status: <span class="stat stat-${String(r.status)[0]}">${r.status} ${esc(r.reason)}</span>
+    $('respMeta').innerHTML = (r.login ? `<span class="badge text-bg-light border me-2" title="Sent with this login's session cookies"><i class="bi bi-person-badge"></i> ${esc(r.login)}</span>` : '') + (r.auth ? `<span class="badge text-bg-warning me-2" title="${esc(r.auth)}"><i class="bi bi-shield-lock"></i> ${esc(r.auth.split(':')[0])}</span>` : '') + `Status: <span class="stat stat-${String(r.status)[0]}">${r.status} ${esc(r.reason)}</span>
       &nbsp; Time: <b>${r.ms} ms</b> &nbsp; Size: <b>${size(r.size)}</b>${r.truncated ? ' <span class="text-danger">(cut at 5 MB)</span>' : ''}`;
     $('respLang').value = r.language || 'text';
     $('respHeaderRows').innerHTML = r.headers.map(([k, v]) => `<tr><td class="fw-semibold text-nowrap">${esc(k)}</td><td class="text-break">${esc(v)}</td></tr>`).join('');
     $('cnt-rh').textContent = r.headers.length || '';
-    document.querySelector('#respTabs [data-rtab="body"]').click();
+    showRespTab('body');
     render();
   }
-  document.querySelectorAll('#respTabs [data-rtab]').forEach(b => b.addEventListener('click', () => {
-    document.querySelectorAll('#respTabs [data-rtab]').forEach(x => x.classList.toggle('active', x === b));
-    if (!lastResponse || !lastResponse.ok) return;
-    $('respBody').hidden = b.dataset.rtab !== 'body';
-    $('respHeaders').hidden = b.dataset.rtab !== 'headers';
-  }));
+  document.querySelectorAll('#respTabs [data-rtab]').forEach(b => b.addEventListener('click', () => showRespTab(b.dataset.rtab)));
   let view = 'pretty';
   document.querySelectorAll('#viewMode [data-view]').forEach(b => b.addEventListener('click', () => {
     view = b.dataset.view;
@@ -796,21 +1135,119 @@
     if (!lastResponse || !lastResponse.ok) return;
     const body = lastResponse.body || '';
     const lang = $('respLang').value;
+    if (!body) {
+      $('respFrame').hidden = true; $('respPre').hidden = false;
+      $('respPre').innerHTML = `<span class="text-muted">The server sent no response body (${lastResponse.size || 0} bytes). See the status code and the Headers tab.</span>`;
+      return;
+    }
     $('respFrame').hidden = view !== 'preview'; $('respPre').hidden = view === 'preview';
     if (view === 'preview') { $('respFrame').srcdoc = body; return; }
     if (view === 'raw') { $('respPre').textContent = body; return; }
     if (lang === 'json') {
-      try { $('respPre').innerHTML = highlightJson(JSON.stringify(JSON.parse(body), null, 2)); return; }
+      try { $('respPre').innerHTML = jsonNode(JSON.parse(body), 0, ''); return; }
       catch (e) { /* not JSON: fall through to plain text */ }
     }
     $('respPre').textContent = (lang === 'xml' || lang === 'html') ? prettyMarkup(body) : body;
   }
   $('copyResp').addEventListener('click', () => lastResponse && navigator.clipboard.writeText(lastResponse.body || ''));
-  function highlightJson(text) {
-    return esc(text).replace(/(&quot;(?:\\.|[^\\&]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-      (m, str, colon, lit, num) => str ? `<span class="${colon ? 'j-key' : 'j-str'}">${str}</span>${colon || ''}`
-        : lit ? `<span class="j-lit">${lit}</span>` : `<span class="j-num">${num}</span>`);
+  function jsonNode(v, depth, path) {
+    // pretty JSON like JSON.stringify(v, null, 2), but every scalar is a span that can be saved as a variable
+    const pad = '  '.repeat(depth), inner = '  '.repeat(depth + 1);
+    if (Array.isArray(v)) {
+      if (!v.length) return '[]';
+      return '[\n' + v.map((x, i) => inner + jsonNode(x, depth + 1, `${path}[${i}]`)).join(',\n') + '\n' + pad + ']';
+    }
+    if (v && typeof v === 'object') {
+      const keys = Object.keys(v);
+      if (!keys.length) return '{}';
+      return '{\n' + keys.map(k => `${inner}<span class="j-key">${esc(JSON.stringify(k))}</span>: ${jsonNode(v[k], depth + 1, path ? `${path}.${k}` : k)}`).join(',\n') + '\n' + pad + '}';
+    }
+    const cls = typeof v === 'string' ? 'j-str' : typeof v === 'number' ? 'j-num' : 'j-lit';
+    const raw = typeof v === 'string' ? v : JSON.stringify(v);
+    return `<span class="${cls} j-val" data-path="${esc(path)}" data-val="${esc(raw)}" title="Click to save this value as a variable">${esc(JSON.stringify(v))}</span>`;
   }
+
+  // ---------- save a response value as a variable (environment / project / global) ----------
+  const valPop = document.createElement('div');
+  valPop.id = 'valPop'; valPop.hidden = true;
+  document.body.appendChild(valPop);
+  let valPick = null, valScope = 'environment';
+  function hideValPop() {
+    valPop.hidden = true;
+    if (valPick) valPick.classList.remove('picked');
+    valPick = null;
+  }
+  function suggestName(path) {
+    const last = (path.match(/([^.\[\]]+)(?:\[\d+\])*$/) || [, path])[1] || 'value';
+    return last.replace(/[^\w.\-]/g, '_');
+  }
+  function openValPop(span) {
+    if (valPick) valPick.classList.remove('picked');
+    valPick = span; span.classList.add('picked');
+    const path = span.dataset.path, raw = span.dataset.val;
+    const hasEnv = !!(current && current.environment);
+    const envLabel = hasEnv ? `${current.project_name} · ${current.environment_name}` : 'this request has no environment';
+    const projLabel = hasEnv ? `every environment of ${current.project_name}` : 'this request has no project';
+    if (!hasEnv) valScope = 'globals';
+    const scopes = [
+      ['environment', 'Environment variable', `Only ${esc(envLabel)}`, hasEnv],
+      ['project', 'Project variable', `Used in ${esc(projLabel)}`, hasEnv],
+      ['globals', 'Global variable', 'Used in every project and environment', true],
+    ];
+    valPop.innerHTML = `<div class="d-flex align-items-center"><b><i class="bi bi-braces"></i> Save as variable</b>
+        <button type="button" class="btn-close btn-sm ms-auto" id="vpClose"></button></div>
+      <div class="vp-path">${esc(path)}</div>
+      <div class="vp-value">${esc(raw) || '<span class="text-muted">(empty)</span>'}</div>
+      <label class="form-label mb-0 fw-semibold">Variable name</label>
+      <input id="vpName" class="form-control form-control-sm font-monospace mb-2" value="${esc(suggestName(path))}" spellcheck="false">
+      ${scopes.map(([v, t, d, on]) => `<label class="vp-scope${on ? '' : ' off'}"><input type="radio" name="vpScope" value="${v}" class="form-check-input mt-1"${on ? '' : ' disabled'}${v === valScope ? ' checked' : ''}><span><b>${t}</b><small>${d}</small></span></label>`).join('')}
+      <div id="vpMsg" class="small mt-1"></div>
+      <div class="d-flex gap-2 mt-2"><button type="button" class="btn btn-sm btn-light border" id="vpCopy" title="Copy the value"><i class="bi bi-clipboard"></i></button>
+        <button type="button" class="btn btn-sm btn-pf ms-auto" id="vpSave"><i class="bi bi-floppy"></i> Save variable</button></div>`;
+    valPop.hidden = false;
+    const r = span.getBoundingClientRect(), w = valPop.offsetWidth, h = valPop.offsetHeight;
+    let left = Math.min(r.left, window.innerWidth - w - 12), top = r.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    valPop.style.left = `${Math.max(8, left)}px`; valPop.style.top = `${top}px`;
+    $('vpName').focus(); $('vpName').select();
+    $('vpClose').addEventListener('click', hideValPop);
+    $('vpCopy').addEventListener('click', () => { navigator.clipboard.writeText(raw); $('vpMsg').innerHTML = '<span class="text-success">Value copied.</span>'; });
+    valPop.querySelectorAll('input[name="vpScope"]').forEach(x => x.addEventListener('change', () => { valScope = x.value; $('vpMsg').innerHTML = ''; resetSaveBtn(); }));
+    $('vpName').addEventListener('input', () => { $('vpMsg').innerHTML = ''; resetSaveBtn(); });
+    $('vpName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('vpSave').click(); } });
+    let overwrite = false;
+    function resetSaveBtn() { overwrite = false; $('vpSave').innerHTML = '<i class="bi bi-floppy"></i> Save variable'; $('vpSave').classList.replace('btn-warning', 'btn-pf'); }
+    $('vpSave').addEventListener('click', async () => {
+      const key = $('vpName').value.trim();
+      if (!/^[\w.\-]{1,200}$/.test(key) || key.startsWith('$')) { $('vpMsg').innerHTML = '<span class="text-danger">Name: letters, digits, dot, dash or underscore only.</span>'; return; }
+      const scope = (valPop.querySelector('input[name="vpScope"]:checked') || {}).value;
+      if (!scope) { $('vpMsg').innerHTML = '<span class="text-danger">Pick where to save the variable.</span>'; return; }
+      const res = await fetch(URLS.setVar, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+        body: JSON.stringify({scope, environment: current && current.environment, key, value: raw, overwrite})});
+      const out = res.ok ? await res.json() : {ok: false, error: `Could not save (HTTP ${res.status}).`};
+      if (out.ok) {
+        toast(`<i class="bi bi-check-circle-fill"></i> <code>{% templatetag openvariable %}${esc(out.key)}{% templatetag closevariable %}</code> ${out.replaced ? 'updated' : 'saved'} in <b>${esc(out.label)}</b>.`);
+        hideValPop(); loadVarScopes();
+        return;
+      }
+      if (out.duplicate) {
+        const same = out.found.some(f => f.same);
+        $('vpMsg').innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Duplicate: ${esc(out.error)}</span>
+          <div class="text-muted">${same ? 'Press again to overwrite its value, or choose another name.' : 'The nearest scope wins when the request runs. Press again to save it anyway, or choose another name.'}</div>`;
+        overwrite = true;
+        $('vpSave').innerHTML = same ? '<i class="bi bi-arrow-repeat"></i> Overwrite' : '<i class="bi bi-floppy"></i> Save anyway';
+        $('vpSave').classList.replace('btn-pf', 'btn-warning');
+        return;
+      }
+      $('vpMsg').innerHTML = `<span class="text-danger">${esc(out.error || 'Could not save.')}</span>`;
+    });
+  }
+  $('respPre').addEventListener('click', e => {
+    const span = e.target.closest('.j-val');
+    if (span) openValPop(span);
+  });
+  document.addEventListener('mousedown', e => { if (!valPop.hidden && !valPop.contains(e.target) && !e.target.closest('.j-val')) hideValPop(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !valPop.hidden) hideValPop(); });
   function prettyMarkup(text) {
     let depth = 0;
     return text.replace(/>\s*</g, '>\n<').split('\n').map(line => {
@@ -848,6 +1285,292 @@
 
   function alertInline(msg) { $('respEmpty').hidden = true; $('respError').hidden = false; $('respError').textContent = msg; }
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+
+  // ---------- variables (globals + selected environments) ----------
+  const varsModal = new bootstrap.Modal($('varsModal'));
+  async function saveVars(scope, id, table, status) {
+    status.textContent = 'Saving...';
+    const res = await fetch(URLS.variables, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+                                             body: JSON.stringify({scope, id, rows: table.get()})});
+    const out = res.ok ? await res.json() : {ok: false};
+    status.textContent = out.ok ? 'Saved' : 'Could not save';
+    if (out.ok) loadVarScopes();
+    setTimeout(() => status.textContent = '', 2000);
+  }
+  function varSection(title, sub, rows, scope, id) {
+    const wrap = document.createElement('div');
+    wrap.className = 'mb-4';
+    wrap.innerHTML = `<div class="d-flex align-items-center gap-2 mb-1"><h6 class="mb-0">${title}</h6><span class="small text-muted">${sub}</span>
+      <span class="small text-success ms-auto st"></span><button type="button" class="btn btn-sm btn-pf">Save</button></div><table class="table table-sm kv mb-0"></table>`;
+    const table = kvTable(wrap.querySelector('table'));
+    table.set(rows);
+    wrap.querySelector('button').addEventListener('click', () => saveVars(scope, id, table, wrap.querySelector('.st')));
+    return wrap;
+  }
+  $('varsBtn').addEventListener('click', async () => {
+    $('varsBody').innerHTML = '<div class="text-muted small">Loading...</div>';
+    varsModal.show();
+    const data = await (await fetch(URLS.variables)).json();
+    $('varsBody').innerHTML = '';
+    $('varsBody').insertAdjacentHTML('beforeend', `<p class="small text-muted mb-3">Three places to keep a value: an <b>environment</b> variable works only in that environment,
+      a <b>project</b> variable in every environment of the project, a <b>global</b> in every project. In a response, click any value to save it as one.</p>`);
+    data.environments.forEach(e => $('varsBody').appendChild(varSection(`<i class="bi bi-hdd-network text-success"></i> ${esc(e.project)} · ${esc(e.name)}`,
+      `environment · baseUrl = ${esc(e.base_url)}`, e.variables, 'environment', e.id)));
+    if (!data.environments.length) $('varsBody').insertAdjacentHTML('beforeend', '<p class="small text-muted">Turn on an environment at the top to edit its variables.</p>');
+    (data.projects || []).forEach(p => $('varsBody').appendChild(varSection(`<i class="bi bi-folder2 text-success"></i> ${esc(p.name)}`,
+      'project · used in every environment of this project', p.variables, 'project', p.id)));
+    $('varsBody').appendChild(varSection('<i class="bi bi-globe2 text-success"></i> Globals', 'global · every project and environment', data.globals, 'globals', null));
+  });
+
+  // ---------- collection variables & scripts ----------
+  const colModal = new bootstrap.Modal($('colModal'));
+  const colVars = kvTable($('colVars'));
+  let colId = null;
+  document.querySelectorAll('#colTabs [data-ctab]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#colTabs [data-ctab]').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('[data-cpane]').forEach(p => p.hidden = p.dataset.cpane !== b.dataset.ctab);
+  }));
+  async function openCollection(id) {
+    closeMenu();
+    const data = await (await fetch(`${URLS.page}collections/${id}/settings/`)).json();
+    colId = id;
+    $('colName').textContent = data.name;
+    colVars.set(data.variables);
+    $('colPre').value = data.pre_request_script; $('colPost').value = data.test_script; $('colDesc').value = data.description;
+    $('colStatus').textContent = '';
+    document.querySelector('#colTabs [data-ctab="vars"]').click();
+    colModal.show();
+  }
+  document.querySelectorAll('.edit-col').forEach(b => b.addEventListener('click', () => openCollection(b.dataset.collection)));
+  $('colSave').addEventListener('click', async () => {
+    $('colStatus').textContent = 'Saving...';
+    const res = await fetch(`${URLS.page}collections/${colId}/settings/`, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+      body: JSON.stringify({variables: colVars.get(), pre_request_script: $('colPre').value, test_script: $('colPost').value, description: $('colDesc').value})});
+    $('colStatus').textContent = res.ok && (await res.json()).ok ? 'Saved' : 'Could not save';
+    loadVarScopes();
+  });
+
+  // ---------- environment login (Keycloak) + cookie jar ----------
+  const authModal = new bootstrap.Modal($('authModal'));
+  async function postJSON(url, data) {
+    const res = await fetch(url, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+    try { return await res.json(); } catch (e) { return {ok: false, error: `Server error (HTTP ${res.status})`}; }
+  }
+  // the dialog: a list of all logins, and a form (project -> environment -> login details) to add or edit one
+  let authHasPassword = false, authProfileId = null, authOverview = {projects: [], logins: []}, authTested = false;
+  const BASE_LOGIN_URL = '{% templatetag openvariable %}baseUrl{% templatetag closevariable %}/login';
+  function syncProfiles() {                      // keep the request's Login menu in step with the dialog
+    Object.keys(PROFILES).forEach(k => PROFILES[k] = []);
+    authOverview.logins.forEach(l => (PROFILES[l.environment] = PROFILES[l.environment] || []).push(l));
+    if (current) renderLoginPick();
+  }
+  function statusBadge(l) {
+    if (!l.active) return '<span class="badge text-bg-light border fw-normal">not set up</span>';
+    if (l.last_status === 'Passed') return `<span class="badge text-bg-success fw-normal" title="${esc(l.last_message)}">Login passed</span>`;
+    if (l.last_status === 'Failed') return `<span class="badge text-bg-danger fw-normal" title="${esc(l.last_message)}">Login failed</span>`;
+    return '<span class="badge text-bg-secondary fw-normal">never logged in</span>';
+  }
+  function renderAuthList() {
+    const rows = authOverview.logins;
+    $('authTable').innerHTML = rows.length ? `<table class="table table-sm small align-middle mb-0"><thead><tr>
+        <th>Login</th><th>Project · Environment</th><th>Type</th><th>User</th><th>Status</th><th></th></tr></thead><tbody>
+      ${rows.map(l => `<tr>
+        <td class="fw-semibold">${esc(l.name)}${l.is_default ? ' <span class="badge text-bg-light border fw-normal">default</span>' : ''}</td>
+        <td>${esc(l.project_name)} · ${esc(l.environment_name)}</td>
+        <td>${l.kind === 'keycloak' ? 'Keycloak' : 'No login'}</td>
+        <td class="font-monospace">${esc(l.username)}</td>
+        <td>${statusBadge(l)}${l.last_login_at ? `<div class="text-muted" style="font-size:.7rem">${esc(l.last_login_at)}</div>` : ''}</td>
+        <td class="text-nowrap text-end">
+          ${l.active ? `<button type="button" class="btn btn-sm btn-link p-0 me-2" data-login-now="${l.id}" data-env="${l.environment}" title="Log in now and keep the session cookies"><i class="bi bi-box-arrow-in-right"></i> Login now</button>` : ''}
+          <button type="button" class="btn btn-sm btn-link p-0" data-edit="${l.id}" data-env="${l.environment}"><i class="bi bi-pencil"></i> Edit</button></td></tr>`).join('')}
+      </tbody></table>`
+      : '<p class="small text-muted border rounded-3 p-3 mb-0">No login yet for the selected projects and environments. Press <b>New login</b>, pick the project and environment, enter the test user and test the connection.</p>';
+    $('authTable').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editLogin(b.dataset.env, b.dataset.edit)));
+    $('authTable').querySelectorAll('[data-login-now]').forEach(b => b.addEventListener('click', async () => {
+      b.disabled = true; b.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Logging in...';
+      const out = await postJSON(URLS.auth, {action: 'login_now', environment: b.dataset.env, profile: b.dataset.loginNow});
+      if (out.logins) { authOverview = {projects: out.projects, logins: out.logins}; syncProfiles(); renderAuthList(); }
+      else { b.disabled = false; b.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Login now'; }
+      toast(out.ok ? `<i class="bi bi-check-circle-fill"></i> <b>${esc(out.profile.login_name)}</b>: ${esc(out.message)}` : `<i class="bi bi-x-circle-fill"></i> ${esc(out.error)}`, out.ok ? 'success' : 'danger');
+      if (out.ok) loadCookies();
+    }));
+    $('authNew').disabled = !authOverview.projects.length;
+    $('authNew').title = authOverview.projects.length ? '' : 'Select a project and an environment in the top bar first';
+  }
+  function showAuthList() { $('authForm').hidden = true; $('authList').hidden = false; renderAuthList(); }
+  function fillEnvOptions(projectId, envId) {
+    const project = authOverview.projects.find(p => String(p.id) === String(projectId));
+    const envs = project ? project.environments : [];
+    $('authEnv').innerHTML = envs.length ? envs.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')
+      : '<option value="">No environment selected in the top bar for this project</option>';
+    if (envId) $('authEnv').value = envId;
+    const env = project && project.environments.find(e => String(e.id) === String($('authEnv').value));
+    $('authBase').textContent = env ? env.base_url : (project ? 'Select an environment of this project in the top bar (+ Add environment) first.' : '');
+  }
+  function showAuthStatus(p) {
+    if (!p) { $('authStatus').innerHTML = '<span class="text-muted">Fill in the test user, press <b>Test connection</b>, then <b>Save</b>.</span>'; return; }
+    const cls = p.last_status === 'Passed' ? 'text-success' : p.last_status === 'Failed' ? 'text-danger' : 'text-muted';
+    $('authStatus').innerHTML = p.last_status === 'Never' ? '<span class="text-muted">Not logged in yet.</span>'
+      : `<span class="${cls} fw-semibold">${p.last_status === 'Passed' ? '<i class="bi bi-check-circle-fill"></i> Login passed' : '<i class="bi bi-x-circle-fill"></i> Login failed'}</span>
+         <span class="text-muted">· ${esc(p.last_login_at)}</span><div class="${cls}">${esc(p.last_message)}</div>`;
+  }
+  function showAuthForm(p, projectId, envId) {
+    authProfileId = p ? p.id : null; authTested = false;
+    $('authList').hidden = true; $('authForm').hidden = false;
+    $('authFormTitle').textContent = p ? `Edit login: ${p.login_name}` : 'New login';
+    $('authProject').innerHTML = authOverview.projects.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+    if (projectId) $('authProject').value = projectId;
+    fillEnvOptions($('authProject').value, envId);
+    $('authProject').disabled = $('authEnv').disabled = !!p;          // a saved login stays in its environment
+    $('authName').value = p ? p.login_name : '';
+    $('authDefault').checked = p ? p.is_default : false;
+    $('authDefault').disabled = !!(p && p.is_default);               // the current default stays until another one is ticked
+    $('authDelete').hidden = !p;
+    $('authKind').value = p ? p.kind : 'keycloak';
+    $('authLoginUrl').value = p ? p.login_url : BASE_LOGIN_URL;
+    $('authUsername').value = p ? p.username : '';
+    $('authPassword').value = ''; $('authPassword').placeholder = p && p.has_password ? 'Saved. Leave empty to keep it.' : 'Password of the test user';
+    $('authPassword').type = 'password'; $('authEye').innerHTML = '<i class="bi bi-eye"></i>';
+    authHasPassword = !!(p && p.has_password);
+    ['authName', 'authUsername', 'authPassword'].forEach(id => $(id).classList.remove('is-invalid'));
+    $('authCheckUrl').value = p ? p.check_url : ''; $('authRelogin').checked = p ? p.auto_relogin : true; $('authVerify').checked = p ? p.verify_ssl : true;
+    $('authFields').hidden = $('authKind').value !== 'keycloak';
+    showAuthStatus(p);
+  }
+  async function editLogin(envId, profileId) {
+    const data = await (await fetch(`${URLS.auth}?${new URLSearchParams({environment: envId, profile: profileId})}`)).json();
+    const project = authOverview.projects.find(x => x.environments.some(e => e.id === data.environment));
+    showAuthForm(data.profile, project && project.id, data.environment);
+  }
+  async function loadAuthOverview() {
+    authOverview = await (await fetch(URLS.auth)).json();
+    syncProfiles();
+  }
+  $('authKind').addEventListener('change', () => $('authFields').hidden = $('authKind').value !== 'keycloak');
+  $('authProject').addEventListener('change', () => fillEnvOptions($('authProject').value));
+  $('authEnv').addEventListener('change', () => fillEnvOptions($('authProject').value, $('authEnv').value));
+  $('authBack').addEventListener('click', showAuthList);
+  $('authNew').addEventListener('click', () => {
+    // start from the open request's project and environment when it has one
+    const project = current && current.environment && authOverview.projects.find(x => x.environments.some(e => e.id === current.environment));
+    showAuthForm(null, project && project.id, project && current.environment);
+    $('authName').focus();
+  });
+  $('authEye').addEventListener('click', () => {
+    const show = $('authPassword').type === 'password';
+    $('authPassword').type = show ? 'text' : 'password';
+    $('authEye').innerHTML = `<i class="bi bi-eye${show ? '-slash' : ''}"></i>`;
+    $('authEye').title = show ? 'Hide password' : 'Show password';
+  });
+  ['authName', 'authUsername', 'authPassword'].forEach(id => $(id).addEventListener('input', () => $(id).classList.remove('is-invalid')));
+  function authMissing(forTest) {
+    const missing = [];
+    if (!$('authEnv').value) missing.push('authEnv');
+    if (!forTest && !$('authName').value.trim()) missing.push('authName');
+    if ($('authKind').value !== 'keycloak') return missing;
+    if (!$('authUsername').value.trim()) missing.push('authUsername');
+    if (!$('authPassword').value && !authHasPassword) missing.push('authPassword');
+    return missing;
+  }
+  function authPayload(action) {
+    return {action, environment: $('authEnv').value, profile: authProfileId, name: $('authName').value,
+      is_default: $('authDefault').checked, kind: $('authKind').value,
+      login_url: $('authLoginUrl').value, username: $('authUsername').value, password: $('authPassword').value,
+      check_url: $('authCheckUrl').value, auto_relogin: $('authRelogin').checked, verify_ssl: $('authVerify').checked};
+  }
+  function toast(html, kind = 'success') {
+    const t = document.createElement('div');
+    t.className = `alert alert-${kind} shadow small py-2 px-3 position-fixed`;
+    t.style.cssText = 'top:16px;right:16px;z-index:2200;max-width:420px';
+    t.innerHTML = html;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 5000);
+  }
+  async function busy(btn, label, work) {
+    const old = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> ${label}`;
+    try { return await work(); } finally { btn.disabled = false; btn.innerHTML = old; }
+  }
+  $('authTest').addEventListener('click', async () => {
+    const missing = authMissing(true);
+    ['authUsername', 'authPassword'].forEach(id => $(id).classList.toggle('is-invalid', missing.includes(id)));
+    if (missing.length) { $(missing[0]).focus(); return; }
+    const out = await busy($('authTest'), 'Testing...', () => postJSON(URLS.auth, authPayload('test')));
+    authTested = !!out.ok;
+    $('authStatus').innerHTML = out.ok
+      ? `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill"></i> Connection verified</span><div class="text-success">${esc(out.message)} Press <b>Save</b> to keep this login.</div>`
+      : `<span class="text-danger fw-semibold"><i class="bi bi-x-circle-fill"></i> Connection failed</span><div class="text-danger">${esc(out.error)}</div>`;
+  });
+  $('authSave').addEventListener('click', async () => {
+    const missing = authMissing(false);
+    ['authName', 'authUsername', 'authPassword'].forEach(id => $(id).classList.toggle('is-invalid', missing.includes(id)));
+    if (missing.length) { $(missing[0]).focus(); return; }
+    // a login that was just verified is also logged in on save, so its session cookies are ready
+    const action = authTested && $('authKind').value === 'keycloak' ? 'login' : 'save';
+    const out = await busy($('authSave'), 'Saving...', () => postJSON(URLS.auth, authPayload(action)));
+    (out.fields || []).forEach(f => $({username: 'authUsername', password: 'authPassword', name: 'authName'}[f]).classList.add('is-invalid'));
+    if (!out.logins) {                              // not saved (e.g. duplicate name)
+      $('authStatus').insertAdjacentHTML('afterbegin', `<div class="text-danger">${esc(out.error)}</div>`);
+      return;
+    }
+    authOverview = {projects: out.projects, logins: out.logins}; syncProfiles();
+    const envText = `${$('authProject').selectedOptions[0].text} · ${$('authEnv').selectedOptions[0].text}`;
+    toast(out.ok ? `<i class="bi bi-check-circle-fill"></i> <b>${esc(out.profile.login_name)}</b> (${esc(envText)}) saved.${out.message ? ' ' + esc(out.message) : ''}`
+                 : `<i class="bi bi-exclamation-triangle-fill"></i> <b>${esc(out.profile.login_name)}</b> saved, but the login failed: ${esc(out.error)}`, out.ok ? 'success' : 'warning');
+    if (action === 'login') loadCookies();
+    showAuthList();
+  });
+  let deleteArmed = null;
+  $('authDelete').addEventListener('click', async () => {
+    if (!authProfileId) return;
+    if (deleteArmed !== authProfileId) {           // no browser confirm(): ask with a second click instead
+      deleteArmed = authProfileId;
+      $('authDelete').innerHTML = '<i class="bi bi-exclamation-triangle"></i> Click again to delete';
+      setTimeout(() => { deleteArmed = null; $('authDelete').innerHTML = '<i class="bi bi-trash"></i> Delete'; }, 4000);
+      return;
+    }
+    deleteArmed = null; $('authDelete').innerHTML = '<i class="bi bi-trash"></i> Delete';
+    const out = await postJSON(URLS.auth, {action: 'delete', environment: $('authEnv').value, profile: authProfileId});
+    if (out.logins) { authOverview = {projects: out.projects, logins: out.logins}; syncProfiles(); }
+    toast(out.ok ? `<i class="bi bi-check-circle-fill"></i> ${esc(out.message)}` : `<i class="bi bi-x-circle-fill"></i> ${esc(out.error)}`, out.ok ? 'success' : 'danger');
+    if (out.ok) { loadCookies(); showAuthList(); }
+  });
+
+  function renderCookies(data) {
+    $('cookieList').innerHTML = data.domains.map(d => `<div class="mb-3"><div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+        <b class="small"><i class="bi bi-globe2 text-success"></i> ${esc(d.domain)}</b>
+        <span class="badge text-bg-light border fw-normal" title="${d.login ? 'This login\'s own session cookies' : 'Cookies added by hand, and of requests sent without a login'}"><i class="bi bi-person-badge"></i> ${d.login ? esc(d.login) : 'shared jar'}</span>
+        <span class="small text-muted">${d.cookies.length} cookies</span>
+        <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-auto" data-clear="${esc(d.domain)}" data-profile="${d.profile || ''}">Clear all</button></div>
+      <table class="table table-sm small mb-0"><thead><tr><th>Name</th><th>Value</th><th>Path</th><th>Expires</th><th></th></tr></thead><tbody>
+      ${d.cookies.map(c => `<tr><td class="font-monospace">${esc(c.name)}${c.secure ? ' <i class="bi bi-lock-fill text-muted" title="Secure"></i>' : ''}</td>
+        <td class="font-monospace text-break">${esc(c.value)}</td><td>${esc(c.path)}</td><td class="text-nowrap">${esc(c.expires)}</td>
+        <td><button type="button" class="btn btn-sm btn-link text-muted p-0" data-del="${esc(d.domain)}" data-name="${esc(c.name)}" data-profile="${d.profile || ''}" title="Delete"><i class="bi bi-trash"></i></button></td></tr>`).join('')}
+      </tbody></table></div>`).join('') || '<p class="small text-muted">The cookie jar is empty. Cookies that servers set (for example after a login) appear here and are sent again to the same domain.</p>';
+    $('cookieList').querySelectorAll('[data-clear]').forEach(b => b.addEventListener('click', async () =>
+      renderCookies(await postJSON(URLS.cookies, {action: 'clear', domain: b.dataset.clear, profile: b.dataset.profile}))));
+    $('cookieList').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () =>
+      renderCookies(await postJSON(URLS.cookies, {action: 'delete', domain: b.dataset.del, name: b.dataset.name, profile: b.dataset.profile}))));
+  }
+  async function loadCookies() { renderCookies(await (await fetch(URLS.cookies)).json()); }
+  $('cookieAdd').addEventListener('click', async () => {
+    const out = await postJSON(URLS.cookies, {action: 'add', domain: $('cookieDomain').value, name: $('cookieName').value,
+                                              value: $('cookieValue').value, path: $('cookiePath').value || '/', secure: $('cookieSecure').checked});
+    $('cookieError').textContent = out.ok ? '' : out.error;
+    if (out.ok) { renderCookies(out); $('cookieName').value = ''; $('cookieValue').value = ''; }
+  });
+  document.querySelectorAll('#authTabs [data-atab]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#authTabs [data-atab]').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('[data-apane]').forEach(p => p.hidden = p.dataset.apane !== b.dataset.atab);
+    if (b.dataset.atab === 'cookies') loadCookies();
+  }));
+  $('authHintBtn').addEventListener('click', () => $('authBtn').click());
+  $('authBtn').addEventListener('click', async () => {
+    document.querySelector('#authTabs [data-atab="login"]').click();
+    await loadAuthOverview();
+    showAuthList();
+    authModal.show();
+  });
 
   // open the request named in the URL (?case= / ?item=)
   const openItem = '{{ open_item|escapejs }}', openCase = '{{ open_case|escapejs }}';

@@ -14,6 +14,7 @@ class Environment(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='api_environments')
     name = models.CharField(max_length=100)
     base_url = models.URLField('Base URL', max_length=500)
+    variables = models.JSONField(default=list, blank=True)    # [{key, value, enabled}] for {{name}} and pm.environment
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -128,6 +129,9 @@ class ApiCollection(models.Model):
     """A named set of requests; may hold APIs of several projects and environments."""
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    variables = models.JSONField(default=list, blank=True)    # pm.collectionVariables
+    pre_request_script = models.TextField(blank=True)         # runs before every request of the collection
+    test_script = models.TextField(blank=True)                # runs after every response of the collection
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -157,6 +161,8 @@ class CollectionRequest(models.Model):
     urlencoded = models.JSONField(default=list, blank=True)  # [{key, value, enabled}]
     graphql_query = models.TextField(blank=True)
     graphql_variables = models.TextField(blank=True)
+    pre_request_script = models.TextField(blank=True)
+    test_script = models.TextField(blank=True)               # post-response script (pm.test ...)
     verify_ssl = models.BooleanField(default=True)
     # None: the synced API's expected status, else any 2xx
     expected_status = models.PositiveIntegerField(null=True, blank=True)
@@ -290,7 +296,74 @@ class RunResult(models.Model):
     error = models.TextField(blank=True)
     response_headers = models.JSONField(default=list, blank=True)
     response_body = models.TextField(blank=True)
+    tests = models.JSONField(default=list, blank=True)       # [{name, passed, error}] from the scripts
+    console = models.JSONField(default=list, blank=True)     # console.log lines of the scripts
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['id']
+
+
+class ApiGlobals(models.Model):
+    """Global variables (pm.globals) and the cookie jar, one row for the whole workspace."""
+    variables = models.JSONField(default=list, blank=True)
+    cookies = models.JSONField(default=list, blank=True)     # cookie jar, like Postman's (per domain)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def load(cls):
+        return cls.objects.order_by('pk').first() or cls.objects.create()
+
+
+class AuthProfile(models.Model):
+    """One way of logging in to an environment before calling its APIs (e.g. Keycloak behind a session cookie).
+
+    An environment can have several: "Application client", "Backoffice client", "Integration client"... Each keeps
+    its own session cookies, and every request picks the one it needs (or the environment's default).
+    """
+    KINDS = [('none', 'No login'), ('keycloak', 'Keycloak / OpenID Connect login (session cookie)')]
+
+    environment = models.ForeignKey(Environment, on_delete=models.CASCADE, related_name='auth_profiles')
+    name = models.CharField(max_length=100, default='Default')
+    is_default = models.BooleanField(default=False)   # used by requests that do not pick a login
+    kind = models.CharField(max_length=20, choices=KINDS, default='none')
+    login_url = models.CharField(max_length=1000, default='{{baseUrl}}/login')
+    username = models.CharField(max_length=255, blank=True)
+    password = models.CharField(max_length=255, blank=True)
+    check_url = models.CharField('Login check URL', max_length=1000, blank=True)
+    auto_relogin = models.BooleanField(default=True)
+    verify_ssl = models.BooleanField(default=True)
+    last_status = models.CharField(max_length=20, default='Never')
+    last_message = models.TextField(blank=True)
+    last_login_at = models.DateTimeField(null=True, blank=True)
+    cookies = models.JSONField(default=list, blank=True)     # this login's own session cookies (per domain)
+
+    class Meta:
+        ordering = ['-is_default', 'name', 'id']
+        constraints = [models.UniqueConstraint(fields=['environment', 'name'], name='apitesting_authprofile_env_name')]
+
+    def __str__(self):
+        return f'{self.environment} · {self.name}'
+
+    @property
+    def is_active(self):
+        return self.kind == 'keycloak' and bool(self.username and self.password)
+
+
+class ProjectVariables(models.Model):
+    """Project-level variables: {{name}} works in every environment of the project (between environment and globals)."""
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='api_variables')
+    variables = models.JSONField(default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = 'project variables'
+
+    def __str__(self):
+        return f'{self.project} variables'
+
+    @classmethod
+    def for_project(cls, project):
+        if project is None:
+            return None
+        return cls.objects.get_or_create(project=project)[0]

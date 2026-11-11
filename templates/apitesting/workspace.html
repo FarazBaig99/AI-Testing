@@ -60,10 +60,22 @@
   #varTip .vt-missing { color: #fca5a5; }
   #varTip .vt-badge { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: .7rem; font-weight: 700; color: #fff; vertical-align: 1px; }
   .vt-env { background: #15803d; } .vt-proj { background: #1d4ed8; } .vt-glob { background: #6d28d9; } .vt-col { background: #b45309; } .vt-dyn { background: #475569; } .vt-none { background: #b91c1c; }
-  /* a field that holds {{variables}}: green when every variable has a value, red when one is missing */
-  .aw .form-control.v-ok, .aw .kv input.form-control.v-ok { color: #15803d; border-color: #86efac; background: #f0fdf4; }
-  .aw .form-control.v-missing, .aw .kv input.form-control.v-missing { color: #b91c1c; border-color: #fca5a5; background: #fef2f2; }
-  .aw .form-control.v-ok:focus { box-shadow: 0 0 0 .2rem rgba(22, 163, 74, .18); } .aw .form-control.v-missing:focus { box-shadow: 0 0 0 .2rem rgba(220, 38, 38, .18); }
+  /* {{variables}} inside a field: a mirror layer draws the same text over the field and colours only the tokens
+     (green = has a value, red = not defined); the field's own text is hidden while it holds a variable */
+  .aw .var-wrap { position: relative; }
+  .aw .input-group > .var-wrap { flex: 1 1 auto; width: 1%; min-width: 0; }
+  .aw .input-group > .var-wrap > .form-control { width: 100%; border-radius: 0; }
+  .aw .input-group > .var-wrap:last-child > .form-control { border-top-right-radius: .375rem; border-bottom-right-radius: .375rem; }
+  .aw .var-wrap.has-vars > .form-control:not(.var-mirror) { color: transparent; caret-color: #0f172a; }
+  .aw .var-wrap.has-vars > .form-control:not(.var-mirror)::placeholder { color: transparent; }
+  .aw .var-mirror { position: absolute; inset: 0; display: none; pointer-events: none; overflow: hidden; white-space: pre; color: #212529;
+    background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
+  .aw .var-wrap.has-vars > .var-mirror { display: block; }
+  .aw .var-mirror.multi { white-space: pre-wrap; overflow-wrap: break-word; }
+  .aw .kv .var-mirror { font-size: .8rem; font-family: monospace; }
+  .aw .var-mirror .vt { color: #15803d; background: #dcfce7; border-radius: 3px; font-weight: 600; }
+  .aw .var-mirror .vx { color: #b91c1c; background: #fee2e2; border-radius: 3px; font-weight: 600; }
+  .aw .var-mirror.multi .vt, .aw .var-mirror.multi .vx { pointer-events: auto; cursor: text; }
   .aw .items { min-height: 8px; }
   .aw .req[draggable=true] { cursor: grab; }
   .aw .req.dragging { opacity: .4; }
@@ -1035,13 +1047,58 @@
     tip.style.left = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8) + 'px';
     tip.style.top = (e.clientY + 18) + 'px';
   }
+  function charWidth(field) {
+    const st = getComputedStyle(field);
+    measure.font = `${st.fontStyle} ${st.fontWeight} ${st.fontSize} ${st.fontFamily}`;
+    return measure.measureText('x').width;
+  }
+  function mirrorFor(field) {
+    // the field is wrapped once; a div with the same classes (so the same font, padding and size) sits over it
+    if (field._mirror) return field._mirror;
+    const wrap = document.createElement('div');
+    wrap.className = 'var-wrap';
+    field.parentNode.insertBefore(wrap, field);
+    wrap.appendChild(field);
+    const m = document.createElement('div');
+    m.className = `${field.className} var-mirror${field.tagName === 'TEXTAREA' ? ' multi' : ''}`;
+    m.setAttribute('aria-hidden', 'true');
+    const st = getComputedStyle(field);          // same metrics as the field, whatever rules style it
+    ['font', 'letterSpacing', 'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderWidth', 'textAlign', 'height']
+      .forEach(k => m.style[k] = st[k]);
+    wrap.appendChild(m);
+    field._mirror = m; field._wrap = wrap;
+    field.addEventListener('scroll', () => { m.scrollLeft = field.scrollLeft; m.scrollTop = field.scrollTop; });
+    if (field.tagName === 'TEXTAREA') {
+      m.addEventListener('mouseover', e => { const t = e.target.closest('.vt, .vx'); t ? showTip(t.dataset.name, e) : tip.hidden = true; });
+      m.addEventListener('mouseleave', () => tip.hidden = true);
+      m.addEventListener('mousedown', e => {          // a click on a token still puts the caret there
+        const t = e.target.closest('.vt, .vx');
+        if (!t) return;
+        e.preventDefault();
+        const pos = +t.dataset.index + Math.min(t.textContent.length, Math.round((e.clientX - t.getBoundingClientRect().left) / charWidth(field)));
+        field.focus(); field.setSelectionRange(pos, pos);
+      });
+    }
+    return m;
+  }
   function colorVars(field) {
-    // green = every {{variable}} in the field has a value, red = at least one is not defined anywhere
-    const names = [...field.value.matchAll(VAR_TOKEN)].map(m => m[1]);
-    field.classList.remove('v-ok', 'v-missing');
-    if (names.length) field.classList.add(names.every(n => describeVar(n)) ? 'v-ok' : 'v-missing');
+    const value = field.value, m = mirrorFor(field);
+    const has = value.includes('{' + '{');
+    field._wrap.classList.toggle('has-vars', has);
+    m.dataset.v = value;
+    if (!has) { m.innerHTML = ''; return; }
+    let html = '', last = 0;
+    for (const mm of value.matchAll(VAR_TOKEN)) {
+      html += esc(value.slice(last, mm.index));
+      html += `<span class="${describeVar(mm[1]) ? 'vt' : 'vx'}" data-name="${esc(mm[1])}" data-index="${mm.index}">${esc(mm[0])}</span>`;
+      last = mm.index + mm[0].length;
+    }
+    m.innerHTML = html + esc(value.slice(last)) + (value.endsWith('\n') ? '\n' : '');
+    m.scrollLeft = field.scrollLeft; m.scrollTop = field.scrollTop;
   }
   function recolorVars() { document.querySelectorAll('[data-var-hover], [data-var-color]').forEach(colorVars); }
+  // values set by code (URL <-> params sync, loading a request) do not fire input events: catch up quietly
+  setInterval(() => document.querySelectorAll('[data-var-hover], [data-var-color]').forEach(f => { if (f._mirror && f._mirror.dataset.v !== f.value) colorVars(f); }), 500);
   function watchVars(input) {
     if (input.dataset.varHover) return;
     input.dataset.varHover = '1';
@@ -1053,7 +1110,7 @@
     input.addEventListener('input', () => colorVars(input));
     colorVars(input);
   }
-  function watchColor(field) {        // multi-line fields: colour only (no hover position in a textarea)
+  function watchColor(field) {        // multi-line fields: tokens are coloured and hoverable through the mirror
     if (field.dataset.varColor) return;
     field.dataset.varColor = '1';
     field.addEventListener('input', () => colorVars(field));

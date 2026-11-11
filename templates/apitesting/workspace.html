@@ -58,6 +58,12 @@
   #varTip .vt-value { font-family: monospace; word-break: break-all; margin: 4px 0; color: #e2e8f0; }
   #varTip .vt-scope { color: #94a3b8; }
   #varTip .vt-missing { color: #fca5a5; }
+  #varTip .vt-badge { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: .7rem; font-weight: 700; color: #fff; vertical-align: 1px; }
+  .vt-env { background: #15803d; } .vt-proj { background: #1d4ed8; } .vt-glob { background: #6d28d9; } .vt-col { background: #b45309; } .vt-dyn { background: #475569; } .vt-none { background: #b91c1c; }
+  /* a field that holds {{variables}}: green when every variable has a value, red when one is missing */
+  .aw .form-control.v-ok, .aw .kv input.form-control.v-ok { color: #15803d; border-color: #86efac; background: #f0fdf4; }
+  .aw .form-control.v-missing, .aw .kv input.form-control.v-missing { color: #b91c1c; border-color: #fca5a5; background: #fef2f2; }
+  .aw .form-control.v-ok:focus { box-shadow: 0 0 0 .2rem rgba(22, 163, 74, .18); } .aw .form-control.v-missing:focus { box-shadow: 0 0 0 .2rem rgba(220, 38, 38, .18); }
   .aw .items { min-height: 8px; }
   .aw .req[draggable=true] { cursor: grab; }
   .aw .req.dragging { opacity: .4; }
@@ -984,6 +990,7 @@
     if (!current) return;
     const q = new URLSearchParams({environment: current.environment || '', collection: current.collection || ''});
     try { varScopes = (await (await fetch(`${URLS.resolve}?${q}`)).json()).scopes; } catch (e) { varScopes = []; }
+    recolorVars();
   }
   function describeVar(name) {
     if (DYNAMIC[name]) return {value: `Filled with ${DYNAMIC[name]} when the request is sent`, scope: 'Dynamic variable', source: ''};
@@ -1011,17 +1018,30 @@
     for (const m of input.value.matchAll(VAR_TOKEN)) if (i >= m.index && i < m.index + m[0].length) return m[1];
     return null;
   }
+  const SCOPE_BADGE = {Environment: ['vt-env', 'Environment variable', 'only in this environment'],
+                       Project: ['vt-proj', 'Project variable', 'every environment of the project'],
+                       Global: ['vt-glob', 'Global variable', 'every project and environment'],
+                       Collection: ['vt-col', 'Collection variable', 'requests of this collection'],
+                       'Dynamic variable': ['vt-dyn', 'Dynamic', 'a new value on every send']};
   function showTip(name, e) {
     const d = describeVar(name);
+    const [cls, label, note] = (d && SCOPE_BADGE[d.scope]) || ['vt-dyn', d && d.scope, ''];
     tip.innerHTML = d
-      ? `<div><span class="vt-name">${esc(name)}</span> <span class="vt-scope">· ${esc(d.scope)}${d.source ? ` · ${esc(d.source)}` : ''}</span></div>
+      ? `<div><span class="vt-name">${esc(name)}</span> <span class="vt-badge ${cls}">${esc(label)}</span> <span class="vt-scope">${d.source ? esc(d.source) : ''}${note ? ` · ${esc(note)}` : ''}</span></div>
          <div class="vt-value">${esc(d.value) || '<i>(empty)</i>'}</div>
          ${d.hidden && d.hidden.length ? `<div class="vt-scope">Also defined in ${d.hidden.map(esc).join(', ')} (not used)</div>` : ''}`
-      : `<div><span class="vt-name">${esc(name)}</span></div><div class="vt-missing">Not defined. It is sent as written unless a pre-request script sets it.</div>`;
+      : `<div><span class="vt-name">${esc(name)}</span> <span class="vt-badge vt-none">Not defined</span></div><div class="vt-missing">No environment, project or global variable has this name. It is sent as written unless a pre-request script sets it.</div>`;
     tip.hidden = false;
     tip.style.left = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8) + 'px';
     tip.style.top = (e.clientY + 18) + 'px';
   }
+  function colorVars(field) {
+    // green = every {{variable}} in the field has a value, red = at least one is not defined anywhere
+    const names = [...field.value.matchAll(VAR_TOKEN)].map(m => m[1]);
+    field.classList.remove('v-ok', 'v-missing');
+    if (names.length) field.classList.add(names.every(n => describeVar(n)) ? 'v-ok' : 'v-missing');
+  }
+  function recolorVars() { document.querySelectorAll('[data-var-hover], [data-var-color]').forEach(colorVars); }
   function watchVars(input) {
     if (input.dataset.varHover) return;
     input.dataset.varHover = '1';
@@ -1030,8 +1050,17 @@
       name ? showTip(name, e) : tip.hidden = true;
     });
     input.addEventListener('mouseleave', () => tip.hidden = true);
+    input.addEventListener('input', () => colorVars(input));
+    colorVars(input);
+  }
+  function watchColor(field) {        // multi-line fields: colour only (no hover position in a textarea)
+    if (field.dataset.varColor) return;
+    field.dataset.varColor = '1';
+    field.addEventListener('input', () => colorVars(field));
+    colorVars(field);
   }
   watchVars($('url'));
+  ['rawBody', 'gqlQuery', 'gqlVars'].forEach(id => watchColor($(id)));
   // key/value rows are created later; watch their inputs as they appear
   new MutationObserver(() => document.querySelectorAll('.kv input.v, .kv input.k').forEach(watchVars))
     .observe(document.body, {childList: true, subtree: true});

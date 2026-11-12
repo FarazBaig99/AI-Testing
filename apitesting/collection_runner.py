@@ -55,7 +55,7 @@ def _spec(item):
 def _ordered_items(collection, ids):
     """Requests of the collection that are in `ids`, in the collection's order."""
     wanted = {int(i) for i in ids}
-    return [r for r in collection.requests.select_related('environment', 'source') if r.pk in wanted]
+    return [r for r in collection.ordered_requests() if r.pk in wanted]
 
 
 def _stop_requested(run):

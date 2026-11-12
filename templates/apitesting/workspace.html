@@ -19,6 +19,9 @@
   .aw .tree summary:hover, .aw .tree .req:hover { background: #f1f5f9; }
   .aw .tree .grp > summary { font-weight: 700; color: #0f172a; }
   .aw .tree .fold { margin-left: 10px; }
+  .aw .tree details.col .fold > summary { font-weight: 600; color: #334155; }
+  .aw .tree details.col .fold > .items { margin-left: 8px; border-left: 1px dashed #e2e8f0; }
+  .aw .tree .new-folder-row { display: flex; gap: 4px; padding: 3px 6px 3px 20px; }
   .aw .tree .req { display: flex; align-items: center; gap: 6px; padding: 3px 6px 3px 20px; border-radius: 6px; cursor: pointer; }
   .aw .tree .req.active { background: var(--pf-soft); }
   .aw .tree .req .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
@@ -185,9 +188,10 @@
             <button class="btn btn-sm btn-pf text-nowrap"><i class="bi bi-plus"></i> New</button></form>
           {% for col in collections %}
           <details class="grp col" data-collection="{{ col.pk }}" data-name="{{ col.name }}" {% if open_item or col.pk|stringformat:'d' == open_collection %}open{% endif %}>
-            <summary class="d-flex align-items-center"><span class="flex-grow-1"><i class="bi bi-collection text-success"></i> <span class="col-name">{{ col.name }}</span> <span class="text-muted fw-normal">{{ col.requests.all|length }}</span></span>
+            <summary class="d-flex align-items-center"><span class="flex-grow-1"><i class="bi bi-collection text-success"></i> <span class="col-name">{{ col.name }}</span> <span class="text-muted fw-normal cnt">{{ col.tree_.total }}</span></span>
               <form method="post" class="d-inline" onclick="event.stopPropagation()">{% csrf_token %}<input type="hidden" name="action" value="add_request"><input type="hidden" name="collection" value="{{ col.pk }}">
                 <button class="btn btn-sm btn-link text-success p-0 px-1" title="Add a new GET request"><i class="bi bi-plus-lg"></i></button></form>
+              <button type="button" class="btn btn-sm btn-link text-warning p-0 px-1 new-folder" title="New folder" data-collection="{{ col.pk }}" onclick="event.preventDefault();event.stopPropagation()"><i class="bi bi-folder-plus"></i></button>
               <a href="{% url 'api_collection_run' col.pk %}" class="btn btn-sm btn-link text-success p-0 px-1" title="Run collection" onclick="event.stopPropagation()"><i class="bi bi-play-circle"></i></a>
               <button type="button" class="btn btn-sm btn-link text-success p-0 px-1 add-apis" title="Add APIs from the APIs section" data-collection="{{ col.pk }}" data-name="{{ col.name }}" onclick="event.preventDefault();event.stopPropagation()"><i class="bi bi-plug"></i> <span class="small">APIs</span></button>
               <span class="dropdown" onclick="event.stopPropagation()">
@@ -203,15 +207,8 @@
                     <button class="btn btn-sm btn-outline-danger w-100" onclick="return confirm('Delete collection {{ col.name|escapejs }} and its {{ col.requests.all|length }} saved requests?')"><i class="bi bi-trash"></i> Delete collection</button></form>
                 </div>
               </span></summary>
-            <div class="items">
-            {% for r in col.requests.all %}
-            <div class="req" draggable="true" data-item="{{ r.pk }}" data-name="{{ r.name }}" data-text="{{ r.method }} {{ r.name|lower }} {{ r.url|lower }}" title="Drag to change the order or move to another collection. Right-click for options.">
-              <span class="text-muted small num" style="width:16px">{{ forloop.counter }}</span><span class="m m-{{ r.method }}">{{ r.method }}</span><span class="nm">{{ r.name }}</span>
-              {% if r.last_status %}<span class="stat stat-{{ r.last_status|stringformat:'d'|first }} small">{{ r.last_status }}</span>{% endif %}
-              <button type="button" class="btn btn-sm btn-link text-muted p-0 more" title="More options"><i class="bi bi-three-dots"></i></button>
-            </div>
-            {% endfor %}
-            <div class="small text-muted px-3 py-1 empty-note" {% if col.requests.all %}hidden{% endif %}>Empty. Drop a request here, press Press <i class="bi bi-plus-lg"></i> for a new request or <i class="bi bi-plug"></i> APIs to add synced APIs.</div>
+            <div class="items" data-collection="{{ col.pk }}" data-folder="">
+            {% include "apitesting/_col_node.html" with node=col.tree_ %}
             </div>
           </details>
           {% empty %}
@@ -488,7 +485,7 @@
 
 <!-- right-click / "..." menu for requests and collections -->
 <div id="ctxMenu" class="dropdown-menu shadow small"></div>
-<form method="post" id="ctxForm" hidden>{% csrf_token %}<input type="hidden" name="action"><input type="hidden" name="item"><input type="hidden" name="collection"></form>
+<form method="post" id="ctxForm" hidden>{% csrf_token %}<input type="hidden" name="action"><input type="hidden" name="item"><input type="hidden" name="collection"><input type="hidden" name="folder"><input type="hidden" name="parent"><input type="hidden" name="name"></form>
 
 <!-- add APIs to a collection, in the order they are picked -->
 <div class="modal fade" id="apisModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
@@ -516,7 +513,7 @@
     {% endfor %}
   </div>
   <form method="post" class="modal-footer">{% csrf_token %}<input type="hidden" name="action" value="add_apis">
-    <input type="hidden" name="collection" id="apisCollection"><input type="hidden" name="cases" id="apisCases">
+    <input type="hidden" name="collection" id="apisCollection"><input type="hidden" name="folder" id="apisFolder"><input type="hidden" name="cases" id="apisCases">
     <span class="small text-muted me-auto"><b id="apisCount">0</b> selected</span>
     <button type="button" class="btn btn-sm btn-light border" id="apisClear">Clear</button>
     <button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Cancel</button>
@@ -597,6 +594,7 @@
   $('apisClear').addEventListener('click', () => { picked = []; renderPicked(); });
   document.querySelectorAll('.add-apis').forEach(b => b.addEventListener('click', () => {
     $('apisCollection').value = b.dataset.collection;
+    $('apisFolder').value = b.dataset.folder || '';
     $('apisColName').textContent = b.dataset.name;
     picked = []; renderPicked();
     apisModal.show();
@@ -609,11 +607,61 @@
 
   // ---------- context menu (right-click or "...") ----------
   const ctx = $('ctxMenu');
-  function post(action, field, id) {
+  function post(action, field, id, extra = {}) {
     const f = $('ctxForm');
     f.action.value = action; f.item.value = field === 'item' ? id : ''; f.collection.value = field === 'collection' ? id : '';
+    f.folder.value = field === 'folder' ? id : (extra.folder || ''); f.parent.value = extra.parent || ''; f.name.value = extra.name || '';
     f.submit();
   }
+  // a new folder: type its name in place (Enter saves, Escape cancels)
+  function newFolderInline(items, collectionId, parentId) {
+    const holder = items.closest('details'); holder.open = true;
+    const row = document.createElement('div');
+    row.className = 'new-folder-row';
+    row.innerHTML = '<i class="bi bi-folder-plus text-warning mt-1"></i><input class="form-control form-control-sm" placeholder="Folder name" maxlength="200">';
+    items.prepend(row);
+    const input = row.querySelector('input');
+    input.focus();
+    let done = false;
+    const finish = save => {
+      if (done) return; done = true;
+      const name = input.value.trim();
+      row.remove();
+      if (save && name) post('new_folder', 'collection', collectionId, {parent: parentId || '', name});
+    };
+    ['click', 'mousedown', 'keyup'].forEach(ev => input.addEventListener(ev, e => e.stopPropagation()));
+    input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
+    input.addEventListener('blur', () => finish(true));
+  }
+  document.querySelectorAll('.new-folder').forEach(b => b.addEventListener('click', () => {
+    const d = b.closest('details.col');
+    newFolderInline(d.querySelector(':scope > .items'), d.dataset.collection, '');
+  }));
+  function folderMenu(f, x, y) {
+    const col = f.closest('details.col'), items = f.querySelector(':scope > .items');
+    openMenu(x, y, [
+      {icon: 'plus-lg', label: 'Add new request', run: () => post('add_request', 'collection', col.dataset.collection, {folder: f.dataset.folder})},
+      {icon: 'plug', label: 'Add APIs', run: () => f.querySelector(':scope > summary .add-apis').click()},
+      {icon: 'folder-plus', label: 'New folder inside', run: () => newFolderInline(items, col.dataset.collection, f.dataset.folder)},
+      {icon: 'pencil', label: 'Rename', run: () => renameInline(f.querySelector(':scope > summary .fold-name'), 'folder', f.dataset.folder, f)},
+      '-',
+      {icon: 'trash', label: 'Delete folder', danger: true,
+       run: () => confirm(`Delete folder "${f.dataset.name}" with its ${f.querySelectorAll('.req').length} request(s)?`) && post('delete_folder', 'folder', f.dataset.folder)},
+    ]);
+  }
+  document.querySelectorAll('details.col details.fold').forEach(f => {
+    const summary = f.querySelector(':scope > summary');
+    summary.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); folderMenu(f, e.clientX, e.clientY); });
+    summary.querySelector('.fold-more').addEventListener('click', e => {
+      e.stopPropagation();
+      const r = e.currentTarget.getBoundingClientRect();
+      folderMenu(f, r.left, r.bottom + 2);
+    });
+    summary.querySelector('.fold-name').addEventListener('dblclick', e => {
+      e.preventDefault(); e.stopPropagation();
+      renameInline(e.currentTarget, 'folder', f.dataset.folder, f);
+    });
+  });
   function openMenu(x, y, entries) {
     ctx.innerHTML = '';
     entries.forEach(e => {
@@ -649,7 +697,8 @@
       {icon: 'calendar-event', label: 'Schedules & history', run: () => window.location = `${URLS.page}collections/${d.dataset.collection}/run/?tab=schedules`},
       '-',
       {icon: 'plus-lg', label: 'Add new request', run: () => post('add_request', 'collection', d.dataset.collection)},
-      {icon: 'plug', label: 'Add APIs', run: () => d.querySelector('.add-apis').click()},
+      {icon: 'plug', label: 'Add APIs', run: () => d.querySelector(':scope > summary .add-apis').click()},
+      {icon: 'folder-plus', label: 'New folder', run: () => newFolderInline(d.querySelector(':scope > .items'), d.dataset.collection, '')},
       {icon: 'pencil', label: 'Rename', run: () => renameInline(d.querySelector('.col-name'), 'collection', d.dataset.collection, d)},
       {icon: 'sliders', label: 'Variables & scripts', run: () => openCollection(d.dataset.collection)},
       {icon: 'copy', label: 'Duplicate collection', run: () => post('duplicate_collection', 'collection', d.dataset.collection)},
@@ -675,7 +724,7 @@
     const old = label.textContent;
     const input = document.createElement('input');
     input.className = 'form-control form-control-sm rename-input flex-grow-1';
-    input.value = old; input.maxLength = kind === 'collection' ? 200 : 600;
+    input.value = old; input.maxLength = kind === 'item' ? 600 : 200;
     label.hidden = true; label.after(input);
     if (holder.draggable) holder.draggable = false;          // let the mouse select text
     input.focus(); input.select();
@@ -696,7 +745,7 @@
       if (kind === 'item') {
         holder.dataset.text = holder.dataset.text.replace(old.toLowerCase(), out.name.toLowerCase());
         if (current && String(current.item) === String(id)) { current.name = out.name; $('reqName').textContent = out.name; }
-      } else {
+      } else if (kind === 'collection') {
         holder.querySelector('.add-apis').dataset.name = out.name;
         if (current && String(current.collection) === String(id)) current.collection_name = out.name;
       }
@@ -727,17 +776,21 @@
     document.querySelectorAll('.drop-before, .drop-end, .drop-into').forEach(el => el.classList.remove('drop-before', 'drop-end', 'drop-into'));
   }
   function dropSpot(items, y) {
-    // the first row whose middle is below the cursor; null = end of the list
-    return [...items.querySelectorAll('.req:not(.dragging)')].find(r => {
+    // the first row of this level whose middle is below the cursor; null = end of the list
+    return [...items.querySelectorAll(':scope > .req:not(.dragging)')].find(r => {
       const b = r.getBoundingClientRect();
       return y < b.top + b.height / 2;
     }) || null;
   }
-  function renumber(d) {
-    const rows = d.querySelectorAll('.items .req');
+  function renumber(items) {
+    // numbers and count of one level, the collection's total, and the empty notes
+    const rows = items.querySelectorAll(':scope > .req');
     rows.forEach((r, i) => r.querySelector('.num').textContent = i + 1);
-    d.querySelector('summary .text-muted.fw-normal').textContent = rows.length;
-    d.querySelector('.empty-note').hidden = rows.length > 0;
+    const holder = items.parentElement;                       // details.col or details.fold
+    holder.querySelector(':scope > summary .cnt').textContent = rows.length;
+    items.querySelector(':scope > .empty-note').hidden = rows.length > 0 || items.querySelector(':scope > details.fold');
+    const col = items.closest('details.col');
+    col.querySelector(':scope > summary .cnt').textContent = col.querySelectorAll('.req').length;
   }
   document.querySelectorAll('details.col .req').forEach(row => {
     row.addEventListener('dragstart', e => {
@@ -747,29 +800,30 @@
     });
     row.addEventListener('dragend', () => { row.classList.remove('dragging'); dragged = null; clearMarks(); });
   });
-  document.querySelectorAll('details.col').forEach(d => {
-    const items = d.querySelector('.items'), summary = d.querySelector('summary');
+  document.querySelectorAll('details.col .items').forEach(items => {
+    const d = items.parentElement, summary = d.querySelector(':scope > summary');   // the collection or a folder
     items.addEventListener('dragover', e => {
-      if (!dragged) return;
-      e.preventDefault(); clearMarks();
+      if (!dragged || e.target.closest('.items') !== items) return;                 // the innermost level takes it
+      e.preventDefault(); e.stopPropagation(); clearMarks();
       const spot = dropSpot(items, e.clientY);
       spot ? spot.classList.add('drop-before') : items.classList.add('drop-end');
     });
-    summary.addEventListener('dragover', e => { if (!dragged) return; e.preventDefault(); clearMarks(); summary.classList.add('drop-into'); });
+    summary.addEventListener('dragover', e => { if (!dragged) return; e.preventDefault(); e.stopPropagation(); clearMarks(); summary.classList.add('drop-into'); });
     [items, summary].forEach(zone => zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) clearMarks(); }));
     const drop = async (e, before) => {
       if (!dragged) return;
-      e.preventDefault(); clearMarks();
-      const row = dragged, from = row.closest('details.col');
+      e.preventDefault(); e.stopPropagation(); clearMarks();
+      const row = dragged, from = row.closest('.items');
       if (before === row) return;
-      items.insertBefore(row, before || items.querySelector('.empty-note'));
+      items.insertBefore(row, before || items.querySelector(':scope > .empty-note'));
       d.open = true;
-      renumber(d); if (from !== d) renumber(from);
+      renumber(items); if (from !== items) renumber(from);
       const res = await fetch(URLS.move, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
-        body: JSON.stringify({item: row.dataset.item, collection: d.dataset.collection, before: before ? before.dataset.item : null})});
+        body: JSON.stringify({item: row.dataset.item, collection: items.dataset.collection, folder: items.dataset.folder || null,
+                              before: before ? before.dataset.item : null})});
       if (!res.ok || !(await res.json()).ok) window.location.reload();   // put the list back as the server has it
     };
-    items.addEventListener('drop', e => drop(e, dropSpot(items, e.clientY)));
+    items.addEventListener('drop', e => { if (e.target.closest('.items') === items) drop(e, dropSpot(items, e.clientY)); });
     summary.addEventListener('drop', e => drop(e, null));
   });
 

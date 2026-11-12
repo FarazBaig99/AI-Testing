@@ -198,10 +198,54 @@ class ApiCollection(models.Model):
     def __str__(self):
         return self.name
 
+    def tree(self):
+        """{children: [{folder, children, requests}], requests, total}: the folders of each level first, then its
+        own requests, like the sidebar shows them."""
+        folders, requests_ = list(self.folders.all()), list(self.requests.all())
+        by_parent, by_folder = {}, {}
+        for f in folders:
+            by_parent.setdefault(f.parent_id, []).append(f)
+        for r in requests_:
+            by_folder.setdefault(r.folder_id, []).append(r)
+
+        def node(folder):
+            return {'folder': folder, 'children': [node(f) for f in by_parent.get(folder.pk, [])],
+                    'requests': by_folder.get(folder.pk, [])}
+        return {'children': [node(f) for f in by_parent.get(None, [])], 'requests': by_folder.get(None, []),
+                'total': len(requests_)}
+
+    def ordered_requests(self):
+        """Every request in tree order (what a collection run follows)."""
+        out = []
+
+        def walk(node):
+            for child in node['children']:
+                walk(child)
+            out.extend(node['requests'])
+        walk(self.tree())
+        return out
+
+
+class CollectionFolder(models.Model):
+    """A folder inside a collection (folders can be nested), holding saved requests."""
+    collection = models.ForeignKey(ApiCollection, on_delete=models.CASCADE, related_name='folders')
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
+    name = models.CharField(max_length=200)
+    position = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['position', 'id']
+
+    def __str__(self):
+        return self.name
+
 
 class CollectionRequest(models.Model):
-    """A saved request inside a collection. Starts as a copy of a synced API; edits never touch the API."""
+    """A saved request inside a collection (optionally inside one of its folders). Starts as a copy of a synced
+    API; edits never touch the API."""
     collection = models.ForeignKey(ApiCollection, on_delete=models.CASCADE, related_name='requests')
+    folder = models.ForeignKey(CollectionFolder, on_delete=models.CASCADE, null=True, blank=True, related_name='requests')
     project = models.ForeignKey(Project, on_delete=models.CASCADE, null=True, blank=True, related_name='+')
     environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     source = models.ForeignKey(ApiTestCase, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')

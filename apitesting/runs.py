@@ -31,7 +31,7 @@ def _emails(request, errors):
 
 def functional_config(request, collection, errors):
     ids = {int(i) for i in request.POST.getlist('items') if i.isdigit()}
-    items = [r for r in collection.requests.all() if r.pk in ids]
+    items = [r for r in collection.ordered_requests() if r.pk in ids]
     if not items:
         errors.append('Tick at least one request to run.')
     for item in items:          # the expected status typed on the runner is kept on the request
@@ -49,7 +49,7 @@ def functional_config(request, collection, errors):
 
 def performance_config(request, collection, errors):
     ids = {int(i) for i in request.POST.getlist('perf_items') if i.isdigit()}
-    items = [r for r in collection.requests.all() if r.pk in ids]
+    items = [r for r in collection.ordered_requests() if r.pk in ids]
     if not items:
         errors.append('Tick at least one API for the performance run.')
     duration = _int(request.POST.get('duration'), 60, 5, engine.MAX_DURATION)
@@ -154,7 +154,7 @@ def collection_run(request, collection_id):
                 messages.success(request, f'Schedule "{schedule.name}" saved: {describe(schedule)}.')
         return redirect(f"{reverse('api_collection_run', args=[collection.pk])}?tab=schedules")
 
-    requests_ = list(collection.requests.select_related('environment', 'project', 'source'))
+    requests_ = collection.ordered_requests()
     for r in requests_:
         r.expected_default = r.source.expected_status if r.source else ''
     schedules = list(collection.schedules.all())

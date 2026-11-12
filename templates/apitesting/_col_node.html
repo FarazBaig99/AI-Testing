@@ -1,0 +1,23 @@
+{# One level of a collection tree: its folders (each with its own level inside), then its requests. #}
+{% for n in node.children %}
+<details class="fold" data-folder="{{ n.folder.pk }}" data-name="{{ n.folder.name }}" {% if open_item %}open{% endif %}>
+  <summary class="d-flex align-items-center" title="Drop a request here to move it into the folder. Right-click for options.">
+    <span class="flex-grow-1"><i class="bi bi-folder2 text-warning"></i> <span class="fold-name">{{ n.folder.name }}</span> <span class="text-muted fw-normal cnt">{{ n.requests|length }}</span></span>
+    <form method="post" class="d-inline" onclick="event.stopPropagation()">{% csrf_token %}<input type="hidden" name="action" value="add_request"><input type="hidden" name="collection" value="{{ col.pk }}"><input type="hidden" name="folder" value="{{ n.folder.pk }}">
+      <button class="btn btn-sm btn-link text-success p-0 px-1" title="Add a new GET request in this folder"><i class="bi bi-plus-lg"></i></button></form>
+    <button type="button" class="btn btn-sm btn-link text-success p-0 px-1 add-apis" title="Add synced APIs into this folder" data-collection="{{ col.pk }}" data-folder="{{ n.folder.pk }}" data-name="{{ col.name }} / {{ n.folder.name }}" onclick="event.preventDefault();event.stopPropagation()"><i class="bi bi-plug"></i></button>
+    <button type="button" class="btn btn-sm btn-link text-muted p-0 px-1 fold-more" title="More options" onclick="event.preventDefault();event.stopPropagation()"><i class="bi bi-three-dots"></i></button>
+  </summary>
+  <div class="items" data-collection="{{ col.pk }}" data-folder="{{ n.folder.pk }}">
+    {% include "apitesting/_col_node.html" with node=n %}
+  </div>
+</details>
+{% endfor %}
+{% for r in node.requests %}
+<div class="req" draggable="true" data-item="{{ r.pk }}" data-name="{{ r.name }}" data-text="{{ r.method }} {{ r.name|lower }} {{ r.url|lower }}" title="Drag to change the order or move into a folder / another collection. Right-click for options.">
+  <span class="text-muted small num" style="width:16px">{{ forloop.counter }}</span><span class="m m-{{ r.method }}">{{ r.method }}</span><span class="nm">{{ r.name }}</span>
+  {% if r.last_status %}<span class="stat stat-{{ r.last_status|stringformat:'d'|first }} small">{{ r.last_status }}</span>{% endif %}
+  <button type="button" class="btn btn-sm btn-link text-muted p-0 more" title="More options"><i class="bi bi-three-dots"></i></button>
+</div>
+{% endfor %}
+<div class="small text-muted px-3 py-1 empty-note" {% if node.requests or node.children %}hidden{% endif %}>Empty. Drop a request here, press <i class="bi bi-plus-lg"></i> for a new request, <i class="bi bi-plug"></i> to add synced APIs, or <i class="bi bi-folder-plus"></i> for a folder.</div>

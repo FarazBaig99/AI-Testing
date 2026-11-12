@@ -21,7 +21,7 @@ from projects.models import Project
 from . import auth, lov, runner, scripting
 from .parsers import is_empty_body
 from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiLov, ApiLovDateFormat, ApiLovUsedValue,
-                     ApiTestCase, AuthProfile, ProjectVariables, CollectionRequest, Environment)
+                     ApiTestCase, AuthProfile, ProjectVariables, CollectionFolder, CollectionRequest, Environment)
 
 SESSION_KEY = 'api_ws'
 METHODS = [m for m, _ in ApiTestCase.METHOD_CHOICES]
@@ -179,34 +179,49 @@ def _status_code(value):
     return code if 100 <= code <= 599 else None
 
 
-def _next_position(collection):
-    return (collection.requests.aggregate(m=Max('position'))['m'] or 0) + 1
+def _next_position(collection, folder=None):
+    return (collection.requests.filter(folder=folder).aggregate(m=Max('position'))['m'] or 0) + 1
 
 
-def item_from_case(collection, case, position):
+def _folder_of(request, collection):
+    """The folder named in the POST (?folder=) when it belongs to the collection, else None (the root)."""
+    return collection.folders.filter(pk=request.POST.get('folder') or 0).first()
+
+
+def item_from_case(collection, case, position, folder=None):
     spec = case_spec(case)
     item = CollectionRequest(collection=collection, project=case.project, environment=case.environment, source=case,
-                             name=case.name, position=position)
+                             name=case.name, position=position, folder=folder)
     for field in SPEC_FIELDS:
         setattr(item, field, spec[field])
     item.save()
     return item
 
 
+def _folder_and_children(folder):
+    out, todo = [], [folder]
+    while todo:
+        f = todo.pop()
+        out.append(f)
+        todo.extend(f.children.all())
+    return out
+
+
 def _copy_name(name, limit):
     return (name[:limit - 5] + ' Copy') if len(name) + 5 > limit else name + ' Copy'
 
 
-def duplicate_item(item, collection=None, position=None):
+def duplicate_item(item, collection=None, position=None, folder=None):
     """Copy a saved request; by default right below the original in the same collection."""
     copy = CollectionRequest.objects.get(pk=item.pk)
     copy.pk = None
     copy.last_status = copy.last_ms = copy.last_run_at = None
     if collection is None:
-        item.collection.requests.filter(position__gt=item.position).update(position=F('position') + 1)
+        item.collection.requests.filter(folder=item.folder, position__gt=item.position).update(position=F('position') + 1)
         copy.name, copy.position = _copy_name(item.name, 600), item.position + 1
     else:
         copy.collection, copy.position = collection, position
+        copy.folder = folder
     copy.save()
     return copy
 
@@ -215,20 +230,24 @@ def duplicate_collection(collection, user):
     copy = ApiCollection.objects.create(name=_copy_name(collection.name, 200), description=collection.description,
                                         variables=collection.variables, pre_request_script=collection.pre_request_script,
                                         test_script=collection.test_script, created_by=user)
-    for i, item in enumerate(collection.requests.all(), 1):
-        duplicate_item(item, copy, i)
+    folder_map = {None: None}
+    for f in collection.folders.order_by('id'):          # parents are created before their children
+        folder_map[f.pk] = CollectionFolder.objects.create(collection=copy, parent=folder_map.get(f.parent_id),
+                                                           name=f.name, position=f.position)
+    for item in collection.requests.all():
+        duplicate_item(item, copy, item.position, folder_map.get(item.folder_id))
     return copy
 
 
-def move_item(item, target, before=None):
-    """Put a request into `target` just above `before` (or at the end) and renumber that collection."""
-    rows = list(target.requests.exclude(pk=item.pk))
+def move_item(item, target, before=None, folder=None):
+    """Put a request into `target` collection / `folder` just above `before` (or at the end) and renumber."""
+    rows = list(target.requests.filter(folder=folder).exclude(pk=item.pk))
     index = rows.index(before) if before in rows else len(rows)
     rows.insert(index, item)
-    item.collection = target
+    item.collection, item.folder = target, folder
     for i, row in enumerate(rows, 1):
         row.position = i
-    CollectionRequest.objects.bulk_update(rows, ['collection', 'position'])
+    CollectionRequest.objects.bulk_update(rows, ['collection', 'folder', 'position'])
 
 
 def _environment(env_id):
@@ -262,18 +281,36 @@ def api_workspace(request):
             messages.success(request, f'Collection "{c.name}" deleted.')
         elif action == 'add_request':
             c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
-            item = CollectionRequest.objects.create(collection=c, name='New Request', method='GET', url='',
-                                                    position=_next_position(c))
+            folder = _folder_of(request, c)
+            item = CollectionRequest.objects.create(collection=c, folder=folder, name='New Request', method='GET',
+                                                    url='', position=_next_position(c, folder))
             return redirect(f"{reverse('api_workspace')}?item={item.pk}")
+        elif action == 'new_folder':
+            c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
+            parent = c.folders.filter(pk=request.POST.get('parent') or 0).first()
+            name = request.POST.get('name', '').strip()[:200]
+            if name:
+                position = (c.folders.filter(parent=parent).aggregate(m=Max('position'))['m'] or 0) + 1
+                CollectionFolder.objects.create(collection=c, parent=parent, name=name, position=position)
+            else:
+                messages.error(request, 'Give the folder a name.')
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={c.pk}")
+        elif action == 'delete_folder':
+            f = get_object_or_404(CollectionFolder, pk=request.POST.get('folder'))
+            count = CollectionRequest.objects.filter(collection=f.collection, folder__in=_folder_and_children(f)).count()
+            f.delete()
+            messages.success(request, f'Folder "{f.name}" and its {count} request{"s" if count != 1 else ""} deleted.')
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={f.collection_id}")
         elif action == 'add_apis':
             c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
+            folder = _folder_of(request, c)
             ids = [int(x) for x in request.POST.get('cases', '').split(',') if x.strip().isdigit()]
             cases = ApiTestCase.objects.select_related('project', 'environment').in_bulk(ids)
-            position = _next_position(c)
+            position = _next_position(c, folder)
             added = 0
             for case_id in ids:          # keep the order the APIs were picked in
                 if case_id in cases:
-                    item_from_case(c, cases[case_id], position + added)
+                    item_from_case(c, cases[case_id], position + added, folder)
                     added += 1
             if added:
                 messages.success(request, f'{added} API{"s" if added > 1 else ""} added to "{c.name}" in the order you picked.')
@@ -311,7 +348,9 @@ def api_workspace(request):
                 folders.setdefault(case.folder.name, []).append(case)
             groups.append({'project': project, 'env': env, 'count': len(cases),
                            'folders': [{'name': n, 'cases': c} for n, c in folders.items()]})
-    collections = ApiCollection.objects.prefetch_related('requests')
+    collections = list(ApiCollection.objects.prefetch_related('requests', 'folders'))
+    for c in collections:
+        c.tree_ = c.tree()
     return render(request, 'apitesting/workspace.html', {
         'selected': selected, 'groups': groups, 'collections': collections,
         'auth_profiles_json': json.dumps(_profiles_by_env(Environment.objects.filter(project_id__in=selection))),
@@ -728,10 +767,11 @@ def api_ws_move(request):
         return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
     item = get_object_or_404(CollectionRequest, pk=data.get('item') or 0)
     target = get_object_or_404(ApiCollection, pk=data.get('collection') or 0)
-    before = target.requests.filter(pk=data.get('before') or 0).first()
+    folder = target.folders.filter(pk=data.get('folder') or 0).first()
+    before = target.requests.filter(pk=data.get('before') or 0, folder=folder).first()
     with transaction.atomic():
-        move_item(item, target, before)
-    return JsonResponse({'ok': True, 'order': list(target.requests.values_list('pk', flat=True))})
+        move_item(item, target, before, folder)
+    return JsonResponse({'ok': True, 'order': list(target.requests.filter(folder=folder).values_list('pk', flat=True))})
 
 
 @login_required
@@ -742,7 +782,7 @@ def api_ws_rename(request):
         data = json.loads(request.body or b'{}')
     except ValueError:
         return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
-    model, limit = (ApiCollection, 200) if data.get('kind') == 'collection' else (CollectionRequest, 600)
+    model, limit = {'collection': (ApiCollection, 200), 'folder': (CollectionFolder, 200)}.get(data.get('kind'), (CollectionRequest, 600))
     obj = get_object_or_404(model, pk=data.get('id') or 0)
     name = str(data.get('name') or '').strip()[:limit]
     if not name:

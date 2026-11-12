@@ -249,7 +249,7 @@ def load_scopes(env=None, collection=None, globals_obj=None):
     globals_obj = globals_obj or ApiGlobals.load()
     return Scopes(rows_to_dict(env.variables) if env else {}, rows_to_dict(collection.variables) if collection else {},
                   rows_to_dict(globals_obj.variables), env=env, project=rows_to_dict(project_rows(env)),
-                  lovs=lov_module.Registry.load())
+                  lovs=lov_module.Registry.load(env.project if env else None))
 
 
 def save_project_scope(values, project):

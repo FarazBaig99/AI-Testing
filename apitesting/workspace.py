@@ -1,5 +1,7 @@
 """API Testing workspace (Postman-style): pick projects + environments, browse their APIs, build collections,
 send requests and read the response."""
+import csv
+import io
 import json
 import re
 from datetime import datetime
@@ -7,8 +9,8 @@ from datetime import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import F, Max
-from django.http import JsonResponse
+from django.db.models import Count, F, Max
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -18,8 +20,8 @@ from projects.models import Project
 
 from . import auth, lov, runner, scripting
 from .parsers import is_empty_body
-from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiLov, ApiTestCase, AuthProfile, ProjectVariables,
-                     CollectionRequest, Environment)
+from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiLov, ApiLovDateFormat, ApiLovUsedValue,
+                     ApiTestCase, AuthProfile, ProjectVariables, CollectionRequest, Environment)
 
 SESSION_KEY = 'api_ws'
 METHODS = [m for m, _ in ApiTestCase.METHOD_CHOICES]
@@ -583,10 +585,12 @@ def api_ws_resolve(request):
         scopes.append({'scope': 'Project', 'source': env.project.name,
                        'values': scripting.rows_to_dict(scripting.project_rows(env))})
     scopes.append({'scope': 'Global', 'source': 'Globals', 'values': scripting.rows_to_dict(ApiGlobals.load().variables)})
-    lovs = lov.Registry.load().lovs.values()
+    reg = lov.Registry.load(env.project if env else None)
     scopes.append({'scope': 'LOV', 'source': 'LOV',
-                   'values': {l.name: lov.example(l.kind, l.options, 1)[0] for l in lovs},
-                   'kinds': {l.name: lov.KINDS.get(l.kind, (l.kind,))[0] for l in lovs}})
+                   'values': {name: lov.example(l.produces, l.options, l.values, 1)[0] for name, l in reg.lovs.items()},
+                   'kinds': {name: f"{dict(ApiLov.PRODUCES)[l.produces]} · {lov.summary(l.produces, lov.clean_options(l.produces, l.options))}"
+                             for name, l in reg.lovs.items()},
+                   'aliases': {name: l.name for name, l in reg.lovs.items() if name != l.name}})
     return JsonResponse({'scopes': scopes})
 
 
@@ -638,7 +642,7 @@ def api_ws_variable_set(request):
         if row is not None:
             found.append({'scope': other_scope, 'label': other_label, 'value': str(row.get('value', ''))[:200],
                           'same': other_scope == scope})
-    if ApiLov.objects.filter(name=key).exists():
+    if key in lov.Registry.load().lovs:
         found.append({'scope': 'lov', 'label': 'LOV', 'value': 'generated on every send', 'same': False})
     if found and not data.get('overwrite'):
         same = [f for f in found if f['same']]
@@ -786,75 +790,208 @@ def api_ws_save(request):
                          'collection_name': item.collection.name})
 
 
-# ---------- LOV: generated values ----------
+# ---------- LOV categories (ATAS style) ----------
 
-def _lov_brief(l):
-    return {'id': l.pk, 'name': l.name, 'kind': l.kind, 'kind_label': lov.KINDS.get(l.kind, (l.kind,))[0],
-            'options': lov.clean_options(l.kind, l.options), 'enabled': l.enabled,
-            'examples': lov.example(l.kind, l.options, 3)}
+def _date_formats():
+    """The formats library: built-in ones plus the ones added here, each with what it writes right now."""
+    now = datetime.now(lov.local_zone())
+    rows = [{'id': None, 'name': n, 'pattern': p, 'builtin': True, 'now': lov.format_pattern(now, p)}
+            for n, p in lov.BUILTIN_DATE_FORMATS]
+    rows += [{'id': f.pk, 'name': f.name, 'pattern': f.pattern, 'builtin': False, 'now': lov.format_pattern(now, f.pattern)}
+             for f in ApiLovDateFormat.objects.all()]
+    return rows
 
 
-def _lov_name_taken(name, exclude_pk=None):
-    """Where a variable with this name already exists (an LOV must not shadow or be shadowed by one)."""
+def _lov_brief(l, used=None):
+    o = lov.clean_options(l.produces, l.options)
+    return {'id': l.pk, 'name': l.name, 'aliases': lov.alias_list(l.aliases), 'description': l.description,
+            'produces': l.produces, 'produces_label': dict(ApiLov.PRODUCES)[l.produces], 'options': o,
+            'values': list(l.values or []), 'enabled': l.enabled, 'summary': lov.summary(l.produces, o),
+            'examples': lov.example(l.produces, l.options, l.values, 3),
+            'used': used if used is not None else l.used_values.count()}
+
+
+def _lov_names_taken(names, exclude_pk=None):
+    """Where any of these names / aliases already exists: another category, its aliases, or a variable."""
     taken = []
-    if ApiLov.objects.filter(name=name).exclude(pk=exclude_pk or 0).exists():
-        taken.append('another LOV')
-    if any(r.get('key') == name for r in ApiGlobals.load().variables):
+    names = set(names)
+    for other in ApiLov.objects.exclude(pk=exclude_pk or 0):
+        hits = names & ({other.name} | set(lov.alias_list(other.aliases)))
+        if hits:
+            taken.append(f'category {other.name} ({", ".join(sorted(hits))})')
+    if any(r.get('key') in names for r in ApiGlobals.load().variables):
         taken.append('Globals')
     for pv in ProjectVariables.objects.select_related('project'):
-        if any(r.get('key') == name for r in pv.variables):
+        if any(r.get('key') in names for r in pv.variables):
             taken.append(f'project {pv.project.name}')
     for env in Environment.objects.select_related('project'):
-        if any(r.get('key') == name for r in env.variables):
+        if any(r.get('key') in names for r in env.variables):
             taken.append(f'environment {env.project.name} · {env.name}')
     return taken
 
 
 @login_required
-def api_ws_lov(request):
-    """GET: every LOV with the kind catalogue.
-    POST {action: save|delete|preview, ...}: keep an LOV, remove it, or preview values of a kind + options."""
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body or b'{}')
-        except ValueError:
-            return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
-        action = data.get('action')
-        kind = str(data.get('kind') or '')
-        if action == 'preview':
-            error = lov.validate(kind, data.get('options'))
-            return JsonResponse({'ok': not error, 'error': error,
-                                 'examples': [] if error else lov.example(kind, data.get('options'), 3)})
-        if action == 'delete':
-            ApiLov.objects.filter(pk=data.get('id') or 0).delete()
-            return JsonResponse({'ok': True})
-        if action == 'toggle':
-            l = get_object_or_404(ApiLov, pk=data.get('id') or 0)
-            l.enabled = not l.enabled
-            l.save(update_fields=['enabled'])
-            return JsonResponse({'ok': True, 'lov': _lov_brief(l)})
-        if action != 'save':
-            return JsonResponse({'ok': False, 'error': 'Unknown action.'}, status=400)
-        name = str(data.get('name') or '').strip()
-        if not lov.NAME_RE.match(name) or name.startswith('$'):
-            return JsonResponse({'ok': False, 'error': 'LOV name: letters, digits, dot, dash or underscore only.'})
-        error = lov.validate(kind, data.get('options'))
-        if error:
-            return JsonResponse({'ok': False, 'error': error})
-        l = ApiLov.objects.filter(pk=data.get('id') or 0).first() or ApiLov(created_by=request.user)
-        taken = _lov_name_taken(name, l.pk)
-        if taken:
-            return JsonResponse({'ok': False, 'duplicate': True,
-                                 'error': f'"{name}" is already used by ' + ', '.join(taken) + '. Choose another name.'})
-        if l.pk and (l.name != name or l.kind != kind):
-            l.state = {}                                   # a renamed / retyped LOV starts counting again
-        l.name, l.kind, l.options = name, kind, lov.clean_options(kind, data.get('options'))
-        l.save()
-        return JsonResponse({'ok': True, 'lov': _lov_brief(l)})
-    return JsonResponse({
-        'lovs': [_lov_brief(l) for l in ApiLov.objects.all()],
-        'kinds': [{'kind': k, 'label': label, 'options': [{'key': key, 'type': typ, 'default': default, 'help': help_}
-                                                          for key, typ, default, help_ in opts]}
-                  for k, (label, opts) in lov.KINDS.items()],
-        'common': [{'key': key, 'type': typ, 'default': default, 'help': help_} for key, typ, default, help_ in lov.COMMON_OPTIONS],
+def api_lov_page(request):
+    """LOV Management: categories, the date formats library, used unique values, import."""
+    return render(request, 'apitesting/lov.html', {
+        'produces': [{'key': k, 'label': lbl, 'help': h} for k, lbl, h in lov.PRODUCES],
+        'option_specs': json.dumps({p: [{'key': k, 'type': t, 'default': d, 'help': h} for k, t, d, h in lov.OPTIONS[p]]
+                                    for p in lov.OPTIONS}),
+        'generated_kinds': json.dumps({k: {'label': lbl, 'options': [{'key': key, 'type': t, 'default': d, 'help': h}
+                                                                    for key, t, d, h in opts]}
+                                       for k, (lbl, opts) in lov.GENERATED_KINDS.items()}),
+        'timezones': json.dumps(lov.timezone_choices()),
+        'local_zone': str(lov.local_zone()),
     })
+
+
+def _save_lov(request, data):
+    name = str(data.get('name') or '').strip()
+    if not lov.NAME_RE.match(name) or name.startswith('$'):
+        return {'ok': False, 'error': 'Category name: letters, digits, dot, dash or underscore only (no spaces).'}
+    aliases = lov.alias_list(str(data.get('aliases') or ''))
+    bad = [a for a in aliases if not lov.NAME_RE.match(a) or a.startswith('$')]
+    if bad:
+        return {'ok': False, 'error': 'Aliases: letters, digits, dot, dash or underscore only: ' + ', '.join(bad)}
+    produces = str(data.get('produces') or 'defined')
+    l = ApiLov.objects.filter(pk=data.get('id') or 0).first() or ApiLov(created_by=request.user)
+    values = lov.clean_values(data.get('values')) if 'values' in data else list(l.values or [])
+    error = lov.validate(produces, data.get('options'), values)
+    if error:
+        return {'ok': False, 'error': error}
+    taken = _lov_names_taken([name] + aliases, l.pk)
+    if taken:
+        return {'ok': False, 'duplicate': True, 'error': f'"{name}" or one of its aliases is already used by ' + ', '.join(taken) + '.'}
+    if l.pk and (l.produces != produces or l.name != name):
+        l.state = {}
+    l.name, l.aliases, l.description = name, ', '.join(aliases), str(data.get('description') or '')[:2000]
+    l.produces, l.options, l.values = produces, lov.clean_options(produces, data.get('options')), values
+    l.save()
+    return {'ok': True, 'lov': _lov_brief(l)}
+
+
+def _import_rows(request, text):
+    """CSV with the columns category, value (and optional produces, aliases, description)."""
+    reader = csv.DictReader(io.StringIO(text))
+    fields = [f.strip().lower() for f in (reader.fieldnames or [])]
+    if 'category' not in fields:
+        return {'ok': False, 'error': 'The file needs a "category" column (download the template).'}
+    reader.fieldnames = fields
+    created, added, errors = 0, 0, []
+    for i, row in enumerate(reader, start=2):
+        name = (row.get('category') or '').strip()
+        if not name:
+            continue
+        l = ApiLov.objects.filter(name=name).first()
+        if l is None:
+            produces = (row.get('produces') or 'defined').strip().lower()
+            if produces not in dict(ApiLov.PRODUCES):
+                produces = 'defined'
+            if not lov.NAME_RE.match(name):
+                errors.append(f'line {i}: bad category name "{name}"')
+                continue
+            if _lov_names_taken([name]):
+                errors.append(f'line {i}: "{name}" clashes with a variable or alias')
+                continue
+            l = ApiLov.objects.create(name=name, produces=produces, aliases=', '.join(lov.alias_list(row.get('aliases') or '')),
+                                      description=(row.get('description') or '')[:2000],
+                                      options=lov.clean_options(produces, {}), created_by=request.user)
+            created += 1
+        value = (row.get('value') or '').strip()[:500]
+        if value and value not in l.values:
+            l.values = list(l.values) + [value]
+            l.save(update_fields=['values'])
+            added += 1
+    return {'ok': True, 'created': created, 'added': added, 'errors': errors[:20]}
+
+
+@login_required
+def api_ws_lov(request):
+    """GET: every category, the date formats and the used-values count.
+    POST {action, ...}: save | delete | toggle | preview | add_value | remove_value | used | reset_used |
+    clear_used | format_add | format_delete | import."""
+    if request.method != 'POST':
+        counts = dict(ApiLovUsedValue.objects.values_list('lov_id').annotate(n=Count('id')).values_list('lov_id', 'n'))
+        return JsonResponse({
+            'lovs': [_lov_brief(l, counts.get(l.pk, 0)) for l in ApiLov.objects.all()],
+            'formats': _date_formats(),
+            'used_total': sum(counts.values()),
+        })
+    try:
+        data = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+    action = data.get('action')
+    if action == 'preview':
+        produces = str(data.get('produces') or 'defined')
+        values = lov.clean_values(data.get('values'))
+        error = lov.validate(produces, data.get('options'), values)
+        o = lov.clean_options(produces, data.get('options'))
+        return JsonResponse({'ok': not error, 'error': error, 'summary': lov.summary(produces, o) if not error else '',
+                             'examples': [] if error else lov.example(produces, data.get('options'), values, 3)})
+    if action == 'save':
+        return JsonResponse(_save_lov(request, data))
+    if action == 'import':
+        return JsonResponse(_import_rows(request, str(data.get('text') or '')))
+    if action == 'format_add':
+        name, pattern = str(data.get('name') or '').strip()[:100], str(data.get('pattern') or '').strip()[:100]
+        if not name or not pattern:
+            return JsonResponse({'ok': False, 'error': 'Give the format a name and a pattern.'})
+        if name in dict(lov.BUILTIN_DATE_FORMATS) or ApiLovDateFormat.objects.filter(name=name).exists():
+            return JsonResponse({'ok': False, 'error': 'A format with this name already exists.'})
+        ApiLovDateFormat.objects.create(name=name, pattern=pattern, created_by=request.user)
+        return JsonResponse({'ok': True, 'formats': _date_formats()})
+    if action == 'format_delete':
+        ApiLovDateFormat.objects.filter(pk=data.get('id') or 0).delete()
+        return JsonResponse({'ok': True, 'formats': _date_formats()})
+    if action == 'used':
+        rows = (ApiLovUsedValue.objects.values('lov_id', 'lov__name', 'project_id', 'project__name')
+                .annotate(n=Count('id')).order_by('lov__name', 'project__name'))
+        return JsonResponse({'ok': True, 'rows': [{'lov': r['lov_id'], 'name': r['lov__name'], 'project': r['project_id'],
+                                                   'project_name': r['project__name'] or 'no project', 'used': r['n']} for r in rows],
+                             'total': ApiLovUsedValue.objects.count()})
+    if action == 'reset_used':
+        qs = ApiLovUsedValue.objects.filter(lov_id=data.get('lov') or 0)
+        qs = qs.filter(project_id=data['project']) if data.get('project') else qs.filter(project=None)
+        deleted = qs.delete()[0]
+        return JsonResponse({'ok': True, 'deleted': deleted})
+    if action == 'clear_used':
+        deleted = ApiLovUsedValue.objects.all().delete()[0]
+        return JsonResponse({'ok': True, 'deleted': deleted})
+    l = ApiLov.objects.filter(pk=data.get('id') or 0).first()
+    if l is None:
+        return JsonResponse({'ok': False, 'error': 'Category not found.'}, status=404)
+    if action == 'delete':
+        l.delete()
+        return JsonResponse({'ok': True})
+    if action == 'toggle':
+        l.enabled = not l.enabled
+        l.save(update_fields=['enabled'])
+    elif action == 'add_value':
+        value = str(data.get('value') or '').strip()[:500]
+        if not value:
+            return JsonResponse({'ok': False, 'error': 'Type a value.'})
+        if value in l.values:
+            return JsonResponse({'ok': False, 'error': f'"{value}" is already in this category.'})
+        l.values = list(l.values) + [value]
+        l.save(update_fields=['values'])
+    elif action == 'remove_value':
+        l.values = [v for v in l.values if v != data.get('value')]
+        l.save(update_fields=['values'])
+    else:
+        return JsonResponse({'ok': False, 'error': 'Unknown action.'}, status=400)
+    return JsonResponse({'ok': True, 'lov': _lov_brief(l)})
+
+
+@login_required
+def api_lov_template(request):
+    """CSV template for the import: one row per value."""
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(['category', 'value', 'produces', 'aliases', 'description'])
+    w.writerow(['City', 'Karachi', 'defined', 'city, city_name', 'Cities used in addresses'])
+    w.writerow(['City', 'Lahore', '', '', ''])
+    w.writerow(['AirlinePrefix', 'PIA', 'unique', 'airline_prefix', 'A unique fragment is added to a base value'])
+    resp = HttpResponse(out.getvalue(), content_type='text/csv')
+    resp['Content-Disposition'] = 'attachment; filename="lov-template.csv"'
+    return resp

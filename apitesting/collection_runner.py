@@ -75,7 +75,7 @@ class RunVariables:
                                        globals_=scripting.rows_to_dict(self.globals_obj.variables))
         self.envs = {}          # env id -> (env, Scopes holding that environment's values)
         self.projects = {}
-        self.lovs = lov.Registry.load()      # project id -> (project, {project variables}); shared by its environments
+        self.lovs = {}      # project id -> (project, {project variables}); shared by its environments
 
     def scopes_for(self, env):
         """A Scopes object for one request; environment values are kept per environment, project values per project."""
@@ -89,8 +89,14 @@ class RunVariables:
             held = self.envs[env.pk][1]
             scopes.environment, scopes.injected = held.environment, held.injected
             scopes.project = self.projects[env.project_id][1]
-        scopes.lovs = self.lovs
+        scopes.lovs = self.lovs_for(env.project if env is not None else None)
         return scopes
+
+    def lovs_for(self, project):
+        key = project.pk if project is not None else None
+        if key not in self.lovs:
+            self.lovs[key] = lov.Registry.load(project)
+        return self.lovs[key]
 
     def keep(self, scopes, env):
         self.shared.collection, self.shared.globals, self.shared.local = scopes.collection, scopes.globals, scopes.local

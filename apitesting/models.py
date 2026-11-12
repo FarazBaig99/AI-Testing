@@ -372,20 +372,51 @@ class ProjectVariables(models.Model):
 
 
 class ApiLov(models.Model):
-    """A list-of-values generator: {{name}} is filled with a fresh value on every send (random name, email,
-    number, date +/- offset, counter, pick from a list...). Works in every project and environment."""
+    """An LOV category (ATAS style): {{name}} or {{alias}} is filled when a request is sent. It produces
+    one of the listed values, a never-used unique value, a date, or a generated value (see lov.py)."""
+    PRODUCES = [('defined', 'Defined values'), ('unique', 'Unique value'), ('date', 'Date'), ('generated', 'Generated value')]
+
     name = models.CharField(max_length=200, unique=True)
-    kind = models.CharField(max_length=30)
+    aliases = models.TextField(blank=True)            # comma-separated other names, e.g. email, user_email
+    description = models.TextField(blank=True)
+    produces = models.CharField(max_length=20, choices=PRODUCES, default='defined')
     options = models.JSONField(default=dict, blank=True)
+    values = models.JSONField(default=list, blank=True)   # the defined values, or the base values of a unique value
     enabled = models.BooleanField(default=True)
-    state = models.JSONField(default=dict, blank=True)          # counters of sequence / sequential list LOVs
+    state = models.JSONField(default=dict, blank=True)    # counters (sequence, sequential pick)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['name']
-        verbose_name = 'LOV'
+        verbose_name = 'LOV category'
+        verbose_name_plural = 'LOV categories'
+
+    def __str__(self):
+        return self.name
+
+
+class ApiLovUsedValue(models.Model):
+    """A unique value already handed out by a category (per project), so it is never produced twice."""
+    lov = models.ForeignKey(ApiLov, on_delete=models.CASCADE, related_name='used_values')
+    project = models.ForeignKey(Project, on_delete=models.SET_NULL, null=True, blank=True, related_name='api_lov_used_values')
+    value = models.CharField(max_length=600)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('lov', 'value')
+
+
+class ApiLovDateFormat(models.Model):
+    """A date format added to the library (the built-in ones live in lov.BUILTIN_DATE_FORMATS)."""
+    name = models.CharField(max_length=100, unique=True)
+    pattern = models.CharField(max_length=100)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
 
     def __str__(self):
         return self.name

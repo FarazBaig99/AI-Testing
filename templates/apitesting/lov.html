@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}LOV Management{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .lv .bar { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 16px; }
+  .lv .card-lv { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 18px; }
+  .lv .card-lv.off { opacity: .6; }
+  .lv .sec-title { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #64748b; }
+  .lv label.lbl { font-size: .78rem; font-weight: 600; color: #334155; margin-bottom: 2px; display: block; }
+  .lv .help { font-size: .7rem; color: #94a3b8; }
+  .lv .radio-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 9px 12px; cursor: pointer; display: flex; gap: 10px; align-items: flex-start; margin-bottom: 6px; }
+  .lv .radio-card.on { border-color: var(--pf); background: var(--pf-soft); }
+  .lv .radio-card b { font-size: .85rem; } .lv .radio-card small { color: #64748b; display: block; }
+  .lv .cfg { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
+  .lv .preview { font-family: monospace; font-size: .8rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; word-break: break-all; }
+  .lv .preview .err { color: #b91c1c; } .lv .preview small { font-family: inherit; color: #64748b; }
+  .lv .pbadge { font-size: .68rem; font-weight: 700; padding: 1px 8px; border-radius: 10px; }
+  .lv .p-defined { background: #dbeafe; color: #1d4ed8; } .lv .p-unique { background: #fce7f3; color: #be185d; }
+  .lv .p-date { background: #fef3c7; color: #b45309; } .lv .p-generated { background: #ede9fe; color: #6d28d9; }
+  .lv .chip { display: inline-flex; align-items: center; gap: 4px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 1px 8px; font-size: .78rem; margin: 2px 4px 2px 0; }
+  .lv .chip button { border: 0; background: none; color: #94a3b8; padding: 0 0 0 2px; line-height: 1; } .lv .chip button:hover { color: #dc2626; }
+  .lv .alias { font-family: monospace; font-size: .72rem; color: var(--pf-dark); background: var(--pf-soft); border: 1px solid var(--pf-border); border-radius: 5px; padding: 0 6px; }
+  .lv .tok { font-family: monospace; font-weight: 700; color: #be185d; }
+  .lv .cat-name { font-weight: 700; font-size: 1rem; }
+  .lv .sum { color: #be185d; font-size: .8rem; }
+  .lv .ex { font-family: monospace; font-size: .76rem; color: #475569; }
+  .lv .fmt-table td, .lv .fmt-table th { font-size: .8rem; padding: 5px 8px; }
+  .lv .fmt-table code { color: #0f172a; }
+  .lv details > summary { cursor: pointer; list-style: none; font-weight: 700; font-size: .85rem; }
+  .lv details > summary::before { content: '▸ '; color: #94a3b8; } .lv details[open] > summary::before { content: '▾ '; }
+  .lv .icon-btn { border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; color: #475569; position: relative; }
+  .lv .icon-btn:hover { background: #f8fafc; color: var(--pf-dark); }
+  .lv .icon-btn .cnt { position: absolute; top: -7px; right: -7px; background: var(--pf); color: #fff; font-size: .6rem; font-weight: 700; border-radius: 9px; padding: 0 5px; }
+  .lv .del2 { color: #b91c1c; }
+</style>
+<div class="pf lv">
+  <div class="bar mb-3 d-flex flex-wrap align-items-center gap-2">
+    <div class="me-2">
+      <div class="pf-eyebrow">Quality Engineering</div>
+      <h5 class="fw-bold mb-0"><i class="bi bi-list-check text-success"></i> LOV Management</h5>
+      <div class="small text-muted">Categories of values filled into API requests: use <span class="tok">{% templatetag openvariable %}name{% templatetag closevariable %}</span> (or an alias) in a URL, param, header or body.</div>
+    </div>
+    <div class="ms-auto d-flex align-items-center gap-2">
+      <a class="btn btn-sm btn-light border" href="{% url 'api_workspace' %}"><i class="bi bi-arrow-left"></i> API Testing</a>
+      <a class="icon-btn" href="{% url 'api_lov_template' %}" title="Download the import template (CSV)"><i class="bi bi-download"></i></a>
+      <button type="button" class="icon-btn" id="importBtn" title="Import categories and values (CSV)"><i class="bi bi-upload"></i></button>
+      <button type="button" class="icon-btn" id="usedBtn" title="Used unique values"><i class="bi bi-file-earmark-check"></i><span class="cnt" id="usedCnt">0</span></button>
+      <button type="button" class="btn btn-sm btn-pf" id="newBtn"><i class="bi bi-plus-lg"></i> New category</button>
+      <button type="button" class="icon-btn" id="filterBtn" title="Search and filter"><i class="bi bi-funnel"></i></button>
+    </div>
+  </div>
+
+  <!-- new category -->
+  <div class="card-lv mb-3" id="newCard">
+    <div class="sec-title mb-2">New category</div>
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <label class="lbl">Name <span class="text-danger">*</span></label>
+        <input id="nName" class="form-control form-control-sm" maxlength="200" placeholder="e.g. Email, CityCode, DateFrom">
+        <div class="help">Used as <span class="tok">{% templatetag openvariable %}Name{% templatetag closevariable %}</span>. Letters, digits, dot, dash or underscore (no spaces).</div>
+        <label class="lbl mt-2">Aliases</label>
+        <textarea id="nAliases" class="form-control form-control-sm" rows="2" placeholder="email, user_email, contact_email"></textarea>
+        <div class="help">Comma-separated. Each alias works as a token too, and <b>Fill with LOV</b> in the request body matches fields by name or alias.</div>
+        <label class="lbl mt-2">Description</label>
+        <textarea id="nDesc" class="form-control form-control-sm" rows="2"></textarea>
+      </div>
+      <div class="col-lg-6">
+        <div class="sec-title mb-2">What does this category produce?</div>
+        <div id="nProduces"></div>
+      </div>
+      <div class="col-12">
+        <div class="cfg" id="nCfg"></div>
+      </div>
+      <div class="col-12" id="nValuesWrap">
+        <label class="lbl">Values <span class="help" id="nValuesHelp"></span></label>
+        <textarea id="nValues" class="form-control form-control-sm" rows="3" placeholder="One value per line, or comma-separated"></textarea>
+      </div>
+      <div class="col-12">
+        <label class="lbl">Right now this produces</label>
+        <div class="preview" id="nPreview">…</div>
+        <div class="small text-danger mt-1" id="nError"></div>
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-pf" id="nCreate"><i class="bi bi-plus-lg"></i> Create</button>
+        <button type="button" class="btn btn-sm btn-light border" id="nReset">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- date formats -->
+  <div class="card-lv mb-3">
+    <details id="fmtDetails">
+      <summary>Date formats <span class="text-muted" id="fmtCount"></span></summary>
+      <div class="small text-muted mt-2 mb-2">The formats a <b>Date</b> category can write its value in (Java-style patterns: yyyy MM dd HH mm ss fff, 'T' for literal text, K / zzz for the offset, X / x for epoch seconds / milliseconds).
+        A category keeps its own copy of the pattern, so removing a format here never changes a category.</div>
+      <table class="table table-sm fmt-table mb-2"><thead><tr class="text-muted"><th>Name</th><th>Format</th><th>Writes right now</th><th></th></tr></thead><tbody id="fmtRows"></tbody></table>
+      <div class="d-flex flex-wrap gap-2 align-items-end">
+        <div><label class="lbl">Name</label><input id="fmtName" class="form-control form-control-sm" placeholder="e.g. Month name"></div>
+        <div><label class="lbl">Pattern</label><input id="fmtPattern" class="form-control form-control-sm" placeholder="dd MMMM yyyy" style="font-family:monospace"></div>
+        <button type="button" class="btn btn-sm btn-outline-pf" id="fmtAdd"><i class="bi bi-plus-lg"></i> Add format</button>
+        <span class="small text-danger" id="fmtError"></span>
+      </div>
+    </details>
+  </div>
+
+  <!-- filters -->
+  <div class="card-lv mb-3" id="filterCard" hidden>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <input id="search" class="form-control form-control-sm" style="max-width:320px" placeholder="Search categories, aliases or values…">
+      <select id="fProduces" class="form-select form-select-sm w-auto"><option value="">All types</option>{% for p in produces %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}</select>
+      <span class="small text-muted" id="fCount"></span>
+    </div>
+  </div>
+
+  <!-- categories -->
+  <div id="cards"></div>
+</div>
+
+<!-- configure -->
+<div class="modal fade" id="cfgModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf lv">
+  <div class="modal-header"><h6 class="modal-title fw-bold">Configure value — <span id="cfgTitle"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <input type="hidden" id="cfgId">
+    <div class="row g-2 mb-2">
+      <div class="col-sm-6"><label class="lbl">Name</label><input id="cfgName" class="form-control form-control-sm" maxlength="200"></div>
+      <div class="col-sm-6"><label class="lbl">Aliases</label><input id="cfgAliases" class="form-control form-control-sm" placeholder="comma-separated"></div>
+      <div class="col-12"><label class="lbl">Description</label><input id="cfgDesc" class="form-control form-control-sm"></div>
+    </div>
+    <div class="sec-title mb-2">What should this category produce when it is used?</div>
+    <div id="cfgProduces"></div>
+    <div class="cfg mt-2" id="cfgCfg"></div>
+    <label class="lbl mt-2">Right now this produces</label>
+    <div class="preview" id="cfgPreview">…</div>
+    <div class="small text-danger mt-1" id="cfgError"></div>
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-sm btn-pf" id="cfgSave">Save</button></div>
+</div></div></div>
+
+<!-- used unique values -->
+<div class="modal fade" id="usedModal" tabindex="-1"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content pf lv">
+  <div class="modal-header"><h6 class="modal-title fw-bold">Used unique values</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="small text-muted mb-2">Every unique value already handed out by a category, per project. Resetting a row lets those values be generated again — use it after the target API's data has been wiped or reset.</div>
+    <table class="table table-sm fmt-table mb-0"><thead><tr class="text-muted"><th>Category</th><th>Project</th><th class="text-end">Used</th><th></th></tr></thead><tbody id="usedRows"></tbody></table>
+  </div>
+  <div class="modal-footer"><span class="small text-muted me-auto" id="usedTotal"></span><button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Close</button><button type="button" class="btn btn-sm btn-danger" id="usedClear">Clear all</button></div>
+</div></div></div>
+
+<!-- import -->
+<div class="modal fade" id="importModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content pf lv">
+  <div class="modal-header"><h6 class="modal-title fw-bold">Import categories and values</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="small text-muted mb-2">A CSV with the columns <code>category, value</code> and optionally <code>produces, aliases, description</code> — one row per value (<a href="{% url 'api_lov_template' %}">download the template</a>).
+      A category that does not exist yet is created; values are added to it (duplicates are skipped).</div>
+    <input type="file" id="importFile" class="form-control form-control-sm mb-2" accept=".csv,text/csv">
+    <textarea id="importText" class="form-control form-control-sm" rows="8" placeholder="category,value&#10;City,Karachi&#10;City,Lahore" style="font-family:monospace"></textarea>
+    <div class="small mt-2" id="importResult"></div>
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Close</button><button type="button" class="btn btn-sm btn-pf" id="importRun"><i class="bi bi-upload"></i> Import</button></div>
+</div></div></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const CSRF = '{{ csrf_token }}';
+  const URL_DATA = '{% url "api_ws_lov" %}';
+  const PRODUCES = {{ produces|safe|default:"[]" }};
+  const SPECS = {{ option_specs|safe }};
+  const GEN = {{ generated_kinds|safe }};
+  const TZ = {{ timezones|safe }};
+  const LOCAL_ZONE = '{{ local_zone }}';
+  const O = '{' + '{', C = '}' + '}';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  let data = {lovs: [], formats: [], used_total: 0};
+  async function post(body) {
+    const res = await fetch(URL_DATA, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    return res.ok ? res.json() : {ok: false, error: `Server error ${res.status}`};
+  }
+  function toast(html, kind = 'success') {
+    const t = document.createElement('div');
+    t.className = `alert alert-${kind} shadow small py-2 px-3 position-fixed`;
+    t.style.cssText = 'top:16px;right:16px;z-index:2200;max-width:420px';
+    t.innerHTML = html;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 4500);
+  }
+  const splitValues = text => [...new Set(String(text || '').split(/[\n,]+/).map(v => v.trim()).filter(Boolean))];
+
+  // ---------- produce radios + option fields (shared by the new-category form and the Configure dialog) ----------
+  function producesHtml(prefix, current) {
+    return PRODUCES.map(p => `<label class="radio-card${p.key === current ? ' on' : ''}"><input type="radio" name="${prefix}_produces" value="${p.key}"${p.key === current ? ' checked' : ''} class="form-check-input mt-1">
+      <span><b>${esc(p.label)}</b><small>${esc(p.help)}</small></span></label>`).join('');
+  }
+  function fieldHtml(prefix, o, value) {
+    const id = `${prefix}_${o.key}`, v = value === undefined ? o.default : value;
+    let input, wide = false;
+    if (o.key === 'format') {
+      wide = true;
+      const known = data.formats.some(f => f.pattern === v);
+      input = `<div class="d-flex gap-2"><select id="${id}" class="form-select form-select-sm">${data.formats.map(f => `<option value="${esc(f.pattern)}"${f.pattern === v ? ' selected' : ''}>${esc(f.name)} — ${esc(f.now)}</option>`).join('')}${known ? '' : `<option value="${esc(v)}" selected>${esc(v)} (custom)</option>`}</select>
+        <button type="button" class="btn btn-sm btn-light border text-nowrap" data-open-formats>+ Add format</button></div>`;
+    } else if (o.key === 'timezone') {
+      input = `<select id="${id}" class="form-select form-select-sm"><option value="auto"${v === 'auto' ? ' selected' : ''}>Auto — the timezone of this server (${esc(LOCAL_ZONE)})</option>${TZ.map(z => `<option${z === v ? ' selected' : ''}>${esc(z)}</option>`).join('')}</select>`;
+    } else if (o.key === 'kind') {
+      input = `<select id="${id}" class="form-select form-select-sm" data-rerender>${Object.entries(GEN).map(([k, g]) => `<option value="${k}"${k === v ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select>`;
+    } else if (o.type === 'number') {
+      input = `<input type="number" step="any" id="${id}" class="form-control form-control-sm" value="${esc(v)}">`;
+    } else if (o.type.startsWith('select:')) {
+      const labels = {full_random: 'Generate complete random value', prefix: 'Prefix', suffix: 'Suffix', current: 'Current', future: 'Future (ahead)', past: 'Past (back)', start: 'Start of day (00:00:00)', end: 'End of day (23:59:59)'};
+      input = `<select id="${id}" class="form-select form-select-sm">${o.type.slice(7).split('|').map(c => `<option value="${esc(c)}"${c === v ? ' selected' : ''}>${esc(labels[c] || c)}</option>`).join('')}</select>`;
+    } else {
+      input = `<input id="${id}" class="form-control form-control-sm" value="${esc(v)}">`;
+    }
+    const label = {data_type: 'Data type', position: 'Unique position', case: 'Unique case', length: 'Unique length', base: 'Date', amount: 'How far', unit: 'Unit', format: 'Format', time: 'Time of day', timezone: 'Timezone', kind: 'Generator', mode: 'Pick'}[o.key] || o.key.replace(/_/g, ' ');
+    return `<div class="${wide ? 'col-12' : 'col-sm-4'}"><label class="lbl" for="${id}">${esc(label)}</label>${input}<div class="help">${esc(o.help)}</div></div>`;
+  }
+  function specsFor(produces, options) {
+    let specs = SPECS[produces] || [];
+    if (produces === 'generated') specs = specs.concat((GEN[(options || {}).kind || 'name'] || GEN.name).options);
+    return specs;
+  }
+  function renderCfg(box, prefix, produces, options) {
+    box.innerHTML = `<div class="row g-2">${specsFor(produces, options).map(o => fieldHtml(prefix, o, options[o.key])).join('')}</div>`;
+    box.querySelectorAll('[data-rerender]').forEach(sel => sel.addEventListener('change', () => renderCfg(box, prefix, produces, collectCfg(box, prefix, produces))));
+    box.querySelectorAll('[data-open-formats]').forEach(b => b.addEventListener('click', () => { $('fmtDetails').open = true; $('fmtName').focus(); $('fmtDetails').scrollIntoView({behavior: 'smooth'}); }));
+  }
+  function collectCfg(box, prefix, produces) {
+    const out = {};
+    const kindSel = box.querySelector(`#${prefix}_kind`);
+    const kind = kindSel ? kindSel.value : undefined;
+    specsFor(produces, {kind}).forEach(o => { const f = box.querySelector(`#${prefix}_${o.key}`); if (f) out[o.key] = f.value; });
+    return out;
+  }
+  function selectedProduces(prefix) { return (document.querySelector(`input[name=${prefix}_produces]:checked`) || {}).value || 'defined'; }
+  function bindProduces(container, prefix, onChange) {
+    container.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', () => {
+      container.querySelectorAll('.radio-card').forEach(c => c.classList.toggle('on', c.querySelector('input').checked));
+      onChange(r.value);
+    }));
+  }
+  const timers = {};
+  function preview(key, produces, options, values, box, errBox) {
+    clearTimeout(timers[key]);
+    timers[key] = setTimeout(async () => {
+      const out = await post({action: 'preview', produces, options, values});
+      box.innerHTML = out.ok ? `${out.examples.map(esc).join('\n')}\n<small>${esc(out.summary)}</small>` : `<span class="err">${esc(out.error)}</span>`;
+      if (errBox) errBox.textContent = '';
+    }, 250);
+  }
+
+  // ---------- new category form ----------
+  const valuesHelp = {defined: '— one of these is used, one per line', unique: '— base values the unique fragment is put before / after (not needed for "Generate complete random value")'};
+  function newForm(produces, options) {
+    produces = produces || 'defined';
+    $('nProduces').innerHTML = producesHtml('n', produces);
+    bindProduces($('nProduces'), 'n', p => newForm(p, {}));
+    renderCfg($('nCfg'), 'n', produces, options || {});
+    $('nValuesWrap').hidden = !(produces in valuesHelp);
+    $('nValuesHelp').textContent = valuesHelp[produces] || '';
+    newPreview();
+  }
+  function newData() {
+    const produces = selectedProduces('n');
+    return {name: $('nName').value.trim(), aliases: $('nAliases').value, description: $('nDesc').value, produces,
+            options: collectCfg($('nCfg'), 'n', produces), values: splitValues($('nValues').value)};
+  }
+  function newPreview() { const d = newData(); preview('n', d.produces, d.options, d.values, $('nPreview'), $('nError')); }
+  $('nCfg').addEventListener('input', newPreview); $('nCfg').addEventListener('change', newPreview);
+  $('nValues').addEventListener('input', newPreview);
+  $('nReset').addEventListener('click', () => { ['nName', 'nAliases', 'nDesc', 'nValues'].forEach(id => $(id).value = ''); $('nError').textContent = ''; newForm('defined', {}); });
+  $('nCreate').addEventListener('click', async () => {
+    const d = newData();
+    if (!d.name) { $('nError').textContent = 'Give the category a name.'; $('nName').focus(); return; }
+    const out = await post({action: 'save', ...d});
+    if (!out.ok) { $('nError').textContent = out.error; return; }
+    data.lovs.push(out.lov); data.lovs.sort((a, b) => a.name.localeCompare(b.name));
+    renderCards();
+    toast(`Category <b>${esc(out.lov.name)}</b> created. Use it as <span class="tok">${O}${esc(out.lov.name)}${C}</span>.`);
+    $('nReset').click();
+    document.querySelector(`[data-id="${out.lov.id}"]`)?.scrollIntoView({behavior: 'smooth', block: 'center'});
+  });
+  $('newBtn').addEventListener('click', () => { $('newCard').scrollIntoView({behavior: 'smooth'}); $('nName').focus(); });
+
+  // ---------- date formats ----------
+  function renderFormats() {
+    $('fmtCount').textContent = `(${data.formats.length})`;
+    $('fmtRows').innerHTML = data.formats.map(f => `<tr><td>${esc(f.name)} ${f.builtin ? '<span class="text-muted">(built in)</span>' : ''}</td><td><code>${esc(f.pattern)}</code></td><td><code>${esc(f.now)}</code></td>
+      <td class="text-end">${f.builtin ? '' : `<button type="button" class="btn btn-sm btn-link text-danger p-0" data-fmt-del="${f.id}" title="Remove"><i class="bi bi-trash"></i></button>`}</td></tr>`).join('');
+    $('fmtRows').querySelectorAll('[data-fmt-del]').forEach(b => b.addEventListener('click', async () => {
+      const out = await post({action: 'format_delete', id: +b.dataset.fmtDel});
+      if (out.ok) { data.formats = out.formats; renderFormats(); }
+    }));
+  }
+  $('fmtAdd').addEventListener('click', async () => {
+    const out = await post({action: 'format_add', name: $('fmtName').value.trim(), pattern: $('fmtPattern').value.trim()});
+    $('fmtError').textContent = out.ok ? '' : out.error;
+    if (out.ok) { data.formats = out.formats; renderFormats(); $('fmtName').value = ''; $('fmtPattern').value = ''; toast('Format added. Pick it in a Date category\'s Configure dialog.'); }
+  });
+
+  // ---------- category cards ----------
+  function matches(l, q, p) {
+    if (p && l.produces !== p) return false;
+    if (!q) return true;
+    const hay = [l.name, ...l.aliases, l.description, ...l.values].join(' ').toLowerCase();
+    return hay.includes(q);
+  }
+  function renderCards() {
+    const q = $('search').value.trim().toLowerCase(), p = $('fProduces').value;
+    const shown = data.lovs.filter(l => matches(l, q, p));
+    $('fCount').textContent = `${shown.length} of ${data.lovs.length} categories`;
+    $('usedCnt').textContent = data.used_total;
+    if (!data.lovs.length) { $('cards').innerHTML = '<div class="card-lv text-center text-muted small py-4">No category yet. Create one above, or import a CSV.</div>'; return; }
+    if (!shown.length) { $('cards').innerHTML = '<div class="card-lv text-center text-muted small py-4">Nothing matches the filter.</div>'; return; }
+    $('cards').innerHTML = shown.map(l => `<div class="card-lv mb-3${l.enabled ? '' : ' off'}" data-id="${l.id}">
+      <div class="d-flex align-items-start gap-2">
+        <div class="flex-grow-1" style="min-width:0">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="cat-name">${esc(l.name)}</span>
+            <button type="button" class="btn btn-sm btn-link p-0 text-muted" data-copy title="Copy the token"><i class="bi bi-clipboard"></i> ${O}${esc(l.name)}${C}</button>
+            ${l.aliases.map(a => `<span class="alias">${esc(a)}</span>`).join('')}
+            ${l.enabled ? '' : '<span class="badge text-bg-secondary">off</span>'}
+          </div>
+          <div class="small text-muted">${esc(l.description || '')}</div>
+          <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
+            <span class="pbadge p-${l.produces}">${esc(l.produces_label)}</span>
+            <span class="sum">${esc(l.summary)}</span>
+            <button type="button" class="btn btn-sm btn-link p-0" data-cfg>Configure…</button>
+            ${l.produces === 'unique' ? `<span class="small text-muted">· ${l.used} used value${l.used === 1 ? '' : 's'}</span>` : ''}
+          </div>
+          ${l.produces === 'defined' || l.produces === 'unique' ? `<div class="mt-2">${l.values.map(v => `<span class="chip">${esc(v)}<button type="button" data-rm="${esc(v)}" title="Remove">✕</button></span>`).join('') || '<span class="small text-muted">No values yet.</span>'}</div>
+            <div class="d-flex gap-2 mt-2"><input class="form-control form-control-sm" data-newval placeholder="Add a value…"><button type="button" class="btn btn-sm btn-light border" data-add>Add</button></div>`
+            : `<div class="ex mt-1">e.g. ${l.examples.map(esc).join('  |  ')}</div>`}
+        </div>
+        <div class="d-flex flex-column gap-1">
+          <button type="button" class="icon-btn" data-toggle title="${l.enabled ? 'Turn off' : 'Turn on'}"><i class="bi bi-toggle-${l.enabled ? 'on' : 'off'}"></i></button>
+          <button type="button" class="icon-btn del2" data-del title="Delete category"><i class="bi bi-trash"></i></button>
+        </div>
+      </div>
+    </div>`).join('');
+  }
+  function lovOf(el) { return data.lovs.find(l => String(l.id) === el.closest('[data-id]').dataset.id); }
+  function replaceLov(lov) { const i = data.lovs.findIndex(x => x.id === lov.id); if (i >= 0) data.lovs[i] = lov; else data.lovs.push(lov); renderCards(); }
+  $('cards').addEventListener('click', async e => {
+    const card = e.target.closest('[data-id]');
+    if (!card) return;
+    const l = lovOf(card);
+    if (e.target.closest('[data-copy]')) { navigator.clipboard.writeText(`${O}${l.name}${C}`).then(() => toast(`Copied <span class="tok">${O}${esc(l.name)}${C}</span>`)); }
+    else if (e.target.closest('[data-cfg]')) openCfg(l);
+    else if (e.target.closest('[data-toggle]')) { const out = await post({action: 'toggle', id: l.id}); if (out.ok) replaceLov(out.lov); }
+    else if (e.target.closest('[data-del]')) {
+      const b = e.target.closest('[data-del]');
+      if (b.dataset.armed) { const out = await post({action: 'delete', id: l.id}); if (out.ok) { data.lovs = data.lovs.filter(x => x !== l); renderCards(); toast(`Category ${esc(l.name)} deleted.`, 'warning'); } }
+      else { b.dataset.armed = '1'; b.innerHTML = '<i class="bi bi-exclamation-lg"></i>'; b.title = 'Click again to delete'; setTimeout(() => { delete b.dataset.armed; b.innerHTML = '<i class="bi bi-trash"></i>'; b.title = 'Delete category'; }, 3000); }
+    }
+    else if (e.target.closest('[data-rm]')) { const out = await post({action: 'remove_value', id: l.id, value: e.target.closest('[data-rm]').dataset.rm}); if (out.ok) replaceLov(out.lov); }
+    else if (e.target.closest('[data-add]')) addValue(card, l);
+  });
+  $('cards').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-newval]')) { e.preventDefault(); addValue(e.target.closest('[data-id]'), lovOf(e.target)); } });
+  async function addValue(card, l) {
+    const input = card.querySelector('[data-newval]');
+    const out = await post({action: 'add_value', id: l.id, value: input.value});
+    if (!out.ok) return toast(esc(out.error), 'danger');
+    replaceLov(out.lov);
+    const again = document.querySelector(`[data-id="${l.id}"] [data-newval]`); if (again) again.focus();
+  }
+  $('search').addEventListener('input', renderCards); $('fProduces').addEventListener('change', renderCards);
+  $('filterBtn').addEventListener('click', () => { $('filterCard').hidden = !$('filterCard').hidden; if (!$('filterCard').hidden) $('search').focus(); });
+
+  // ---------- configure dialog ----------
+  const cfgModal = new bootstrap.Modal($('cfgModal'));
+  let cfgLov = null;
+  function openCfg(l) {
+    cfgLov = l;
+    $('cfgTitle').textContent = l.name; $('cfgId').value = l.id;
+    $('cfgName').value = l.name; $('cfgAliases').value = l.aliases.join(', '); $('cfgDesc').value = l.description || '';
+    cfgForm(l.produces, l.options);
+    $('cfgError').textContent = '';
+    cfgModal.show();
+  }
+  function cfgForm(produces, options) {
+    $('cfgProduces').innerHTML = producesHtml('c', produces);
+    bindProduces($('cfgProduces'), 'c', p => cfgForm(p, {}));
+    renderCfg($('cfgCfg'), 'c', produces, options || {});
+    cfgPreview();
+  }
+  function cfgData() {
+    const produces = selectedProduces('c');
+    return {id: cfgLov.id, name: $('cfgName').value.trim(), aliases: $('cfgAliases').value, description: $('cfgDesc').value,
+            produces, options: collectCfg($('cfgCfg'), 'c', produces)};
+  }
+  function cfgPreview() { const d = cfgData(); preview('c', d.produces, d.options, cfgLov.values, $('cfgPreview'), $('cfgError')); }
+  $('cfgCfg').addEventListener('input', cfgPreview); $('cfgCfg').addEventListener('change', cfgPreview);
+  $('cfgSave').addEventListener('click', async () => {
+    const out = await post({action: 'save', ...cfgData()});
+    if (!out.ok) { $('cfgError').textContent = out.error; return; }
+    replaceLov(out.lov); cfgModal.hide(); toast(`Category <b>${esc(out.lov.name)}</b> saved.`);
+  });
+
+  // ---------- used unique values ----------
+  const usedModal = new bootstrap.Modal($('usedModal'));
+  async function loadUsed() {
+    const out = await post({action: 'used'});
+    $('usedRows').innerHTML = out.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.project_name)}</td><td class="text-end">${r.used}</td>
+      <td class="text-end"><button type="button" class="btn btn-sm btn-link text-danger p-0" data-reset="${r.lov}" data-project="${r.project || ''}">Reset</button></td></tr>`).join('') || '<tr><td colspan="4" class="text-muted text-center">No unique value has been used yet.</td></tr>';
+    $('usedTotal').textContent = `${out.total} used value(s) total`;
+    data.used_total = out.total; $('usedCnt').textContent = out.total;
+    $('usedRows').querySelectorAll('[data-reset]').forEach(b => b.addEventListener('click', async () => {
+      const r = await post({action: 'reset_used', lov: +b.dataset.reset, project: b.dataset.project ? +b.dataset.project : null});
+      if (r.ok) { toast(`${r.deleted} value(s) released.`); await reload(); loadUsed(); }
+    }));
+  }
+  $('usedBtn').addEventListener('click', () => { usedModal.show(); loadUsed(); });
+  $('usedClear').addEventListener('click', async () => {
+    const b = $('usedClear');
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to clear everything'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Clear all'; }, 3000); return; }
+    const r = await post({action: 'clear_used'});
+    if (r.ok) { toast(`${r.deleted} used value(s) cleared.`, 'warning'); delete b.dataset.armed; b.textContent = 'Clear all'; await reload(); loadUsed(); }
+  });
+
+  // ---------- import ----------
+  const importModal = new bootstrap.Modal($('importModal'));
+  $('importBtn').addEventListener('click', () => { $('importResult').textContent = ''; importModal.show(); });
+  $('importFile').addEventListener('change', () => { const f = $('importFile').files[0]; if (f) f.text().then(t => $('importText').value = t); });
+  $('importRun').addEventListener('click', async () => {
+    const out = await post({action: 'import', text: $('importText').value});
+    if (!out.ok) { $('importResult').innerHTML = `<span class="text-danger">${esc(out.error)}</span>`; return; }
+    $('importResult').innerHTML = `<span class="text-success">${out.created} categor${out.created === 1 ? 'y' : 'ies'} created, ${out.added} value(s) added.</span>` + (out.errors.length ? `<div class="text-danger mt-1">${out.errors.map(esc).join('<br>')}</div>` : '');
+    await reload();
+  });
+
+  // ---------- load ----------
+  async function reload() {
+    data = await (await fetch(URL_DATA)).json();
+    renderFormats(); renderCards();
+  }
+  reload().then(() => newForm('defined', {}));
+})();
+</script>
+{% endblock %}

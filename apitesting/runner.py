@@ -38,10 +38,10 @@ def rows(items):
 
 def resolve_url(url, env):
     url = (url or '').strip()
-    if BASE_URL_VAR in url:
-        if env is None:
-            raise RequestError('The URL uses {{baseUrl}} but no environment is attached to this request.')
+    if env is not None:
         url = env.resolve(url)
+    elif BASE_URL_VAR in url:
+        raise RequestError('The URL uses {{baseUrl}} but no environment is attached to this request.')
     if not url:
         raise RequestError('Enter a request URL.')
     if '://' not in url:

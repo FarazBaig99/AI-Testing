@@ -7,7 +7,7 @@
         {% for e in environments %}<option value="{{ e.pk }}" {% if e.pk == env.pk %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
       </select>
     </div>
-    <span class="small text-muted text-break">Base URL: <code>{{ env.base_url }}</code></span>
+    <span class="small text-muted text-break">URLs: {% for u in env.urls.all %}<code title="{{ u.name }}">{{ u.url }}</code>{% if not forloop.last %}, {% endif %}{% empty %}<i>none yet</i>{% endfor %}</span>
     <a href="{% url 'api_environments' project.pk %}" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-gear"></i> Manage Environments</a>
   </form>
 </div>

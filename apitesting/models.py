@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from django.contrib.auth.models import User
@@ -9,11 +10,24 @@ from projects.models import Project
 BASE_URL_VAR = '{{baseUrl}}'
 
 
+def url_key(name):
+    """Variable name of an environment URL: "Application client" -> applicationClientUrl, "Base URL" -> baseUrl."""
+    words = re.findall(r'[A-Za-z0-9]+', name or '')
+    key = ''.join(w.capitalize() for w in words)
+    key = key[:1].lower() + key[1:] if key else 'url'
+    if not key.lower().endswith('url'):
+        key += 'Url'
+    if key.lower() == 'baseurl':
+        key = 'baseUrl'
+    return key
+
+
 class Environment(models.Model):
-    """A deployment of the project's APIs (QA, UAT, Prod...). APIs, modules and collection URLs live inside one."""
+    """A deployment of the project's APIs (QA, UAT, Prod...). It holds one or more URLs (hosts), e.g. QA has
+    .../application-client and .../backoffice-client; APIs, modules and collection URLs live inside one."""
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='api_environments')
     name = models.CharField(max_length=100)
-    base_url = models.URLField('Base URL', max_length=500)
+    base_url = models.URLField('Base URL', max_length=500, blank=True)      # = the default URL ({{baseUrl}})
     variables = models.JSONField(default=list, blank=True)    # [{key, value, enabled}] for {{name}} and pm.environment
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -24,16 +38,57 @@ class Environment(models.Model):
     def __str__(self):
         return self.name
 
+    def url_vars(self):
+        """{{variable}} -> URL for every URL of the environment; the default one is also {{baseUrl}}."""
+        out = {}
+        if self.base_url:
+            out['baseUrl'] = self.base_url.rstrip('/')
+        for u in self.urls.all():
+            out.setdefault(u.key, u.url.rstrip('/'))
+        return out
+
     def resolve(self, text):
-        """Replace {{baseUrl}} with this environment's base URL."""
-        return text.replace(BASE_URL_VAR, self.base_url.rstrip('/')) if isinstance(text, str) else text
+        """Replace {{baseUrl}} and the other URL variables with this environment's URLs."""
+        if not isinstance(text, str):
+            return text
+        for key, url in self.url_vars().items():
+            text = text.replace('{{' + key + '}}', url)
+        return text
 
     def relativize(self, url):
-        """https://env-base/api/x -> {{baseUrl}}/api/x when the URL belongs to this environment."""
-        base = self.base_url.rstrip('/')
-        if url == base or url.startswith(base + '/'):
-            return BASE_URL_VAR + url[len(base):]
+        """https://env-host/api/x -> {{baseUrl}}/api/x (default URL) or {{otherUrl}}/api/x when the URL belongs to
+        one of this environment's URLs; the longest matching URL wins."""
+        pairs = sorted(self.url_vars().items(), key=lambda kv: -len(kv[1]))
+        default = self.base_url.rstrip('/')
+        for key, base in pairs:
+            if url == base or url.startswith(base + '/'):
+                var = 'baseUrl' if base == default else key
+                return '{{' + var + '}}' + url[len(base):]
         return url
+
+
+class EnvironmentUrl(models.Model):
+    """One host of an environment, used as {{key}} in requests (the default one also as {{baseUrl}})."""
+    environment = models.ForeignKey(Environment, on_delete=models.CASCADE, related_name='urls')
+    name = models.CharField(max_length=100)
+    key = models.CharField(max_length=60)
+    url = models.URLField(max_length=500)
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        unique_together = [('environment', 'name'), ('environment', 'key')]
+
+    def __str__(self):
+        return f'{self.name}: {self.url}'
+
+    def make_default(self):
+        self.environment.urls.exclude(pk=self.pk).update(is_default=False)
+        self.is_default = True
+        self.save(update_fields=['is_default'])
+        self.environment.base_url = self.url.rstrip('/')
+        self.environment.save(update_fields=['base_url'])
 
 
 class CollectionSource(models.Model):

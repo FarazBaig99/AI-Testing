@@ -9,13 +9,11 @@ class EnvironmentForm(StyledForm):
     def __init__(self, *args, project=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.project = project
-        self.fields['name'].widget.attrs['placeholder'] = 'e.g., QA, UAT, Production'
-        self.fields['base_url'].widget.attrs['placeholder'] = 'https://qa-app.example.com/application-server'
-        self.fields['base_url'].help_text = 'APIs on this host are saved as {{baseUrl}}/path, so changing it later moves all of them.'
+        self.fields['name'].widget.attrs['placeholder'] = 'e.g., QA, SIT, UAT, Production, QA01'
 
     class Meta:
         model = Environment
-        fields = ['name', 'base_url']
+        fields = ['name']
 
     def clean_name(self):
         name = self.cleaned_data['name'].strip()
@@ -23,10 +21,6 @@ class EnvironmentForm(StyledForm):
         if clash.exists():
             raise forms.ValidationError('An environment with this name already exists in this project.')
         return name
-
-    def clean_base_url(self):
-        return self.cleaned_data['base_url'].rstrip('/')
-
 
 class ApiTestCaseForm(StyledForm):
     def __init__(self, *args, **kwargs):

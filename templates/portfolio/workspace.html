@@ -268,16 +268,30 @@
     <small class="text-muted d-block mb-3">Environments of {{ project.name }} (DEV, SIT, QA, UAT, PROD, QA01...). Each has its own base URL; its APIs are imported in APIs &amp; Databases, and test runners and API tests run against it.</small>
     <div class="row g-3 mb-3">
       {% for e in environments %}
-      <div class="col-md-6 col-xl-4"><div class="box-plain">
+      <div class="col-md-6"><div class="box-plain">
         <div class="d-flex align-items-start">
           <b>{{ e.name }}</b>
+          <span class="small text-muted ms-2">{{ e.n_cases }} APIs · {{ e.n_results }} test results</span>
           <span class="ms-auto text-nowrap">
-            <a href="{% url 'api_environment_edit' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-muted p-0 me-2" title="Edit"><i class="bi bi-pencil"></i></a>
+            <a href="{% url 'api_environment_edit' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-muted p-0 me-2" title="Rename"><i class="bi bi-pencil"></i></a>
             <a href="{% url 'api_environment_delete' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-danger p-0" title="Delete environment and its APIs"><i class="bi bi-trash"></i></a>
           </span>
         </div>
-        <div class="small font-monospace text-success text-break">{{ e.base_url }}</div>
-        <div class="small text-muted mt-2">{{ e.n_cases }} API test cases · {{ e.n_results }} test results</div>
+        <table class="table table-sm mb-2 mt-2"><tbody>
+          {% for u in e.urls.all %}
+          <tr><td class="small"><b>{{ u.name }}</b>{% if u.is_default %} <span class="badge text-bg-success">default</span>{% endif %}<div class="font-monospace text-success text-break">{{ u.url }}</div>
+              <div class="text-muted">in requests: <code>{% templatetag openvariable %}{% if u.is_default %}baseUrl{% else %}{{ u.key }}{% endif %}{% templatetag closevariable %}</code></div></td>
+            <td class="text-end text-nowrap">
+              {% if not u.is_default %}<form method="post" action="{% url 'api_environment_url_default' project.pk e.pk u.pk %}?next={{ env_tab_url|urlencode }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-link p-0 me-2 text-muted" title="Make this the default URL ({% templatetag openvariable %}baseUrl{% templatetag closevariable %})"><i class="bi bi-star"></i></button></form>{% endif %}
+              <form method="post" action="{% url 'api_environment_url_delete' project.pk e.pk u.pk %}?next={{ env_tab_url|urlencode }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-link p-0 text-danger" title="Remove this URL"><i class="bi bi-x-lg"></i></button></form>
+            </td></tr>
+          {% empty %}<tr><td class="small text-muted" colspan="2">No URL yet. Add the host(s) of this environment below.</td></tr>{% endfor %}
+        </tbody></table>
+        <form method="post" action="{% url 'api_environment_url_add' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="d-flex gap-2">{% csrf_token %}
+          <input name="name" class="form-control form-control-sm" style="max-width:170px" placeholder="Name, e.g. Application client" required>
+          <input name="url" class="form-control form-control-sm" placeholder="https://dev-app.acs.gov.pk/application-client" required>
+          <button class="btn btn-sm btn-outline-pf text-nowrap"><i class="bi bi-plus"></i> Add URL</button>
+        </form>
       </div></div>
       {% empty %}<div class="col-12 small text-muted">No environments yet. Add the first one below.</div>{% endfor %}
     </div>
@@ -285,11 +299,10 @@
       <input type="hidden" name="next" value="{{ env_tab_url }}">
       <div class="box-label mb-2"><i class="bi bi-plus-circle"></i> Add environment</div>
       <div class="row g-2 align-items-end">
-        <div class="col-md-3"><label class="form-label small fw-semibold mb-1">Name</label>{{ env_form.name }}</div>
-        <div class="col-md-6"><label class="form-label small fw-semibold mb-1">Base URL</label>{{ env_form.base_url }}</div>
+        <div class="col-md-4"><label class="form-label small fw-semibold mb-1">Name</label>{{ env_form.name }}</div>
         <div class="col-md-3"><button class="btn btn-sm btn-pf w-100"><i class="bi bi-plus"></i> Add environment</button></div>
       </div>
-      <div class="form-text">{{ env_form.base_url.help_text }}</div>
+      <div class="form-text">Then add the environment's URL(s) on its card: e.g. QA has an application-client URL and a backoffice-client URL. The first URL is the default (<code>{% templatetag openvariable %}baseUrl{% templatetag closevariable %}</code>); every URL has its own variable too.</div>
     </form>
     <div class="small text-muted mt-3"><i class="bi bi-info-circle"></i> Health check, deployed build, connected database and SSL validity are planned in the Environments &amp; Integrations module.</div>
   </div>
@@ -327,11 +340,11 @@
         <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-outline-pf">Open API Testing →</a>
       </div>
     </div>
-    <small class="text-muted d-block mb-3">Every project has its own environments (SIT, QA, Staging, QA01, QA02...). Each one has a base URL and its own APIs: import a collection into it from a Scalar / Swagger / OpenAPI link, a file, or a single cURL.</small>
+    <small class="text-muted d-block mb-3">Every project has its own environments (SIT, QA, Staging, QA01...), each with one or more URLs. Import a collection into an environment from a Scalar / Swagger / OpenAPI link, a file, or a single cURL: the APIs are saved with the matching URL variable.</small>
     <table class="table table-sm align-middle mb-3">
       <thead><tr><th>Environment</th><th>Collection source</th><th class="text-center">Modules</th><th class="text-center">APIs</th><th class="text-center">Pass</th><th class="text-center">Fail</th><th></th></tr></thead>
       <tbody>{% for e in api_envs %}<tr>
-        <td><b>{{ e.name }}</b><div class="small font-monospace text-success text-break">{{ e.base_url }}</div></td>
+        <td><b>{{ e.name }}</b>{% for u in e.urls.all %}<div class="small font-monospace text-success text-break" title="{{ u.name }}">{{ u.url }}</div>{% empty %}<div class="small text-muted">no URL yet</div>{% endfor %}</td>
         <td class="small">{% if e.source %}<span class="text-break">{{ e.source.url }}</span><div class="text-muted">{% if e.source.last_synced_at %}synced {{ e.source.last_synced_at|date:"d M Y H:i" }}{% else %}never synced{% endif %}</div>{% else %}<span class="text-muted">none yet</span>{% endif %}</td>
         <td class="text-center">{{ e.n_folders }}</td><td class="text-center">{{ e.n_cases }}</td>
         <td class="text-center text-success">{{ e.n_pass }}</td><td class="text-center text-danger">{{ e.n_fail }}</td>
@@ -339,6 +352,7 @@
           <a href="{% url 'api_import' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-outline-pf" title="Import an API collection into {{ e.name }}"><i class="bi bi-upload"></i> Import</a>
           {% if e.source and e.source.is_active %}<form method="post" action="{% url 'api_sync' project.pk %}?env={{ e.pk }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-light border" title="Fetch the source again and review the changes"><i class="bi bi-arrow-repeat"></i> Sync</button></form>{% endif %}
           <a href="{% url 'api_home' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-light border" title="Modules and APIs of {{ e.name }}">Open</a>
+          <button type="button" class="btn btn-sm btn-light border" disabled title="Database connections come with the Database Testing module"><i class="bi bi-database"></i> Integrate database</button>
         </td></tr>
       {% empty %}<tr><td colspan="7" class="small text-muted py-3">No environment yet. Add one in <a href="{% url 'portfolio_workspace' project.pk 'environments' %}">Environment Management</a>, then import its APIs here.</td></tr>{% endfor %}</tbody>
     </table>

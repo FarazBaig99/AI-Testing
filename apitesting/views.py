@@ -3,14 +3,16 @@ import shlex
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 from django.utils import timezone
 
 from projects.models import Project
 
 from .forms import ApiTestCaseForm, EnvironmentForm
-from .models import BASE_URL_VAR, ApiFolder, ApiTestCase, CollectionSource, Environment, ImportSession
+from .models import (BASE_URL_VAR, ApiFolder, ApiTestCase, CollectionSource, Environment, EnvironmentUrl, ImportSession,
+                     url_key)
 from .parsers import (CollectionError, fingerprint, load_document, load_from_url, parse_collection, parse_curl,
                       parse_environment)
 
@@ -143,6 +145,57 @@ def api_environment_delete(request, pk, env_id):
                    f'and {env.test_results.count()} test runner results'),
         'back_url': back,
     })
+
+
+@login_required
+@require_POST
+def api_environment_url_add(request, pk, env_id):
+    """Add a URL (host) to an environment: name + URL. The first one becomes the default ({{baseUrl}})."""
+    env = get_object_or_404(Environment, pk=env_id, project_id=pk)
+    back = _safe_next(request) or f'/projects/{pk}/api/environments/'
+    name = request.POST.get('name', '').strip()[:100]
+    url = request.POST.get('url', '').strip().rstrip('/')[:500]
+    if not name or not url:
+        messages.error(request, 'Give the URL a name (e.g. Application client) and the URL itself.')
+        return redirect(back)
+    if '://' not in url:
+        url = 'https://' + url
+    key = url_key(name)
+    if env.urls.filter(Q(name__iexact=name) | Q(key=key)).exists():
+        messages.error(request, f'"{name}" already exists in {env.name}.')
+        return redirect(back)
+    row = EnvironmentUrl.objects.create(environment=env, name=name, key=key, url=url)
+    if not env.urls.filter(is_default=True).exclude(pk=row.pk).exists():
+        row.make_default()
+    messages.success(request, f'URL "{name}" added to {env.name}: use it as {{{{{key}}}}} in requests.')
+    return redirect(back)
+
+
+@login_required
+@require_POST
+def api_environment_url_default(request, pk, env_id, url_id):
+    row = get_object_or_404(EnvironmentUrl, pk=url_id, environment_id=env_id, environment__project_id=pk)
+    row.make_default()
+    messages.success(request, f'"{row.name}" is now the default URL ({{{{baseUrl}}}}) of {row.environment.name}.')
+    return redirect(_safe_next(request) or f'/projects/{pk}/api/environments/')
+
+
+@login_required
+@require_POST
+def api_environment_url_delete(request, pk, env_id, url_id):
+    row = get_object_or_404(EnvironmentUrl, pk=url_id, environment_id=env_id, environment__project_id=pk)
+    env = row.environment
+    was_default = row.is_default
+    row.delete()
+    if was_default:
+        nxt = env.urls.first()
+        if nxt:
+            nxt.make_default()
+        else:
+            env.base_url = ''
+            env.save(update_fields=['base_url'])
+    messages.success(request, f'URL "{row.name}" removed from {env.name}.')
+    return redirect(_safe_next(request) or f'/projects/{pk}/api/environments/')
 
 
 # ---------- import ----------

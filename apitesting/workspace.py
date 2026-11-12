@@ -576,7 +576,8 @@ def api_ws_resolve(request):
     scopes = []
     if env:
         values = scripting.rows_to_dict(env.variables)
-        values.setdefault('baseUrl', env.base_url.rstrip('/'))
+        for key, url in env.url_vars().items():
+            values.setdefault(key, url)
         scopes.append({'scope': 'Environment', 'source': f'{env.project.name} · {env.name}', 'values': values})
     if collection:
         scopes.append({'scope': 'Collection', 'source': collection.name,

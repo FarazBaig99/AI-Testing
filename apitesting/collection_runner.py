@@ -87,7 +87,7 @@ class RunVariables:
             if env.project_id not in self.projects:
                 self.projects[env.project_id] = (env.project, scripting.rows_to_dict(scripting.project_rows(env)))
             held = self.envs[env.pk][1]
-            scopes.environment, scopes.injected = held.environment, held.injected
+            scopes.environment, scopes.injected, scopes.injected_values = held.environment, held.injected, held.injected_values
             scopes.project = self.projects[env.project_id][1]
         scopes.lovs = self.lovs_for(env.project if env is not None else None)
         return scopes

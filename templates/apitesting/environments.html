@@ -23,7 +23,7 @@
         {% for e in environments %}
           <tr>
             <td><b>{{ e.name }}</b> {% if current and e.pk == current.pk %}<span class="badge text-bg-primary">Selected</span>{% endif %}</td>
-            <td class="small font-monospace text-break">{{ e.base_url }}</td>
+            <td class="small font-monospace text-break">{% for u in e.urls.all %}{{ u.url }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
             <td class="text-center">{{ e.n_folders }}</td>
             <td class="text-center">{{ e.n_cases }}</td>
             <td class="text-end text-nowrap">

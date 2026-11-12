@@ -169,9 +169,13 @@ class Scopes:
         self.local = dict(local or {})
         self.lovs = lovs if lovs is not None else lov_module.Registry()     # {{lovName}}: generated per send
         self.injected = set()
-        if env is not None and 'baseUrl' not in self.environment:
-            self.environment['baseUrl'] = env.base_url.rstrip('/')
-            self.injected.add('baseUrl')
+        self.injected_values = {}
+        if env is not None:
+            for key, url in env.url_vars().items():       # {{baseUrl}} and the environment's other URLs
+                if key not in self.environment:
+                    self.environment[key] = url
+                    self.injected.add(key)
+                    self.injected_values[key] = url
 
     def lookup(self, name):
         for scope in (self.local, self.environment, self.collection, self.project, self.globals):
@@ -268,7 +272,7 @@ def save_scopes(scopes, env=None, collection=None, save_globals=True, save_proje
     from .models import ApiGlobals
     if env is not None:
         values = {k: v for k, v in scopes.environment.items()
-                  if k not in scopes.injected or v != env.base_url.rstrip('/')}
+                  if k not in scopes.injected or v != scopes.injected_values.get(k)}
         rows = dict_to_rows(values, env.variables)
         if rows != env.variables:
             env.variables = rows

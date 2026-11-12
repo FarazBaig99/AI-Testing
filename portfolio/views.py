@@ -272,8 +272,12 @@ def _tab_context(request, project, tab, results):
         return {'members': [m for m in members if not role or m.role == role], 'n_members': len(members),
                 'by_role': by_role, 'role': role}
     if tab == 'environments':
+        env_form = EnvironmentForm(project=project)
+        for f in env_form.fields.values():
+            f.widget.attrs['class'] = 'form-control form-control-sm'
         return {'environments': project.api_environments.annotate(
-            n_cases=Count('test_cases', distinct=True), n_results=Count('test_results', distinct=True))}
+            n_cases=Count('test_cases', distinct=True), n_results=Count('test_results', distinct=True)),
+            'env_form': env_form}
     if tab == 'modules':
         modules = project.modules.filter(parent__isnull=True).prefetch_related('children').annotate(
             n_cases=Count('test_cases', distinct=True))
@@ -300,10 +304,7 @@ def _tab_context(request, project, tab, results):
             sources.setdefault(s.environment_id, s)       # the active (or latest) source of each environment
         for e in envs:
             e.source = sources.get(e.pk)
-        env_form = EnvironmentForm(project=project)
-        for f in env_form.fields.values():
-            f.widget.attrs['class'] = 'form-control form-control-sm'
-        return {'api_envs': envs, 'env_form': env_form}
+        return {'api_envs': envs}
     if tab == 'lifecycle':
         return {'status_form': StatusChangeForm(project=project), 'statuses': Project.STATUSES,
                 'transitions': Project.TRANSITIONS,

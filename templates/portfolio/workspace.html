@@ -259,21 +259,38 @@
 
   {# ---------- 6. environments ---------- #}
   {% elif tab == 'environments' %}
+  {% url 'portfolio_workspace' project.pk 'environments' as env_tab_url %}
   <div class="panel">
     <div class="d-flex align-items-center mb-1">
       <h6 class="mb-0"><i class="bi bi-hdd-network text-success"></i> Project-Scoped Environment Infrastructure</h6>
-      <a href="{% url 'api_environments' project.pk %}" class="btn btn-sm btn-pf ms-auto">Manage Environments →</a>
+      <a href="{% url 'portfolio_workspace' project.pk 'apis' %}" class="btn btn-sm btn-outline-pf ms-auto">APIs &amp; Databases →</a>
     </div>
-    <small class="text-muted d-block mb-3">Environments of {{ project.name }} (DEV, SIT, QA, UAT, PROD...). Test runners and API tests run against these.</small>
-    <div class="row g-3">
+    <small class="text-muted d-block mb-3">Environments of {{ project.name }} (DEV, SIT, QA, UAT, PROD, QA01...). Each has its own base URL; its APIs are imported in APIs &amp; Databases, and test runners and API tests run against it.</small>
+    <div class="row g-3 mb-3">
       {% for e in environments %}
       <div class="col-md-6 col-xl-4"><div class="box-plain">
-        <b>{{ e.name }}</b>
+        <div class="d-flex align-items-start">
+          <b>{{ e.name }}</b>
+          <span class="ms-auto text-nowrap">
+            <a href="{% url 'api_environment_edit' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-muted p-0 me-2" title="Edit"><i class="bi bi-pencil"></i></a>
+            <a href="{% url 'api_environment_delete' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-danger p-0" title="Delete environment and its APIs"><i class="bi bi-trash"></i></a>
+          </span>
+        </div>
         <div class="small font-monospace text-success text-break">{{ e.base_url }}</div>
         <div class="small text-muted mt-2">{{ e.n_cases }} API test cases · {{ e.n_results }} test results</div>
       </div></div>
-      {% empty %}<div class="col-12 small text-muted">No environments yet. <a href="{% url 'api_environments' project.pk %}">Add the first one</a>.</div>{% endfor %}
+      {% empty %}<div class="col-12 small text-muted">No environments yet. Add the first one below.</div>{% endfor %}
     </div>
+    <form method="post" action="{% url 'api_environments' project.pk %}" class="box-plain">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ env_tab_url }}">
+      <div class="box-label mb-2"><i class="bi bi-plus-circle"></i> Add environment</div>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3"><label class="form-label small fw-semibold mb-1">Name</label>{{ env_form.name }}</div>
+        <div class="col-md-6"><label class="form-label small fw-semibold mb-1">Base URL</label>{{ env_form.base_url }}</div>
+        <div class="col-md-3"><button class="btn btn-sm btn-pf w-100"><i class="bi bi-plus"></i> Add environment</button></div>
+      </div>
+      <div class="form-text">{{ env_form.base_url.help_text }}</div>
+    </form>
     <div class="small text-muted mt-3"><i class="bi bi-info-circle"></i> Health check, deployed build, connected database and SSL validity are planned in the Environments &amp; Integrations module.</div>
   </div>
 
@@ -322,21 +339,10 @@
           <a href="{% url 'api_import' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-outline-pf" title="Import an API collection into {{ e.name }}"><i class="bi bi-upload"></i> Import</a>
           {% if e.source and e.source.is_active %}<form method="post" action="{% url 'api_sync' project.pk %}?env={{ e.pk }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-light border" title="Fetch the source again and review the changes"><i class="bi bi-arrow-repeat"></i> Sync</button></form>{% endif %}
           <a href="{% url 'api_home' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-light border" title="Modules and APIs of {{ e.name }}">Open</a>
-          <a href="{% url 'api_environment_edit' project.pk e.pk %}?next={{ apis_tab_url|urlencode }}" class="btn btn-sm btn-link text-muted" title="Edit"><i class="bi bi-pencil"></i></a>
-          <a href="{% url 'api_environment_delete' project.pk e.pk %}?next={{ apis_tab_url|urlencode }}" class="btn btn-sm btn-link text-danger" title="Delete environment and its APIs"><i class="bi bi-trash"></i></a>
         </td></tr>
-      {% empty %}<tr><td colspan="7" class="small text-muted py-3">No environment yet. Add the first one below, then import its APIs.</td></tr>{% endfor %}</tbody>
+      {% empty %}<tr><td colspan="7" class="small text-muted py-3">No environment yet. Add one in <a href="{% url 'portfolio_workspace' project.pk 'environments' %}">Environment Management</a>, then import its APIs here.</td></tr>{% endfor %}</tbody>
     </table>
-    <form method="post" action="{% url 'api_environments' project.pk %}" class="box-plain">{% csrf_token %}
-      <input type="hidden" name="next" value="{{ apis_tab_url }}">
-      <div class="box-label mb-2"><i class="bi bi-plus-circle"></i> Add environment</div>
-      <div class="row g-2 align-items-end">
-        <div class="col-md-3"><label class="form-label small fw-semibold mb-1">Name</label>{{ env_form.name }}<div class="text-danger small">{{ env_form.name.errors|join:" " }}</div></div>
-        <div class="col-md-6"><label class="form-label small fw-semibold mb-1">Base URL</label>{{ env_form.base_url }}<div class="text-danger small">{{ env_form.base_url.errors|join:" " }}</div></div>
-        <div class="col-md-3"><button class="btn btn-sm btn-pf w-100"><i class="bi bi-plus"></i> Add environment</button></div>
-      </div>
-      <div class="form-text">{{ env_form.base_url.help_text }}</div>
-    </form>
+    <div class="small text-muted"><i class="bi bi-info-circle"></i> Environments are added and edited in <a href="{% url 'portfolio_workspace' project.pk 'environments' %}">Environment Management</a>.</div>
   </div>
   <div class="panel text-center py-4">
     <i class="bi bi-database fs-2 text-secondary"></i>

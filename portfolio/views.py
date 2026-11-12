@@ -287,6 +287,7 @@ def _tab_context(request, project, tab, results):
                 rows.append(u)
             e.url_rows = rows
             e.last_import = e.sources.filter(last_synced_at__isnull=False).order_by('-last_synced_at').first()
+            e.active_source = e.sources.filter(is_active=True).first()      # the link Sync fetches again
         return {'environments': envs, 'env_form': env_form}
     if tab == 'modules':
         modules = project.modules.filter(parent__isnull=True).prefetch_related('children').annotate(

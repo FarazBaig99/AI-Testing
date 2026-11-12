@@ -271,10 +271,12 @@
       <div class="col-md-6"><div class="box-plain">
         <div class="d-flex align-items-start">
           <b>{{ e.name }}</b>
-          {% if e.n_cases %}<span class="badge text-bg-success ms-2" title="{{ e.n_cases }} APIs in {{ e.n_folders }} modules{% if e.last_import %}, last import {{ e.last_import.last_synced_at|date:'d M Y H:i' }}{% endif %}"><i class="bi bi-check2-circle"></i> {{ e.n_cases }} APIs added</span>
+          {% if e.n_cases %}<span class="badge text-bg-success ms-2" title="{{ e.n_folders }} modules"><i class="bi bi-check2-circle"></i> APIs added · total {{ e.n_cases }}</span>
           {% else %}<span class="badge text-bg-light border text-muted ms-2">No APIs yet</span>{% endif %}
-          <span class="small text-muted ms-2">{{ e.n_results }} test results</span>
+          {% if e.last_import %}<span class="small text-muted ms-2" title="{{ e.last_import.url }}">last sync {{ e.last_import.last_synced_at|date:'d M Y H:i' }}</span>{% endif %}
           <span class="ms-auto text-nowrap">
+            {% if e.active_source %}<form method="post" action="{% url 'api_sync' project.pk %}?env={{ e.pk }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-link text-success p-0 me-2" title="Sync: fetch {{ e.active_source.url }} again and review the new or changed APIs"><i class="bi bi-arrow-repeat"></i></button></form>
+            {% else %}<a href="{% url 'api_import' project.pk %}?env={{ e.pk }}&tab=link" class="btn btn-sm btn-link text-muted p-0 me-2" title="No collection link yet: import the APIs first, then Sync brings the new ones"><i class="bi bi-arrow-repeat"></i></a>{% endif %}
             <a href="{% url 'api_environment_edit' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-muted p-0 me-2" title="Rename"><i class="bi bi-pencil"></i></a>
             <a href="{% url 'api_environment_delete' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-danger p-0" title="Delete environment and its APIs"><i class="bi bi-trash"></i></a>
           </span>

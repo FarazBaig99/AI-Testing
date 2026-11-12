@@ -271,15 +271,18 @@
       <div class="col-md-6"><div class="box-plain">
         <div class="d-flex align-items-start">
           <b>{{ e.name }}</b>
-          <span class="small text-muted ms-2">{{ e.n_cases }} APIs · {{ e.n_results }} test results</span>
+          {% if e.n_cases %}<span class="badge text-bg-success ms-2" title="{{ e.n_cases }} APIs in {{ e.n_folders }} modules{% if e.last_import %}, last import {{ e.last_import.last_synced_at|date:'d M Y H:i' }}{% endif %}"><i class="bi bi-check2-circle"></i> {{ e.n_cases }} APIs added</span>
+          {% else %}<span class="badge text-bg-light border text-muted ms-2">No APIs yet</span>{% endif %}
+          <span class="small text-muted ms-2">{{ e.n_results }} test results</span>
           <span class="ms-auto text-nowrap">
             <a href="{% url 'api_environment_edit' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-muted p-0 me-2" title="Rename"><i class="bi bi-pencil"></i></a>
             <a href="{% url 'api_environment_delete' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-danger p-0" title="Delete environment and its APIs"><i class="bi bi-trash"></i></a>
           </span>
         </div>
         <table class="table table-sm mb-2 mt-2"><tbody>
-          {% for u in e.urls.all %}
-          <tr><td class="small"><b>{{ u.name }}</b>{% if u.is_default %} <span class="badge text-bg-success">default</span>{% endif %}<div class="font-monospace text-success text-break">{{ u.url }}</div>
+          {% for u in e.url_rows %}
+          <tr><td class="small"><b>{{ u.name }}</b>{% if u.is_default %} <span class="badge text-bg-success">default</span>{% endif %}
+              <span class="text-muted ms-1">· {% if u.n_cases %}{{ u.n_cases }} API{{ u.n_cases|pluralize }}{% else %}no APIs{% endif %}</span><div class="font-monospace text-success text-break">{{ u.url }}</div>
               <div class="text-muted">in requests: <code>{% templatetag openvariable %}{% if u.is_default %}baseUrl{% else %}{{ u.key }}{% endif %}{% templatetag closevariable %}</code></div></td>
             <td class="text-end text-nowrap">
               {% if not u.is_default %}<form method="post" action="{% url 'api_environment_url_default' project.pk e.pk u.pk %}?next={{ env_tab_url|urlencode }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-link p-0 me-2 text-muted" title="Make this the default URL ({% templatetag openvariable %}baseUrl{% templatetag closevariable %})"><i class="bi bi-star"></i></button></form>{% endif %}
@@ -287,6 +290,7 @@
             </td></tr>
           {% empty %}<tr><td class="small text-muted" colspan="2">No URL yet. Add the host(s) of this environment below.</td></tr>{% endfor %}
         </tbody></table>
+        {% if not e.n_cases %}<div class="small text-muted mb-2">Import this environment's APIs in <a href="{% url 'portfolio_workspace' project.pk 'apis' %}">APIs &amp; Databases</a>.</div>{% endif %}
         <form method="post" action="{% url 'api_environment_url_add' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="d-flex gap-2">{% csrf_token %}
           <input name="name" class="form-control form-control-sm" style="max-width:170px" placeholder="Name, e.g. Application client" required>
           <input name="url" class="form-control form-control-sm" placeholder="https://dev-app.acs.gov.pk/application-client" required>

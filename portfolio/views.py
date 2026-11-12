@@ -275,9 +275,19 @@ def _tab_context(request, project, tab, results):
         env_form = EnvironmentForm(project=project)
         for f in env_form.fields.values():
             f.widget.attrs['class'] = 'form-control form-control-sm'
-        return {'environments': project.api_environments.annotate(
-            n_cases=Count('test_cases', distinct=True), n_results=Count('test_results', distinct=True)),
-            'env_form': env_form}
+        envs = list(project.api_environments.annotate(
+            n_cases=Count('test_cases', distinct=True), n_results=Count('test_results', distinct=True),
+            n_folders=Count('folders', distinct=True)))
+        for e in envs:
+            # how many APIs each URL of the environment holds ({{baseUrl}}/... or {{otherUrl}}/...)
+            rows = []
+            for u in e.urls.all():
+                var = 'baseUrl' if u.is_default else u.key
+                u.n_cases = e.test_cases.filter(url__startswith='{{' + var + '}}').count()
+                rows.append(u)
+            e.url_rows = rows
+            e.last_import = e.sources.filter(last_synced_at__isnull=False).order_by('-last_synced_at').first()
+        return {'environments': envs, 'env_form': env_form}
     if tab == 'modules':
         modules = project.modules.filter(parent__isnull=True).prefetch_related('children').annotate(
             n_cases=Count('test_cases', distinct=True))

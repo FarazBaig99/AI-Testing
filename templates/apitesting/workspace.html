@@ -480,7 +480,7 @@
   <div class="modal-body">
     <p class="small text-muted mb-3">An LOV is a value that is <b>generated fresh on every send</b>: a random name or email, a number or text of a given length,
       today's date (plus or minus days), a counter, a pick from a list... Use it like a variable, <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code>, in the URL, path and query params, headers or body
-      of a POST / PUT / PATCH. The same LOV used twice in one request gets the same value. The values used are shown in the response <b>Console</b> tab.</p>
+      of a POST / PUT / PATCH, in every project and environment. The same LOV used twice in one request gets the same value. The values used are shown in the response <b>Console</b> tab.</p>
     <div class="row g-3">
       <div class="col-lg-5">
         <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Your LOVs</h6>
@@ -493,8 +493,7 @@
           <div class="row g-2">
             <div class="col-sm-6"><label>Name (used as <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code>)</label>
               <input id="lovName" class="form-control form-control-sm" maxlength="200" placeholder="e.g. randomEmail"></div>
-            <div class="col-sm-6"><label>Works in</label><select id="lovProject" class="form-select form-select-sm"></select></div>
-            <div class="col-12"><label>Type</label><select id="lovKind" class="form-select form-select-sm"></select></div>
+            <div class="col-sm-6"><label>Type</label><select id="lovKind" class="form-select form-select-sm"></select></div>
           </div>
           <div class="row g-2 mt-1" id="lovOptions"></div>
           <div class="row g-2 mt-1">
@@ -1473,7 +1472,7 @@
 
   // ---------- LOV: generated values ----------
   const lovModal = new bootstrap.Modal($('lovModal'));
-  let lovData = {lovs: [], kinds: [], projects: [], common: []};
+  let lovData = {lovs: [], kinds: [], common: []};
   const lovKind = () => lovData.kinds.find(k => k.kind === $('lovKind').value) || {options: []};
   async function lovPost(body) {
     const res = await fetch(URLS.lov, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
@@ -1484,7 +1483,7 @@
     if (!lovData.lovs.length) { list.innerHTML = '<div class="text-muted small p-3 text-center">No LOV yet. Press New LOV to make one, e.g. a random email or a date.</div>'; return; }
     list.innerHTML = lovData.lovs.map(l => `<div class="lov-row${l.enabled ? '' : ' off'}" data-id="${l.id}">
         <div style="min-width:0;flex:1">
-          <div><span class="lov-name" title="Click to edit">${esc(l.name)}</span> <span class="lov-kind">${esc(l.kind_label)} · ${l.project_name ? esc(l.project_name) : 'all projects'}</span></div>
+          <div><span class="lov-name" title="Click to edit">${esc(l.name)}</span> <span class="lov-kind">${esc(l.kind_label)}</span></div>
           <div class="lov-ex" title="${esc(l.examples.join('  |  '))}">${esc(l.examples.join('  |  '))}</div>
         </div>
         <button type="button" class="btn btn-sm btn-link text-muted" data-copy title="Copy ${O}${esc(l.name)}${C}"><i class="bi bi-clipboard"></i></button>
@@ -1506,8 +1505,6 @@
     $('lovForm').hidden = false; $('lovEmpty').hidden = true;
     $('lovId').value = l ? l.id : '';
     $('lovName').value = l ? l.name : '';
-    $('lovProject').innerHTML = `<option value="">All projects</option>` + lovData.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
-    $('lovProject').value = l && l.project ? String(l.project) : '';
     $('lovKind').innerHTML = lovData.kinds.map(k => `<option value="${k.kind}">${esc(k.label)}</option>`).join('');
     $('lovKind').value = l ? l.kind : 'name';
     lovRenderOptions(l ? l.options : {});
@@ -1523,7 +1520,7 @@
   function lovCollect() {
     const options = {};
     lovKind().options.concat(lovData.common).forEach(o => { const f = $(`lov_${o.key}`); if (f) options[o.key] = f.value; });
-    return {id: $('lovId').value || null, name: $('lovName').value.trim(), kind: $('lovKind').value, project: $('lovProject').value || null, options};
+    return {id: $('lovId').value || null, name: $('lovName').value.trim(), kind: $('lovKind').value, options};
   }
   let lovPreviewTimer = null;
   function lovPreview() {
@@ -1547,7 +1544,7 @@
   $('lovNew').addEventListener('click', () => lovShowForm(null));
   $('lovCancel').addEventListener('click', () => { $('lovForm').hidden = true; $('lovEmpty').hidden = false; });
   $('lovKind').addEventListener('change', () => { lovRenderOptions({}); lovPreview(); });
-  $('lovForm').addEventListener('input', e => { if (e.target.id !== 'lovName' && e.target.id !== 'lovProject') lovPreview(); });
+  $('lovForm').addEventListener('input', e => { if (e.target.id !== 'lovName') lovPreview(); });
   $('lovList').addEventListener('click', async e => {
     const row = e.target.closest('.lov-row');
     if (!row) return;

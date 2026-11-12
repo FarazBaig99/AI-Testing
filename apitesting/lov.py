@@ -204,19 +204,16 @@ def generate(lov):
 
 
 class Registry:
-    """The LOVs a request can use (all projects + its project), each generated once per send."""
+    """The enabled LOVs, each generated once per send."""
 
     def __init__(self, lovs=()):
         self.lovs = {l.name: l for l in lovs}
         self.values = {}
 
     @classmethod
-    def for_project(cls, project=None):
+    def load(cls):
         from .models import ApiLov
-        from django.db.models import Q
-        qs = ApiLov.objects.filter(enabled=True)
-        qs = qs.filter(Q(project=None) | Q(project=project)) if project is not None else qs.filter(project=None)
-        return cls(qs)
+        return cls(ApiLov.objects.filter(enabled=True))
 
     def __contains__(self, name):
         return name in self.lovs

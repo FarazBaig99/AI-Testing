@@ -7,7 +7,7 @@ from datetime import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import F, Max, Q
+from django.db.models import F, Max
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -583,7 +583,7 @@ def api_ws_resolve(request):
         scopes.append({'scope': 'Project', 'source': env.project.name,
                        'values': scripting.rows_to_dict(scripting.project_rows(env))})
     scopes.append({'scope': 'Global', 'source': 'Globals', 'values': scripting.rows_to_dict(ApiGlobals.load().variables)})
-    lovs = lov.Registry.for_project(env.project if env else None).lovs.values()
+    lovs = lov.Registry.load().lovs.values()
     scopes.append({'scope': 'LOV', 'source': 'LOV',
                    'values': {l.name: lov.example(l.kind, l.options, 1)[0] for l in lovs},
                    'kinds': {l.name: lov.KINDS.get(l.kind, (l.kind,))[0] for l in lovs}})
@@ -790,8 +790,7 @@ def api_ws_save(request):
 
 def _lov_brief(l):
     return {'id': l.pk, 'name': l.name, 'kind': l.kind, 'kind_label': lov.KINDS.get(l.kind, (l.kind,))[0],
-            'options': lov.clean_options(l.kind, l.options), 'project': l.project_id,
-            'project_name': l.project.name if l.project else '', 'enabled': l.enabled,
+            'options': lov.clean_options(l.kind, l.options), 'enabled': l.enabled,
             'examples': lov.example(l.kind, l.options, 3)}
 
 
@@ -813,7 +812,7 @@ def _lov_name_taken(name, exclude_pk=None):
 
 @login_required
 def api_ws_lov(request):
-    """GET: the LOVs of the selected projects (and the project-less ones) with the kind catalogue.
+    """GET: every LOV with the kind catalogue.
     POST {action: save|delete|preview, ...}: keep an LOV, remove it, or preview values of a kind + options."""
     if request.method == 'POST':
         try:
@@ -847,18 +846,13 @@ def api_ws_lov(request):
         if taken:
             return JsonResponse({'ok': False, 'duplicate': True,
                                  'error': f'"{name}" is already used by ' + ', '.join(taken) + '. Choose another name.'})
-        project = Project.objects.filter(pk=data.get('project') or 0).first()
         if l.pk and (l.name != name or l.kind != kind):
             l.state = {}                                   # a renamed / retyped LOV starts counting again
-        l.name, l.kind, l.options, l.project = name, kind, lov.clean_options(kind, data.get('options')), project
+        l.name, l.kind, l.options = name, kind, lov.clean_options(kind, data.get('options'))
         l.save()
         return JsonResponse({'ok': True, 'lov': _lov_brief(l)})
-    selection = get_selection(request)
-    projects = Project.objects.filter(pk__in=selection).order_by('name')
-    lovs = ApiLov.objects.select_related('project').filter(Q(project=None) | Q(project__in=projects))
     return JsonResponse({
-        'lovs': [_lov_brief(l) for l in lovs],
-        'projects': [{'id': p.pk, 'name': p.name} for p in projects],
+        'lovs': [_lov_brief(l) for l in ApiLov.objects.all()],
         'kinds': [{'kind': k, 'label': label, 'options': [{'key': key, 'type': typ, 'default': default, 'help': help_}
                                                           for key, typ, default, help_ in opts]}
                   for k, (label, opts) in lov.KINDS.items()],

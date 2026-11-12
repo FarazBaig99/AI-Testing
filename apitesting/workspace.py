@@ -7,7 +7,7 @@ from datetime import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import F, Max
+from django.db.models import F, Max, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -16,9 +16,9 @@ from django.views.decorators.http import require_POST
 
 from projects.models import Project
 
-from . import auth, runner, scripting
+from . import auth, lov, runner, scripting
 from .parsers import is_empty_body
-from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiTestCase, AuthProfile, ProjectVariables,
+from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiLov, ApiTestCase, AuthProfile, ProjectVariables,
                      CollectionRequest, Environment)
 
 SESSION_KEY = 'api_ws'
@@ -354,7 +354,8 @@ def api_ws_send(request, opener=None, login_opener=None):
     if item and result.get('ok'):
         item.last_status, item.last_ms, item.last_run_at = result['status'], result['ms'], timezone.now()
         item.save(update_fields=['last_status', 'last_ms', 'last_run_at'])
-    return JsonResponse(dict(result, tests=out['tests'], console=out['console'], script_errors=out['errors']))
+    return JsonResponse(dict(result, tests=out['tests'], console=out['console'], script_errors=out['errors'],
+                             lov=out.get('lov', {})))
 
 
 # ---------- variables and collection settings ----------
@@ -582,6 +583,10 @@ def api_ws_resolve(request):
         scopes.append({'scope': 'Project', 'source': env.project.name,
                        'values': scripting.rows_to_dict(scripting.project_rows(env))})
     scopes.append({'scope': 'Global', 'source': 'Globals', 'values': scripting.rows_to_dict(ApiGlobals.load().variables)})
+    lovs = lov.Registry.for_project(env.project if env else None).lovs.values()
+    scopes.append({'scope': 'LOV', 'source': 'LOV',
+                   'values': {l.name: lov.example(l.kind, l.options, 1)[0] for l in lovs},
+                   'kinds': {l.name: lov.KINDS.get(l.kind, (l.kind,))[0] for l in lovs}})
     return JsonResponse({'scopes': scopes})
 
 
@@ -633,6 +638,8 @@ def api_ws_variable_set(request):
         if row is not None:
             found.append({'scope': other_scope, 'label': other_label, 'value': str(row.get('value', ''))[:200],
                           'same': other_scope == scope})
+    if ApiLov.objects.filter(name=key).exists():
+        found.append({'scope': 'lov', 'label': 'LOV', 'value': 'generated on every send', 'same': False})
     if found and not data.get('overwrite'):
         same = [f for f in found if f['same']]
         msg = (f'"{key}" already exists in {same[0]["label"]} (value: {same[0]["value"] or "empty"}).' if same
@@ -777,3 +784,83 @@ def api_ws_save(request):
     item.save()
     return JsonResponse({'ok': True, 'item': item.pk, 'collection': item.collection_id,
                          'collection_name': item.collection.name})
+
+
+# ---------- LOV: generated values ----------
+
+def _lov_brief(l):
+    return {'id': l.pk, 'name': l.name, 'kind': l.kind, 'kind_label': lov.KINDS.get(l.kind, (l.kind,))[0],
+            'options': lov.clean_options(l.kind, l.options), 'project': l.project_id,
+            'project_name': l.project.name if l.project else '', 'enabled': l.enabled,
+            'examples': lov.example(l.kind, l.options, 3)}
+
+
+def _lov_name_taken(name, exclude_pk=None):
+    """Where a variable with this name already exists (an LOV must not shadow or be shadowed by one)."""
+    taken = []
+    if ApiLov.objects.filter(name=name).exclude(pk=exclude_pk or 0).exists():
+        taken.append('another LOV')
+    if any(r.get('key') == name for r in ApiGlobals.load().variables):
+        taken.append('Globals')
+    for pv in ProjectVariables.objects.select_related('project'):
+        if any(r.get('key') == name for r in pv.variables):
+            taken.append(f'project {pv.project.name}')
+    for env in Environment.objects.select_related('project'):
+        if any(r.get('key') == name for r in env.variables):
+            taken.append(f'environment {env.project.name} · {env.name}')
+    return taken
+
+
+@login_required
+def api_ws_lov(request):
+    """GET: the LOVs of the selected projects (and the project-less ones) with the kind catalogue.
+    POST {action: save|delete|preview, ...}: keep an LOV, remove it, or preview values of a kind + options."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body or b'{}')
+        except ValueError:
+            return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+        action = data.get('action')
+        kind = str(data.get('kind') or '')
+        if action == 'preview':
+            error = lov.validate(kind, data.get('options'))
+            return JsonResponse({'ok': not error, 'error': error,
+                                 'examples': [] if error else lov.example(kind, data.get('options'), 3)})
+        if action == 'delete':
+            ApiLov.objects.filter(pk=data.get('id') or 0).delete()
+            return JsonResponse({'ok': True})
+        if action == 'toggle':
+            l = get_object_or_404(ApiLov, pk=data.get('id') or 0)
+            l.enabled = not l.enabled
+            l.save(update_fields=['enabled'])
+            return JsonResponse({'ok': True, 'lov': _lov_brief(l)})
+        if action != 'save':
+            return JsonResponse({'ok': False, 'error': 'Unknown action.'}, status=400)
+        name = str(data.get('name') or '').strip()
+        if not lov.NAME_RE.match(name) or name.startswith('$'):
+            return JsonResponse({'ok': False, 'error': 'LOV name: letters, digits, dot, dash or underscore only.'})
+        error = lov.validate(kind, data.get('options'))
+        if error:
+            return JsonResponse({'ok': False, 'error': error})
+        l = ApiLov.objects.filter(pk=data.get('id') or 0).first() or ApiLov(created_by=request.user)
+        taken = _lov_name_taken(name, l.pk)
+        if taken:
+            return JsonResponse({'ok': False, 'duplicate': True,
+                                 'error': f'"{name}" is already used by ' + ', '.join(taken) + '. Choose another name.'})
+        project = Project.objects.filter(pk=data.get('project') or 0).first()
+        if l.pk and (l.name != name or l.kind != kind):
+            l.state = {}                                   # a renamed / retyped LOV starts counting again
+        l.name, l.kind, l.options, l.project = name, kind, lov.clean_options(kind, data.get('options')), project
+        l.save()
+        return JsonResponse({'ok': True, 'lov': _lov_brief(l)})
+    selection = get_selection(request)
+    projects = Project.objects.filter(pk__in=selection).order_by('name')
+    lovs = ApiLov.objects.select_related('project').filter(Q(project=None) | Q(project__in=projects))
+    return JsonResponse({
+        'lovs': [_lov_brief(l) for l in lovs],
+        'projects': [{'id': p.pk, 'name': p.name} for p in projects],
+        'kinds': [{'kind': k, 'label': label, 'options': [{'key': key, 'type': typ, 'default': default, 'help': help_}
+                                                          for key, typ, default, help_ in opts]}
+                  for k, (label, opts) in lov.KINDS.items()],
+        'common': [{'key': key, 'type': typ, 'default': default, 'help': help_} for key, typ, default, help_ in lov.COMMON_OPTIONS],
+    })

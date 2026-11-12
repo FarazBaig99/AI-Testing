@@ -245,8 +245,8 @@ function runEvent(msg) {
   const tests = [], consoleLines = [], errors = [];
   const vars = msg.vars || {};
   const environment = scope(vars.environment), collection = scope(vars.collection), globals = scope(vars.globals);
-  const project = scope(vars.project), local = scope(vars.local);
-  const resolve = k => [local, environment, collection, project, globals].map(s => s._values).find(v => Object.prototype.hasOwnProperty.call(v, k));
+  const project = scope(vars.project), local = scope(vars.local), lov = scope(vars.lov);
+  const resolve = k => [local, environment, collection, project, globals, lov].map(s => s._values).find(v => Object.prototype.hasOwnProperty.call(v, k));
   const variables = {
     get: k => { const s = resolve(k); return s ? s[k] : undefined; },
     set: (k, v) => local.set(k, v),

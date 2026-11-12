@@ -18,7 +18,7 @@ from pathlib import Path
 
 from django.conf import settings
 
-from . import runner
+from . import lov as lov_module, runner
 
 SANDBOX = Path(__file__).resolve().parent / 'js' / 'sandbox.js'
 ENGINE_TIMEOUT = 15          # seconds for one script event, Node start included
@@ -160,12 +160,14 @@ class Scopes:
 
     Project variables work in every environment of the project; globals everywhere."""
 
-    def __init__(self, environment=None, collection=None, globals_=None, local=None, env=None, project=None):
+    def __init__(self, environment=None, collection=None, globals_=None, local=None, env=None, project=None,
+                 lovs=None):
         self.environment = dict(environment or {})
         self.collection = dict(collection or {})
         self.project = dict(project or {})
         self.globals = dict(globals_ or {})
         self.local = dict(local or {})
+        self.lovs = lovs if lovs is not None else lov_module.Registry()     # {{lovName}}: generated per send
         self.injected = set()
         if env is not None and 'baseUrl' not in self.environment:
             self.environment['baseUrl'] = env.base_url.rstrip('/')
@@ -176,7 +178,29 @@ class Scopes:
             if name in scope:
                 value = scope[name]
                 return value if isinstance(value, str) else json.dumps(value)
+        if name in self.lovs:
+            return self.lovs.value(name)
         return dynamic_value(name)
+
+    def prepare_lovs(self, spec):
+        """Generate the LOVs the spec mentions, so scripts see the same values the request is sent with."""
+        self.lovs.reset()
+        names = set()
+
+        def walk(value):
+            if isinstance(value, str):
+                names.update(m.group(1) for m in VAR_RE.finditer(value))
+            elif isinstance(value, list):
+                for v in value:
+                    walk(v)
+            elif isinstance(value, dict):
+                for v in value.values():
+                    walk(v)
+        walk(spec)
+        for name in names:
+            if name in self.lovs:
+                self.lookup(name)          # a variable of the same name wins; otherwise the LOV is generated now
+        return self.lovs.used()
 
     def substitute(self, value, depth=0):
         if isinstance(value, str):
@@ -198,7 +222,7 @@ class Scopes:
     def for_script(self):
         env = {k: v for k, v in self.environment.items()}
         return {'environment': env, 'collection': self.collection, 'project': self.project, 'globals': self.globals,
-                'local': self.local}
+                'local': self.local, 'lov': self.lovs.used()}
 
     def update(self, values):
         if not values:
@@ -224,7 +248,8 @@ def load_scopes(env=None, collection=None, globals_obj=None):
     from .models import ApiGlobals
     globals_obj = globals_obj or ApiGlobals.load()
     return Scopes(rows_to_dict(env.variables) if env else {}, rows_to_dict(collection.variables) if collection else {},
-                  rows_to_dict(globals_obj.variables), env=env, project=rows_to_dict(project_rows(env)))
+                  rows_to_dict(globals_obj.variables), env=env, project=rows_to_dict(project_rows(env)),
+                  lovs=lov_module.Registry.for_project(env.project if env else None))
 
 
 def save_project_scope(values, project):
@@ -319,7 +344,7 @@ def execute(spec, env, scopes, engine, collection=None, send=None, files=None, i
     """
     send = send or runner.send
     info = info or {}
-    report = {'tests': [], 'console': [], 'errors': []}
+    report = {'tests': [], 'console': [], 'errors': [], 'lov': scopes.prepare_lovs(spec)}
     pre = _scripts([('Collection pre-request', collection.pre_request_script if collection else ''),
                     ('Pre-request', spec.get('pre_request_script', ''))])
     post = _scripts([('Collection tests', collection.test_script if collection else ''),

@@ -369,3 +369,24 @@ class ProjectVariables(models.Model):
         if project is None:
             return None
         return cls.objects.get_or_create(project=project)[0]
+
+
+class ApiLov(models.Model):
+    """A list-of-values generator: {{name}} is filled with a fresh value on every send (random name, email,
+    number, date +/- offset, counter, pick from a list...). Without a project it works in every project."""
+    name = models.CharField(max_length=200, unique=True)
+    kind = models.CharField(max_length=30)
+    options = models.JSONField(default=dict, blank=True)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, null=True, blank=True, related_name='api_lovs')
+    enabled = models.BooleanField(default=True)
+    state = models.JSONField(default=dict, blank=True)          # counters of sequence / sequential list LOVs
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'LOV'
+
+    def __str__(self):
+        return self.name

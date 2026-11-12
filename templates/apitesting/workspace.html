@@ -59,7 +59,20 @@
   #varTip .vt-scope { color: #94a3b8; }
   #varTip .vt-missing { color: #fca5a5; }
   #varTip .vt-badge { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: .7rem; font-weight: 700; color: #fff; vertical-align: 1px; }
-  .vt-env { background: #15803d; } .vt-proj { background: #1d4ed8; } .vt-glob { background: #6d28d9; } .vt-col { background: #b45309; } .vt-dyn { background: #475569; } .vt-none { background: #b91c1c; }
+  .vt-env { background: #15803d; } .vt-proj { background: #1d4ed8; } .vt-glob { background: #6d28d9; } .vt-col { background: #b45309; } .vt-dyn { background: #475569; } .vt-none { background: #b91c1c; } .vt-lov { background: #be185d; }
+  /* LOV dialog */
+  .aw .lov-list { max-height: 60vh; overflow-y: auto; }
+  .aw .lov-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 6px; background: #fff; }
+  .aw .lov-row.off { opacity: .55; }
+  .aw .lov-row .lov-name { font-family: monospace; font-weight: 700; color: #be185d; cursor: pointer; }
+  .aw .lov-row .lov-kind { font-size: .72rem; color: #64748b; }
+  .aw .lov-row .lov-ex { font-family: monospace; font-size: .75rem; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .aw .lov-row .btn { padding: 0 4px; }
+  .aw .lov-form { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
+  .aw .lov-form label { font-size: .75rem; font-weight: 600; color: #475569; margin-bottom: 2px; }
+  .aw .lov-form .help { font-size: .7rem; color: #94a3b8; }
+  .aw .lov-preview { font-family: monospace; font-size: .8rem; background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 8px 10px; min-height: 64px; white-space: pre-wrap; word-break: break-all; }
+  .aw .lov-preview .err { color: #fca5a5; }
   /* {{variables}} inside a field: a mirror layer draws the same text over the field and colours only the tokens
      (green = has a value, red = not defined); the field's own text is hidden while it holds a variable */
   .aw .var-wrap { position: relative; }
@@ -129,6 +142,7 @@
     {% endif %}
     <button type="button" class="btn btn-sm btn-light border ms-auto" id="authBtn" title="Environment login (Keycloak) and cookies"><i class="bi bi-shield-lock"></i> Auth &amp; Cookies</button>
     <button type="button" class="btn btn-sm btn-light border" id="varsBtn" title="Global and environment variables"><i class="bi bi-braces"></i> Variables</button>
+    <button type="button" class="btn btn-sm btn-light border" id="lovBtn" title="LOV: generated values (random name, email, number, date, counter...)"><i class="bi bi-magic"></i> LOV</button>
     <a href="{% url 'api_mail_settings' %}" class="btn btn-sm btn-light border" title="SMTP server for run reports"><i class="bi bi-envelope-gear"></i> Mail Settings</a>
     <div class="dropdown">
       <button class="btn btn-sm btn-pf dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-upload"></i> Import API</button>
@@ -460,6 +474,50 @@
     <code>pm.environment</code>, <code>pm.collectionVariables</code>, <code>pm.projectVariables</code> and <code>pm.globals</code>. When the same name exists twice: environment wins over collection, collection over project, project over globals. Collection variables are in each collection's menu.</div>
 </div></div></div>
 
+<!-- LOV: generated values -->
+<div class="modal fade" id="lovModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-magic text-success"></i> LOV · generated values</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <p class="small text-muted mb-3">An LOV is a value that is <b>generated fresh on every send</b>: a random name or email, a number or text of a given length,
+      today's date (plus or minus days), a counter, a pick from a list... Use it like a variable, <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code>, in the URL, path and query params, headers or body
+      of a POST / PUT / PATCH. The same LOV used twice in one request gets the same value. The values used are shown in the response <b>Console</b> tab.</p>
+    <div class="row g-3">
+      <div class="col-lg-5">
+        <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Your LOVs</h6>
+          <button type="button" class="btn btn-sm btn-pf ms-auto" id="lovNew"><i class="bi bi-plus-lg"></i> New LOV</button></div>
+        <div class="lov-list" id="lovList"></div>
+      </div>
+      <div class="col-lg-7">
+        <div class="lov-form" id="lovForm" hidden>
+          <input type="hidden" id="lovId">
+          <div class="row g-2">
+            <div class="col-sm-6"><label>Name (used as <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code>)</label>
+              <input id="lovName" class="form-control form-control-sm" maxlength="200" placeholder="e.g. randomEmail"></div>
+            <div class="col-sm-6"><label>Works in</label><select id="lovProject" class="form-select form-select-sm"></select></div>
+            <div class="col-12"><label>Type</label><select id="lovKind" class="form-select form-select-sm"></select></div>
+          </div>
+          <div class="row g-2 mt-1" id="lovOptions"></div>
+          <div class="row g-2 mt-1">
+            <div class="col-sm-6"><label>Prefix</label><input id="lov_prefix" class="form-control form-control-sm" placeholder="added before the value"></div>
+            <div class="col-sm-6"><label>Suffix</label><input id="lov_suffix" class="form-control form-control-sm" placeholder="added after the value"></div>
+          </div>
+          <label class="mt-2">Preview (3 sample values)</label>
+          <div class="lov-preview" id="lovPreview"></div>
+          <div class="small text-danger mt-2" id="lovError"></div>
+          <div class="d-flex gap-2 mt-3">
+            <button type="button" class="btn btn-sm btn-pf" id="lovSave"><i class="bi bi-floppy"></i> Save LOV</button>
+            <button type="button" class="btn btn-sm btn-light border" id="lovCancel">Cancel</button>
+            <span class="small text-success ms-auto align-self-center" id="lovStatus"></span>
+          </div>
+        </div>
+        <div class="text-muted small p-4 text-center" id="lovEmpty">Pick an LOV on the left to edit it, or press <b>New LOV</b>.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer small text-muted justify-content-start">Variables win over an LOV of the same name, so LOV names must be unique across variables too. In scripts the value used is in <code>pm.variables.get("name")</code>.
+    Built-in dynamic values also work: <code>{% templatetag openvariable %}$guid{% templatetag closevariable %}</code>, <code>{% templatetag openvariable %}$timestamp{% templatetag closevariable %}</code>, <code>{% templatetag openvariable %}$randomInt{% templatetag closevariable %}</code>.</div>
+</div></div></div>
+
 <!-- collection: variables, scripts, description -->
 <div class="modal fade" id="colModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content pf aw">
   <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-collection text-success"></i> <span id="colName"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -545,7 +603,7 @@
 <script>
 (() => {
   const CSRF = '{{ csrf_token }}';
-  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}',
+  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', lov: '{% url "api_ws_lov" %}',
                 auth: '{% url "api_ws_auth" %}', cookies: '{% url "api_ws_cookies" %}', rename: '{% url "api_ws_rename" %}',
                 page: '{% url "api_workspace" %}'};
   const $ = id => document.getElementById(id);
@@ -1008,8 +1066,10 @@
     if (DYNAMIC[name]) return {value: `Filled with ${DYNAMIC[name]} when the request is sent`, scope: 'Dynamic variable', source: ''};
     const hits = varScopes.filter(s => Object.prototype.hasOwnProperty.call(s.values, name));
     if (!hits.length) return null;
-    return {value: hits[0].values[name], scope: hits[0].scope, source: hits[0].source,
-            hidden: hits.slice(1).map(h => `${h.scope} (${h.source})`)};
+    const h = hits[0];
+    if (h.scope === 'LOV') return {value: `e.g. ${h.values[name]}`, scope: 'LOV', source: (h.kinds || {})[name] || 'generated'};
+    return {value: h.values[name], scope: h.scope, source: h.source,
+            hidden: hits.slice(1).map(x => `${x.scope} (${x.source})`)};
   }
   const tip = document.createElement('div');
   tip.id = 'varTip'; tip.hidden = true;
@@ -1034,7 +1094,8 @@
                        Project: ['vt-proj', 'Project variable', 'every environment of the project'],
                        Global: ['vt-glob', 'Global variable', 'every project and environment'],
                        Collection: ['vt-col', 'Collection variable', 'requests of this collection'],
-                       'Dynamic variable': ['vt-dyn', 'Dynamic', 'a new value on every send']};
+                       'Dynamic variable': ['vt-dyn', 'Dynamic', 'a new value on every send'],
+                       LOV: ['vt-lov', 'LOV', 'a new value on every send']};
   function showTip(name, e) {
     const d = describeVar(name);
     const [cls, label, note] = (d && SCOPE_BADGE[d.scope]) || ['vt-dyn', d && d.scope, ''];
@@ -1128,7 +1189,7 @@
     fill(await res.json());
     loadVarScopes();
   }
-  $('newRequest').addEventListener('click', () => fill({kind: 'blank', name: 'Untitled Request', method: 'GET', url: '', body_mode: 'none'}));
+  $('newRequest').addEventListener('click', () => { fill({kind: 'blank', name: 'Untitled Request', method: 'GET', url: '', body_mode: 'none'}); loadVarScopes(); });
 
   // ---------- send ----------
   $('sendBtn').addEventListener('click', async () => {
@@ -1174,7 +1235,8 @@
     $('respTests').innerHTML = html || '<div class="text-muted small py-3 text-center">No tests for this request. Add <code>pm.test()</code> in the Post-response tab.</div>';
   }
   function renderConsole(r) {
-    const lines = (r.console || []).map(c => `[${c.level}] ${c.text}`)
+    const lovLines = Object.entries(r.lov || {}).map(([k, v]) => `[lov] ${k} = ${v}`);
+    const lines = lovLines.concat((r.console || []).map(c => `[${c.level}] ${c.text}`))
       .concat((r.script_errors || []).map(e => `[error] ${e.script}: ${e.message}`));
     $('cnt-console').textContent = lines.length || '';
     $('consolePre').textContent = lines.join('\n') || 'Nothing logged. Use console.log() in a script.';
@@ -1407,6 +1469,115 @@
     (data.projects || []).forEach(p => $('varsBody').appendChild(varSection(`<i class="bi bi-folder2 text-success"></i> ${esc(p.name)}`,
       'project · used in every environment of this project', p.variables, 'project', p.id)));
     $('varsBody').appendChild(varSection('<i class="bi bi-globe2 text-success"></i> Globals', 'global · every project and environment', data.globals, 'globals', null));
+  });
+
+  // ---------- LOV: generated values ----------
+  const lovModal = new bootstrap.Modal($('lovModal'));
+  let lovData = {lovs: [], kinds: [], projects: [], common: []};
+  const lovKind = () => lovData.kinds.find(k => k.kind === $('lovKind').value) || {options: []};
+  async function lovPost(body) {
+    const res = await fetch(URLS.lov, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    return res.ok ? res.json() : {ok: false, error: `Server error ${res.status}`};
+  }
+  function lovRenderList() {
+    const list = $('lovList');
+    if (!lovData.lovs.length) { list.innerHTML = '<div class="text-muted small p-3 text-center">No LOV yet. Press New LOV to make one, e.g. a random email or a date.</div>'; return; }
+    list.innerHTML = lovData.lovs.map(l => `<div class="lov-row${l.enabled ? '' : ' off'}" data-id="${l.id}">
+        <div style="min-width:0;flex:1">
+          <div><span class="lov-name" title="Click to edit">${esc(l.name)}</span> <span class="lov-kind">${esc(l.kind_label)} · ${l.project_name ? esc(l.project_name) : 'all projects'}</span></div>
+          <div class="lov-ex" title="${esc(l.examples.join('  |  '))}">${esc(l.examples.join('  |  '))}</div>
+        </div>
+        <button type="button" class="btn btn-sm btn-link text-muted" data-copy title="Copy ${O}${esc(l.name)}${C}"><i class="bi bi-clipboard"></i></button>
+        <button type="button" class="btn btn-sm btn-link text-muted" data-toggle title="${l.enabled ? 'Turn off' : 'Turn on'}"><i class="bi bi-toggle-${l.enabled ? 'on' : 'off'}"></i></button>
+        <button type="button" class="btn btn-sm btn-link text-danger" data-del title="Delete"><i class="bi bi-trash"></i></button>
+      </div>`).join('');
+  }
+  function lovOptionField(o, value) {
+    const id = `lov_${o.key}`, v = value === undefined ? o.default : value;
+    let input;
+    if (o.type === 'number') input = `<input type="number" step="any" id="${id}" class="form-control form-control-sm" value="${esc(v)}">`;
+    else if (o.type.startsWith('select:')) input = `<select id="${id}" class="form-select form-select-sm">${o.type.slice(7).split('|').map(c => `<option${c === v ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>`;
+    else if (o.type === 'textarea') input = `<textarea id="${id}" class="form-control form-control-sm" rows="4">${esc(v)}</textarea>`;
+    else input = `<input id="${id}" class="form-control form-control-sm" value="${esc(v)}">`;
+    const wide = o.type === 'textarea' || o.key === 'format' || o.key === 'pattern';
+    return `<div class="${wide ? 'col-12' : 'col-sm-4'}"><label for="${id}">${esc(o.key.replace(/_/g, ' '))}</label>${input}<div class="help">${esc(o.help)}</div></div>`;
+  }
+  function lovShowForm(l) {
+    $('lovForm').hidden = false; $('lovEmpty').hidden = true;
+    $('lovId').value = l ? l.id : '';
+    $('lovName').value = l ? l.name : '';
+    $('lovProject').innerHTML = `<option value="">All projects</option>` + lovData.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    $('lovProject').value = l && l.project ? String(l.project) : '';
+    $('lovKind').innerHTML = lovData.kinds.map(k => `<option value="${k.kind}">${esc(k.label)}</option>`).join('');
+    $('lovKind').value = l ? l.kind : 'name';
+    lovRenderOptions(l ? l.options : {});
+    $('lov_prefix').value = l ? l.options.prefix || '' : ''; $('lov_suffix').value = l ? l.options.suffix || '' : '';
+    $('lovError').textContent = ''; $('lovStatus').textContent = '';
+    lovPreview();
+    if (!l) $('lovName').focus();
+  }
+  function lovRenderOptions(values) {
+    $('lovOptions').innerHTML = lovKind().options.map(o => lovOptionField(o, values[o.key])).join('');
+    if (lovKind().kind === 'date') $('lov_format').setAttribute('list', 'lovFormats');
+  }
+  function lovCollect() {
+    const options = {};
+    lovKind().options.concat(lovData.common).forEach(o => { const f = $(`lov_${o.key}`); if (f) options[o.key] = f.value; });
+    return {id: $('lovId').value || null, name: $('lovName').value.trim(), kind: $('lovKind').value, project: $('lovProject').value || null, options};
+  }
+  let lovPreviewTimer = null;
+  function lovPreview() {
+    clearTimeout(lovPreviewTimer);
+    lovPreviewTimer = setTimeout(async () => {
+      const d = lovCollect();
+      const out = await lovPost({action: 'preview', kind: d.kind, options: d.options});
+      $('lovPreview').innerHTML = out.ok ? out.examples.map(esc).join('\n') : `<span class="err">${esc(out.error)}</span>`;
+    }, 250);
+  }
+  $('lovBtn').addEventListener('click', async () => {
+    $('lovList').innerHTML = '<div class="text-muted small">Loading...</div>';
+    $('lovForm').hidden = true; $('lovEmpty').hidden = false;
+    lovModal.show();
+    lovData = await (await fetch(URLS.lov)).json();
+    lovRenderList();
+    if (!document.getElementById('lovFormats')) {
+      document.body.insertAdjacentHTML('beforeend', `<datalist id="lovFormats">${['%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S', '%d %b %Y', '%H:%M'].map(f => `<option value="${f}">`).join('')}</datalist>`);
+    }
+  });
+  $('lovNew').addEventListener('click', () => lovShowForm(null));
+  $('lovCancel').addEventListener('click', () => { $('lovForm').hidden = true; $('lovEmpty').hidden = false; });
+  $('lovKind').addEventListener('change', () => { lovRenderOptions({}); lovPreview(); });
+  $('lovForm').addEventListener('input', e => { if (e.target.id !== 'lovName' && e.target.id !== 'lovProject') lovPreview(); });
+  $('lovList').addEventListener('click', async e => {
+    const row = e.target.closest('.lov-row');
+    if (!row) return;
+    const l = lovData.lovs.find(x => String(x.id) === row.dataset.id);
+    if (e.target.closest('[data-copy]')) {
+      navigator.clipboard.writeText(`${O}${l.name}${C}`).then(() => toast(`Copied ${O}${l.name}${C}`));
+    } else if (e.target.closest('[data-toggle]')) {
+      const out = await lovPost({action: 'toggle', id: l.id});
+      if (out.ok) { Object.assign(l, out.lov); lovRenderList(); loadVarScopes(); }
+    } else if (e.target.closest('[data-del]')) {
+      if (!confirm(`Delete LOV ${l.name}? Requests that use ${O}${l.name}${C} will send it as written.`)) return;
+      const out = await lovPost({action: 'delete', id: l.id});
+      if (out.ok) { lovData.lovs = lovData.lovs.filter(x => x !== l); lovRenderList(); loadVarScopes(); if ($('lovId').value === String(l.id)) $('lovCancel').click(); }
+    } else {
+      lovShowForm(l);
+    }
+  });
+  $('lovSave').addEventListener('click', async () => {
+    const d = lovCollect();
+    $('lovError').textContent = '';
+    if (!d.name) { $('lovError').textContent = 'Give the LOV a name.'; return; }
+    const out = await lovPost({action: 'save', ...d});
+    if (!out.ok) { $('lovError').textContent = out.error || 'Could not save.'; return; }
+    const i = lovData.lovs.findIndex(x => x.id === out.lov.id);
+    if (i >= 0) lovData.lovs[i] = out.lov; else lovData.lovs.push(out.lov);
+    lovData.lovs.sort((a, b) => a.name.localeCompare(b.name));
+    lovRenderList();
+    $('lovId').value = out.lov.id;
+    $('lovStatus').textContent = `Saved. Use it as ${O}${out.lov.name}${C}`;
+    loadVarScopes();
   });
 
   // ---------- collection variables & scripts ----------

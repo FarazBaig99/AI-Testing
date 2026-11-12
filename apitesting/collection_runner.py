@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from django.db import close_old_connections, connection
 from django.utils import timezone
 
-from . import auth, runner, scripting
+from . import lov, auth, runner, scripting
 from .models import ApiGlobals, CollectionRequest, CollectionRun, RunResult, RunSchedule
 
 log = logging.getLogger(__name__)
@@ -74,7 +74,8 @@ class RunVariables:
         self.shared = scripting.Scopes(collection=scripting.rows_to_dict(collection.variables),
                                        globals_=scripting.rows_to_dict(self.globals_obj.variables))
         self.envs = {}          # env id -> (env, Scopes holding that environment's values)
-        self.projects = {}      # project id -> (project, {project variables}); shared by its environments
+        self.projects = {}
+        self.lov_registries = {}      # project id -> (project, {project variables}); shared by its environments
 
     def scopes_for(self, env):
         """A Scopes object for one request; environment values are kept per environment, project values per project."""
@@ -88,7 +89,14 @@ class RunVariables:
             held = self.envs[env.pk][1]
             scopes.environment, scopes.injected = held.environment, held.injected
             scopes.project = self.projects[env.project_id][1]
+        scopes.lovs = self.lovs_for(env.project if env is not None else None)
         return scopes
+
+    def lovs_for(self, project):
+        key = project.pk if project is not None else None
+        if key not in self.lov_registries:
+            self.lov_registries[key] = lov.Registry.for_project(project)
+        return self.lov_registries[key]
 
     def keep(self, scopes, env):
         self.shared.collection, self.shared.globals, self.shared.local = scopes.collection, scopes.globals, scopes.local

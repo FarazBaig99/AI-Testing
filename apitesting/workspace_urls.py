@@ -12,6 +12,7 @@ urlpatterns = [
     path('variables/', workspace.api_ws_variables, name='api_ws_variables'),
     path('variables/resolve/', workspace.api_ws_resolve, name='api_ws_resolve'),
     path('variables/set/', workspace.api_ws_variable_set, name='api_ws_variable_set'),
+    path('lov/', workspace.api_ws_lov, name='api_ws_lov'),
     path('auth/', workspace.api_ws_auth, name='api_ws_auth'),
     path('cookies/', workspace.api_ws_cookies, name='api_ws_cookies'),
     path('collections/<int:collection_id>/settings/', workspace.api_ws_collection_settings,

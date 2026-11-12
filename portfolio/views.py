@@ -10,6 +10,8 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from projects.models import Milestone, Module, Project, ProjectActivity, ProjectMember, TestResult
 
+from apitesting.forms import EnvironmentForm
+
 from .forms import (MilestoneForm, ProjectCreateForm, ScopeForm, SettingsForm,
                     StatusChangeForm, _user_label)
 
@@ -289,11 +291,19 @@ def _tab_context(request, project, tab, results):
                                           executed.filter(status='Blocked').count())})
         return {'module_rows': rows}
     if tab == 'apis':
-        return {'api_envs': project.api_environments.annotate(
+        envs = list(project.api_environments.annotate(
             n_folders=Count('folders', distinct=True), n_cases=Count('test_cases', distinct=True),
             n_pass=Count('test_cases', filter=Q(test_cases__status='pass'), distinct=True),
-            n_fail=Count('test_cases', filter=Q(test_cases__status='fail'), distinct=True)),
-            'api_sources': project.api_sources.select_related('environment')}
+            n_fail=Count('test_cases', filter=Q(test_cases__status='fail'), distinct=True)))
+        sources = {}
+        for s in project.api_sources.select_related('environment').order_by('-is_active', '-last_synced_at'):
+            sources.setdefault(s.environment_id, s)       # the active (or latest) source of each environment
+        for e in envs:
+            e.source = sources.get(e.pk)
+        env_form = EnvironmentForm(project=project)
+        for f in env_form.fields.values():
+            f.widget.attrs['class'] = 'form-control form-control-sm'
+        return {'api_envs': envs, 'env_form': env_form}
     if tab == 'lifecycle':
         return {'status_form': StatusChangeForm(project=project), 'statuses': Project.STATUSES,
                 'transitions': Project.TRANSITIONS,

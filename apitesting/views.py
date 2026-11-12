@@ -20,6 +20,12 @@ COMPARED_FIELDS = [('folder', 'Module'), ('method', 'Method'), ('url', 'URL'), (
 
 # ---------- helpers ----------
 
+def _safe_next(request):
+    """A same-site ?next= / next= to return to (the project's APIs & Databases tab, for example)."""
+    nxt = request.GET.get('next') or request.POST.get('next') or ''
+    return nxt if nxt.startswith('/') and not nxt.startswith('//') else ''
+
+
 def _current_env(request, project):
     """The environment selected in API Testing (?env=<id>, remembered per project in the session)."""
     key = f'api_env_{project.pk}'
@@ -114,27 +120,28 @@ def api_environment_edit(request, pk, env_id):
     project = get_object_or_404(Project, pk=pk)
     env = get_object_or_404(Environment, pk=env_id, project=project)
     form = EnvironmentForm(request.POST or None, instance=env, project=project)
+    back = _safe_next(request) or f'/projects/{pk}/api/environments/'
     if form.is_valid():
         form.save()
         messages.success(request, f'Environment "{env.name}" saved.')
-        return redirect('api_environments', pk=pk)
+        return redirect(back)
     return render(request, 'projects/form.html', {
-        'form': form, 'project': project, 'title': f'Edit Environment: {env.name}',
-        'back_url': f'/projects/{pk}/api/environments/',
+        'form': form, 'project': project, 'title': f'Edit Environment: {env.name}', 'back_url': back,
     })
 
 
 @login_required
 def api_environment_delete(request, pk, env_id):
     env = get_object_or_404(Environment, pk=env_id, project_id=pk)
+    back = _safe_next(request) or f'/projects/{pk}/api/environments/'
     if request.method == 'POST':
         env.delete()
         messages.success(request, f'Environment "{env.name}" and its APIs were deleted.')
-        return redirect('api_environments', pk=pk)
+        return redirect(back)
     return render(request, 'projects/confirm_delete.html', {
         'object': (f'environment "{env.name}" with its {env.folders.count()} modules, {env.test_cases.count()} APIs '
                    f'and {env.test_results.count()} test runner results'),
-        'back_url': f'/projects/{pk}/api/environments/',
+        'back_url': back,
     })
 
 

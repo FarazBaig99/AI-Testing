@@ -301,19 +301,50 @@
 
   {# ---------- 9. APIs & databases ---------- #}
   {% elif tab == 'apis' %}
+  {% url 'portfolio_workspace' project.pk 'apis' as apis_tab_url %}
   <div class="panel mb-3">
-    <div class="d-flex align-items-center mb-1">
-      <h6 class="mb-0"><i class="bi bi-cloud-arrow-up text-success"></i> API Registry</h6>
-      <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-pf ms-auto">Open API Testing →</a>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <h6 class="mb-0"><i class="bi bi-cloud-arrow-up text-success"></i> Environments &amp; API Registry</h6>
+      <div class="ms-auto d-flex gap-2">
+        {% if api_envs %}
+        <div class="dropdown">
+          <button class="btn btn-sm btn-pf dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-upload"></i> Import API Collection</button>
+          <ul class="dropdown-menu dropdown-menu-end small">
+            <li><h6 class="dropdown-header">Into which environment?</h6></li>
+            {% for e in api_envs %}<li><a class="dropdown-item" href="{% url 'api_import' project.pk %}?env={{ e.pk }}">{{ e.name }} <span class="text-muted">· {{ e.base_url }}</span></a></li>{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+        <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-outline-pf">Open API Testing →</a>
+      </div>
     </div>
-    <small class="text-muted d-block mb-3">{{ counts.api_cases }} API test cases imported from collections, per environment.</small>
-    <table class="table table-sm mb-3">
-      <thead><tr><th>Environment</th><th>Modules</th><th>API Test Cases</th><th>Pass</th><th>Fail</th></tr></thead>
-      <tbody>{% for e in api_envs %}<tr><td><b>{{ e.name }}</b><div class="small text-muted text-break">{{ e.base_url }}</div></td><td>{{ e.n_folders }}</td><td>{{ e.n_cases }}</td><td class="text-success">{{ e.n_pass }}</td><td class="text-danger">{{ e.n_fail }}</td></tr>
-      {% empty %}<tr><td colspan="5" class="small text-muted">No API environments yet.</td></tr>{% endfor %}</tbody>
+    <small class="text-muted d-block mb-3">Every project has its own environments (SIT, QA, Staging, QA01, QA02...). Each one has a base URL and its own APIs: import a collection into it from a Scalar / Swagger / OpenAPI link, a file, or a single cURL.</small>
+    <table class="table table-sm align-middle mb-3">
+      <thead><tr><th>Environment</th><th>Collection source</th><th class="text-center">Modules</th><th class="text-center">APIs</th><th class="text-center">Pass</th><th class="text-center">Fail</th><th></th></tr></thead>
+      <tbody>{% for e in api_envs %}<tr>
+        <td><b>{{ e.name }}</b><div class="small font-monospace text-success text-break">{{ e.base_url }}</div></td>
+        <td class="small">{% if e.source %}<span class="text-break">{{ e.source.url }}</span><div class="text-muted">{% if e.source.last_synced_at %}synced {{ e.source.last_synced_at|date:"d M Y H:i" }}{% else %}never synced{% endif %}</div>{% else %}<span class="text-muted">none yet</span>{% endif %}</td>
+        <td class="text-center">{{ e.n_folders }}</td><td class="text-center">{{ e.n_cases }}</td>
+        <td class="text-center text-success">{{ e.n_pass }}</td><td class="text-center text-danger">{{ e.n_fail }}</td>
+        <td class="text-end text-nowrap">
+          <a href="{% url 'api_import' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-outline-pf" title="Import an API collection into {{ e.name }}"><i class="bi bi-upload"></i> Import</a>
+          {% if e.source and e.source.is_active %}<form method="post" action="{% url 'api_sync' project.pk %}?env={{ e.pk }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-light border" title="Fetch the source again and review the changes"><i class="bi bi-arrow-repeat"></i> Sync</button></form>{% endif %}
+          <a href="{% url 'api_home' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-light border" title="Modules and APIs of {{ e.name }}">Open</a>
+          <a href="{% url 'api_environment_edit' project.pk e.pk %}?next={{ apis_tab_url|urlencode }}" class="btn btn-sm btn-link text-muted" title="Edit"><i class="bi bi-pencil"></i></a>
+          <a href="{% url 'api_environment_delete' project.pk e.pk %}?next={{ apis_tab_url|urlencode }}" class="btn btn-sm btn-link text-danger" title="Delete environment and its APIs"><i class="bi bi-trash"></i></a>
+        </td></tr>
+      {% empty %}<tr><td colspan="7" class="small text-muted py-3">No environment yet. Add the first one below, then import its APIs.</td></tr>{% endfor %}</tbody>
     </table>
-    {% if api_sources %}<h6 class="small fw-bold">Collection sources</h6>
-      <ul class="small mb-0">{% for s in api_sources %}<li class="text-break">{{ s.url }} <span class="text-muted">({{ s.environment|default:"-" }})</span></li>{% endfor %}</ul>{% endif %}
+    <form method="post" action="{% url 'api_environments' project.pk %}" class="box-plain">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ apis_tab_url }}">
+      <div class="box-label mb-2"><i class="bi bi-plus-circle"></i> Add environment</div>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3"><label class="form-label small fw-semibold mb-1">Name</label>{{ env_form.name }}<div class="text-danger small">{{ env_form.name.errors|join:" " }}</div></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold mb-1">Base URL</label>{{ env_form.base_url }}<div class="text-danger small">{{ env_form.base_url.errors|join:" " }}</div></div>
+        <div class="col-md-3"><button class="btn btn-sm btn-pf w-100"><i class="bi bi-plus"></i> Add environment</button></div>
+      </div>
+      <div class="form-text">{{ env_form.base_url.help_text }}</div>
+    </form>
   </div>
   <div class="panel text-center py-4">
     <i class="bi bi-database fs-2 text-secondary"></i>

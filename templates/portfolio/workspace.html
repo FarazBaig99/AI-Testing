@@ -306,15 +306,7 @@
     <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
       <h6 class="mb-0"><i class="bi bi-cloud-arrow-up text-success"></i> Environments &amp; API Registry</h6>
       <div class="ms-auto d-flex gap-2">
-        {% if api_envs %}
-        <div class="dropdown">
-          <button class="btn btn-sm btn-pf dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-upload"></i> Import API Collection</button>
-          <ul class="dropdown-menu dropdown-menu-end small">
-            <li><h6 class="dropdown-header">Into which environment?</h6></li>
-            {% for e in api_envs %}<li><a class="dropdown-item" href="{% url 'api_import' project.pk %}?env={{ e.pk }}">{{ e.name }} <span class="text-muted">· {{ e.base_url }}</span></a></li>{% endfor %}
-          </ul>
-        </div>
-        {% endif %}
+        {% if api_envs %}<a href="{% url 'api_import' project.pk %}" class="btn btn-sm btn-pf" title="Import an API collection; pick the environment on the import page"><i class="bi bi-upload"></i> Import API Collection</a>{% endif %}
         <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-outline-pf">Open API Testing →</a>
       </div>
     </div>

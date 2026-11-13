@@ -198,6 +198,28 @@ def item_from_case(collection, case, position, folder=None):
     return item
 
 
+def copy_folder_tree(folder, target, parent=None, name=None):
+    """Copy a folder with its requests and subfolders into `target` collection under `parent`."""
+    position = (target.folders.filter(parent=parent).aggregate(m=Max('position'))['m'] or 0) + 1
+    new = CollectionFolder.objects.create(collection=target, parent=parent, name=(name or folder.name)[:200], position=position)
+    for item in folder.requests.all():
+        duplicate_item(item, target, item.position, new)
+    for child in folder.children.all():
+        copy_folder_tree(child, target, new)
+    return new
+
+
+def copy_collection_into(source, target):
+    """Everything of `source` goes into a new folder named after it inside `target`."""
+    position = (target.folders.filter(parent=None).aggregate(m=Max('position'))['m'] or 0) + 1
+    box = CollectionFolder.objects.create(collection=target, parent=None, name=source.name[:200], position=position)
+    for item in source.requests.filter(folder=None):
+        duplicate_item(item, target, item.position, box)
+    for folder in source.folders.filter(parent=None):
+        copy_folder_tree(folder, target, box)
+    return box
+
+
 def _folder_and_children(folder):
     out, todo = [], [folder]
     while todo:
@@ -295,6 +317,26 @@ def api_workspace(request):
             else:
                 messages.error(request, 'Give the folder a name.')
             return redirect(f"{reverse('api_workspace')}?tab=collections&open={c.pk}")
+        elif action == 'duplicate_folder':
+            f = get_object_or_404(CollectionFolder, pk=request.POST.get('folder'))
+            copy = copy_folder_tree(f, f.collection, f.parent, _copy_name(f.name, 200))
+            messages.success(request, f'Folder "{f.name}" duplicated as "{copy.name}".')
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={f.collection_id}")
+        elif action == 'copy_folder':
+            f = get_object_or_404(CollectionFolder, pk=request.POST.get('folder'))
+            target = get_object_or_404(ApiCollection, pk=request.POST.get('target'))
+            copy_folder_tree(f, target)
+            messages.success(request, f'Folder "{f.name}" copied into "{target.name}".')
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={target.pk}")
+        elif action == 'copy_collection':
+            c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
+            target = get_object_or_404(ApiCollection, pk=request.POST.get('target'))
+            if target == c:
+                messages.error(request, 'Choose another collection to copy into (use Duplicate for a full copy).')
+            else:
+                copy_collection_into(c, target)
+                messages.success(request, f'"{c.name}" copied into "{target.name}" as a folder.')
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={target.pk}")
         elif action == 'delete_folder':
             f = get_object_or_404(CollectionFolder, pk=request.POST.get('folder'))
             count = CollectionRequest.objects.filter(collection=f.collection, folder__in=_folder_and_children(f)).count()

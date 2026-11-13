@@ -155,13 +155,25 @@ def collection_run(request, collection_id):
         return redirect(f"{reverse('api_collection_run', args=[collection.pk])}?tab=schedules")
 
     requests_ = collection.ordered_requests()
+    # ?folder=<id>: run only that folder (its subfolders included) - the rest starts unticked
+    folder = collection.folders.filter(pk=request.GET.get('folder') or 0).first()
+    ticked = {r.pk for r in requests_}
+    if folder:
+        inside, todo = set(), [folder]
+        while todo:
+            f = todo.pop()
+            inside.add(f.pk)
+            todo.extend(f.children.all())
+        ticked = {r.pk for r in requests_ if r.folder_id in inside}
+    for r in requests_:
+        r.ticked = r.pk in ticked
     for r in requests_:
         r.expected_default = r.source.expected_status if r.source else ''
     schedules = list(collection.schedules.all())
     for s in schedules:
         s.description = describe(s)
     return render(request, 'apitesting/collection_run.html', {
-        'collection': collection, 'requests': requests_, 'tab': tab, 'schedules': schedules,
+        'collection': collection, 'requests': requests_, 'tab': tab, 'schedules': schedules, 'run_folder': folder,
         'runs': collection.runs.select_related('schedule', 'created_by')[:50],
         'weekdays': list(enumerate(WEEKDAYS)), 'frequencies': RunSchedule.FREQUENCIES,
         'email_when': RunSchedule.EMAIL_WHEN, 'mail': MailSettings.load(), 'limits': engine,

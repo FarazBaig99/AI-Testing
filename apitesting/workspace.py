@@ -1096,3 +1096,85 @@ def collection_intel(request, collection_id):
     return render(request, 'apitesting/intel.html', {
         'collection': collection, 'result': result, 'result_json': json.dumps(result),
     })
+
+
+# ---------- Autonomous (rule-based) test generation ----------
+
+def _request_from_scenario(collection, case, scenario, position, folder):
+    """Save one generated scenario as a request in the collection (a copy of the API, with the scenario's
+    changes). The synced API is never touched."""
+    spec = case_spec(case)
+    item = CollectionRequest(collection=collection, project=case.project, environment=case.environment,
+                             source=case, name=scenario['name'][:600], position=position, folder=folder)
+    for f in SPEC_FIELDS:
+        setattr(item, f, scenario.get(f, spec.get(f)))
+    item.save()
+    return item
+
+
+def _int_in(value, default, low, high):
+    try:
+        return max(low, min(high, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+@login_required
+def api_testgen(request):
+    """Generate a suite of positive / negative / boundary / auth tests from a synced API and save them
+    as requests in a collection. New page; nothing existing is changed."""
+    from . import testgen
+    cases = list(ApiTestCase.objects.select_related('project', 'environment', 'folder')
+                 .order_by('project__name', 'environment__name', 'folder__name', 'name'))
+    collections = list(ApiCollection.objects.all())
+
+    sel_case_id = request.POST.get('case') or request.GET.get('case')
+    case = next((c for c in cases if str(c.pk) == str(sel_case_id)), None)
+    groups = request.POST.getlist('groups')
+    if not groups:
+        groups = request.GET.getlist('groups') or testgen.GROUP_KEYS
+    neg_status = _int_in(request.POST.get('neg_status'), testgen.DEFAULT_NEG_STATUS, 100, 599)
+    auth_status = _int_in(request.POST.get('auth_status'), testgen.DEFAULT_AUTH_STATUS, 100, 599)
+
+    scenarios = []
+    if case:
+        spec = case_spec(case)
+        scenarios = testgen.generate(spec, groups=groups, neg_status=neg_status, auth_status=auth_status)
+
+    if request.method == 'POST' and request.POST.get('action') == 'generate':
+        if not case:
+            messages.error(request, 'Pick an API to generate tests from.')
+        elif not scenarios:
+            messages.error(request, 'No scenarios were generated. Tick at least one scenario type.')
+        else:
+            new_name = request.POST.get('new_collection', '').strip()
+            if new_name:
+                collection = ApiCollection.objects.create(name=new_name[:200], created_by=request.user)
+            else:
+                collection = next((c for c in collections if str(c.pk) == request.POST.get('collection')), None)
+                if collection is None:
+                    messages.error(request, 'Pick a collection to add the tests to, or type a new name.')
+                    return redirect(f"{reverse('api_testgen')}?case={case.pk}")
+            folder = None
+            if request.POST.get('in_folder') == 'on':
+                folder = CollectionFolder.objects.create(
+                    collection=collection, name=case.name[:200],
+                    position=(collection.folders.filter(parent=None).aggregate(m=Max('position'))['m'] or 0) + 1)
+            with transaction.atomic():
+                position = _next_position(collection, folder)
+                for i, scenario in enumerate(scenarios):
+                    _request_from_scenario(collection, case, scenario, position + i, folder)
+            messages.success(request, f'Generated {len(scenarios)} test request(s) into "{collection.name}".')
+            return redirect('api_collection_run', collection_id=collection.pk)
+
+    # group the API picker by project · environment
+    picker = {}
+    for c in cases:
+        key = f'{c.project.name} · {c.environment.name if c.environment else "no environment"}'
+        picker.setdefault(key, []).append(c)
+    return render(request, 'apitesting/testgen.html', {
+        'cases': cases, 'picker': [{'label': k, 'cases': v} for k, v in picker.items()],
+        'collections': collections, 'case': case, 'scenarios': scenarios,
+        'summary': testgen.summary(scenarios), 'groups': testgen.GROUPS, 'chosen': set(groups),
+        'neg_status': neg_status, 'auth_status': auth_status,
+    })

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Generate tests{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .tg .m { font-size: .62rem; font-weight: 800; font-family: monospace; padding: 1px 6px; border-radius: 5px; color: #fff; }
+  .tg .m-GET { background: #16a34a; } .tg .m-POST { background: #d97706; } .tg .m-PUT { background: #2563eb; }
+  .tg .m-PATCH { background: #7c3aed; } .tg .m-DELETE { background: #dc2626; } .tg .m-HEAD, .tg .m-OPTIONS { background: #64748b; }
+  .tg .k { border-radius: 6px; padding: 1px 8px; font-size: .68rem; font-weight: 700; }
+  .tg .k-happy { background: #dcfce7; color: #15803d; }
+  .tg .k-missing, .tg .k-null, .tg .k-type, .tg .k-empty { background: #fef3c7; color: #b45309; }
+  .tg .k-boundary { background: #e0f2fe; color: #0369a1; }
+  .tg .k-auth { background: #fee2e2; color: #b91c1c; }
+  .tg .grp { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; }
+  .tg .grp:has(input:checked) { border-color: var(--pf); background: var(--pf-soft); }
+  .tg .scn td { font-size: .82rem; vertical-align: middle; }
+</style>
+<div class="pf tg">
+  <div class="pf-head mb-3 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-auto">
+      <div class="pf-eyebrow">Autonomous Test Generation</div>
+      <h4 class="fw-bold mb-1"><i class="bi bi-magic text-success"></i> Generate tests from an API</h4>
+      <small class="text-muted">Pick a synced API and BaigNova builds a suite of positive, negative, boundary and authentication tests from its own shape. No AI needed. Review, then save them into a collection and run.</small>
+    </div>
+    <a href="{% url 'api_workspace' %}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Workspace</a>
+  </div>
+
+  {% if not cases %}
+  <div class="panel text-center text-muted py-5">
+    No synced APIs yet. Import an API collection into a project first, then come back to generate tests from it.
+  </div>
+  {% else %}
+  <form method="post">{% csrf_token %}
+  <div class="row g-3">
+    <!-- left: choose API + scenario options -->
+    <div class="col-lg-5">
+      <div class="panel mb-3">
+        <h6>1 · Choose an API</h6>
+        <select name="case" class="form-select searchable" data-placeholder="Search APIs..." onchange="this.form.requestSubmit(document.getElementById('previewBtn'))">
+          <option value="">— pick a synced API —</option>
+          {% for g in picker %}
+            <optgroup label="{{ g.label }}">
+              {% for c in g.cases %}
+                <option value="{{ c.pk }}" {% if case and c.pk == case.pk %}selected{% endif %}>{{ c.method }} {{ c.name }}</option>
+              {% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="panel mb-3">
+        <h6>2 · Scenario types</h6>
+        {% for key, label, desc in groups %}
+          <label class="grp d-block mb-2">
+            <input type="checkbox" name="groups" value="{{ key }}" class="form-check-input me-1" {% if key in chosen %}checked{% endif %}>
+            <b class="small">{{ label }}</b>
+            <div class="small text-muted ms-4">{{ desc }}</div>
+          </label>
+        {% endfor %}
+        <div class="row g-2 mt-1">
+          <div class="col-6">
+            <label class="form-label small mb-0">Negative tests expect</label>
+            <input type="number" name="neg_status" value="{{ neg_status }}" min="100" max="599" class="form-control form-control-sm">
+            <div class="form-text">e.g. 400, or 422 if your API uses it.</div>
+          </div>
+          <div class="col-6">
+            <label class="form-label small mb-0">Auth tests expect</label>
+            <input type="number" name="auth_status" value="{{ auth_status }}" min="100" max="599" class="form-control form-control-sm">
+            <div class="form-text">e.g. 401 or 403.</div>
+          </div>
+        </div>
+        <button type="submit" id="previewBtn" name="action" value="preview" class="btn btn-sm btn-outline-pf mt-2"><i class="bi bi-arrow-repeat"></i> Update preview</button>
+      </div>
+    </div>
+
+    <!-- right: preview + save -->
+    <div class="col-lg-7">
+      {% if case %}
+      <div class="panel mb-3">
+        <div class="d-flex align-items-center mb-2">
+          <h6 class="mb-0 me-auto">Preview · {{ scenarios|length }} test(s)</h6>
+          {% for kind, n in summary.items %}<span class="k k-{{ kind }} me-1">{{ kind }}: {{ n }}</span>{% endfor %}
+        </div>
+        <div class="small text-muted mb-2"><span class="m m-{{ case.method }}">{{ case.method }}</span> <code>{{ case.url }}</code></div>
+        <div class="table-responsive" style="max-height:360px;overflow:auto">
+          <table class="table table-sm scn mb-0">
+            <thead><tr><th>#</th><th>Scenario</th><th>Type</th><th class="text-end">Expects</th></tr></thead>
+            <tbody>
+            {% for s in scenarios %}
+              <tr><td class="text-muted">{{ forloop.counter }}</td>
+                <td>{{ s.name }}<div class="text-muted small">{{ s.note }}</div></td>
+                <td><span class="k k-{{ s.kind }}">{{ s.kind }}</span></td>
+                <td class="text-end">{% if s.expected_status %}{{ s.expected_status }}{% else %}2xx{% endif %}</td></tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-3">Tick at least one scenario type.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h6>3 · Save into a collection</h6>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Existing collection</label>
+          <select name="collection" class="form-select form-select-sm">
+            <option value="">— choose —</option>
+            {% for c in collections %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">or a new collection</label>
+          <input type="text" name="new_collection" class="form-control form-control-sm" placeholder="e.g. {{ case.name }} — tests">
+          <div class="form-text">A new name is used if you type one; otherwise the chosen collection above.</div>
+        </div>
+        <label class="d-block small mb-3"><input type="checkbox" name="in_folder" class="form-check-input me-1" checked> Put them in a folder named "{{ case.name }}"</label>
+        <button type="submit" name="action" value="generate" class="btn btn-pf"><i class="bi bi-magic"></i> Generate {{ scenarios|length }} test request(s)</button>
+      </div>
+      {% else %}
+      <div class="panel text-center text-muted py-5">Choose an API on the left to preview the generated tests.</div>
+      {% endif %}
+    </div>
+  </div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

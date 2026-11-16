@@ -12,6 +12,7 @@ urlpatterns = [
     path('variables/', workspace.api_ws_variables, name='api_ws_variables'),
     path('variables/resolve/', workspace.api_ws_resolve, name='api_ws_resolve'),
     path('variables/set/', workspace.api_ws_variable_set, name='api_ws_variable_set'),
+    path('generate/', workspace.api_testgen, name='api_testgen'),
     path('lov/', workspace.api_lov_page, name='api_lov_page'),
     path('lov/data/', workspace.api_ws_lov, name='api_ws_lov'),
     path('lov/template.csv', workspace.api_lov_template, name='api_lov_template'),

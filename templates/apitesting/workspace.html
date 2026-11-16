@@ -37,6 +37,12 @@
   .aw .main { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; height: calc(100vh - 120px); overflow: hidden; display: flex; flex-direction: column; }
   .aw #builder:not([hidden]) { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
   .aw #reqPanes { flex: 1 1 auto; overflow: auto; min-height: 72px; padding-right: 2px; }
+  /* the raw body editor has its own drag handle to resize it, like the response area */
+  .aw { --body-h: 240px; }
+  .aw #rawBody { height: var(--body-h); resize: none; }
+  .aw .body-split { height: 12px; margin: 1px 0 4px; cursor: ns-resize; display: flex; align-items: center; justify-content: center; touch-action: none; }
+  .aw .body-split::before { content: ''; width: 46px; height: 4px; border-radius: 3px; background: #cbd5e1; transition: background .12s, width .12s; }
+  .aw .body-split:hover::before, .aw .body-split.dragging::before { background: var(--pf); width: 70px; }
   .aw #respSection { flex: none; height: var(--resp-h); min-height: 120px; display: flex; flex-direction: column; }
   .aw #respScroll { flex: 1 1 auto; overflow: auto; min-height: 0; }
   .aw .url-row .form-select { max-width: 120px; font-weight: 700; font-family: monospace; }
@@ -326,6 +332,7 @@
             <div data-body="form-data" hidden><table class="table table-sm kv mb-0" id="kv-form"></table></div>
             <div data-body="urlencoded" hidden><table class="table table-sm kv mb-0" id="kv-urlenc"></table></div>
             <div data-body="raw" hidden><textarea id="rawBody" class="form-control code" spellcheck="false"></textarea>
+              <div class="body-split" id="bodySplit" title="Drag to resize the body editor"></div>
               <div class="small text-muted mt-1" id="getHint" hidden><i class="bi bi-info-circle"></i> GET / HEAD: an empty body template ({} or &lt;root/&gt;) is not sent. Type real content to send a body.</div></div>
             <div data-body="binary" hidden><input type="file" id="binaryFile" class="form-control form-control-sm"><div class="small text-muted mt-1">The file is sent as the request body. It is not saved with the request.</div></div>
             <div data-body="graphql" hidden><div class="row g-2">
@@ -2074,6 +2081,40 @@
     document.addEventListener('pointerup', up);
   });
   split.addEventListener('dblclick', () => { setW(320); try { localStorage.setItem(KEY, 320); } catch (e) {} });
+})();
+
+// Resizable raw body editor: drag the handle under it to grow / shrink it; the size is remembered.
+(() => {
+  const split = document.getElementById('bodySplit');
+  if (!split) return;
+  const host = split.closest('.aw') || document.querySelector('.aw');
+  if (!host) return;
+  const KEY = 'api_body_h';
+  const curH = () => parseInt(getComputedStyle(host).getPropertyValue('--body-h'), 10) || 240;
+  const setH = h => host.style.setProperty('--body-h', Math.round(h) + 'px');
+  try { const s = parseInt(localStorage.getItem(KEY) || '', 10); if (s) setH(Math.max(100, Math.min(s, 2000))); } catch (e) {}
+  let startY = 0, startH = 0;
+  function move(e) {
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    setH(Math.max(100, Math.min(2000, startH + (y - startY))));
+  }
+  function up() {
+    split.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    try { localStorage.setItem(KEY, curH()); } catch (e) {}
+  }
+  split.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    startY = e.clientY; startH = curH();
+    split.classList.add('dragging');
+    try { split.setPointerCapture(e.pointerId); } catch (_) {}
+    document.body.style.userSelect = 'none';
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
+  split.addEventListener('dblclick', () => { setH(240); try { localStorage.setItem(KEY, 240); } catch (e) {} });
 })();
 </script>
 {% endblock %}

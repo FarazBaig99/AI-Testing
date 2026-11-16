@@ -442,8 +442,12 @@ def api_ws_send(request, opener=None, login_opener=None):
     if item and result.get('ok'):
         item.last_status, item.last_ms, item.last_run_at = result['status'], result['ms'], timezone.now()
         item.save(update_fields=['last_status', 'last_ms', 'last_run_at'])
+    from . import diagnosis
+    has_login = bool(env) and any(p.is_active for p in env.auth_profiles.all())
+    diag = diagnosis.diagnose(spec, result, env, has_login=has_login, picked=auth.choice_of(spec),
+                              tests=out['tests'], errors=out['errors'])
     return JsonResponse(dict(result, tests=out['tests'], console=out['console'], script_errors=out['errors'],
-                             lov=out.get('lov', {})))
+                             lov=out.get('lov', {}), diagnosis=diag))
 
 
 # ---------- variables and collection settings ----------

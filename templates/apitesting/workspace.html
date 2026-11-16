@@ -55,6 +55,17 @@
   #valPop .vp-scope small { display: block; color: #64748b; }
   .aw .stat { font-weight: 700; }
   .aw .stat-2 { color: #16a34a; } .aw .stat-3 { color: #2563eb; } .aw .stat-4 { color: #d97706; } .aw .stat-5, .aw .stat-0 { color: #dc2626; }
+  .aw .diag-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; vertical-align: 1px; margin-left: 2px; }
+  .aw #diagTab.has-issue .diag-dot { display: inline-block; }
+  .aw #diagTab.has-issue { color: #b91c1c; font-weight: 700; }
+  .aw .diag { border-radius: 10px; padding: 12px 14px; border: 1px solid; }
+  .aw .diag-danger { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+  .aw .diag-warning { background: #fffbeb; border-color: #fde68a; color: #78350f; }
+  .aw .diag-success { background: #f0fdf4; border-color: #bbf7d0; color: #14532d; }
+  .aw .diag .bi { flex-shrink: 0; }
+  .aw .diag ul, .aw .diag ol { margin: 0 0 0 0; padding-left: 20px; }
+  .aw .diag ol.diag-fix li { margin-bottom: 3px; }
+  .aw .diag .diag-msg { background: rgba(0,0,0,.05); border-radius: 6px; padding: 4px 8px; font-family: monospace; }
   .aw .ctx { font-size: .75rem; color: #64748b; }
   #varTip { position: fixed; z-index: 2100; max-width: 460px; background: #0f172a; color: #fff; border-radius: 8px;
             padding: 8px 10px; font-size: .75rem; box-shadow: 0 6px 20px rgba(15,23,42,.25); pointer-events: none; }
@@ -327,6 +338,7 @@
                 <button type="button" data-rtab="headers">Headers <sup id="cnt-rh"></sup></button>
                 <button type="button" data-rtab="tests">Test Results <sup id="cnt-tests"></sup></button>
                 <button type="button" data-rtab="console">Console <sup id="cnt-console"></sup></button>
+                <button type="button" data-rtab="diag" id="diagTab"><i class="bi bi-activity"></i> Diagnosis <span id="cnt-diag" class="diag-dot"></span></button>
               </div>
               <div class="ms-auto small" id="respMeta"></div>
             </div>
@@ -353,6 +365,7 @@
             <div id="respHeaders" hidden><table class="table table-sm small mb-0"><tbody id="respHeaderRows"></tbody></table></div>
             <div id="respTests" hidden></div>
             <div id="respConsole" hidden><pre class="resp-pre code" id="consolePre"></pre></div>
+            <div id="respDiag" hidden></div>
           </div>
         </div>
       </div>
@@ -1287,10 +1300,11 @@
   // ---------- response ----------
   function resetResponse() {
     lastResponse = null;
-    ['respError', 'respBody', 'respHeaders', 'respTests', 'respConsole'].forEach(id => $(id).hidden = true);
+    ['respError', 'respBody', 'respHeaders', 'respTests', 'respConsole', 'respDiag'].forEach(id => $(id).hidden = true);
     $('respEmpty').hidden = false;
     $('respMeta').innerHTML = ''; $('authHint').classList.add('d-none'); $('authHint').classList.remove('d-flex');
     ['cnt-rh', 'cnt-tests', 'cnt-console'].forEach(id => $(id).textContent = '');
+    $('diagTab').classList.remove('has-issue');
   }
   function renderTests(r) {
     const tests = r.tests || [], errors = r.script_errors || [];
@@ -1317,6 +1331,27 @@
     $('respError').hidden = !(has && !ok && (name === 'body' || name === 'headers'));
     $('respTests').hidden = !(has && name === 'tests');
     $('respConsole').hidden = !(has && name === 'console');
+    $('respDiag').hidden = !(has && name === 'diag');
+  }
+  // Root-cause analysis: plain-language "what went wrong and how to fix it" for the Diagnosis tab
+  function renderDiagnosis(r) {
+    const d = r.diagnosis, tab = $('diagTab');
+    if (!d) { $('respDiag').innerHTML = ''; tab.classList.remove('has-issue'); return; }
+    const tone = d.level === 'error' ? 'danger' : d.level === 'warn' ? 'warning' : 'success';
+    const icon = d.level === 'error' ? 'x-octagon-fill' : d.level === 'warn' ? 'exclamation-triangle-fill' : 'check-circle-fill';
+    tab.classList.toggle('has-issue', d.level !== 'ok');
+    const li = a => (a || []).map(x => `<li>${esc(x)}</li>`).join('');
+    $('respDiag').innerHTML = `<div class="diag diag-${tone}"><div class="d-flex align-items-start gap-2">
+      <i class="bi bi-${icon} fs-5"></i>
+      <div class="flex-grow-1">
+        <div class="fw-bold">${esc(d.title)}</div>
+        <div class="small">${esc(d.summary)}</div>
+        ${d.server_message ? `<div class="diag-msg small mt-2"><b>Server said:</b> ${esc(d.server_message)}</div>` : ''}
+        ${(d.causes || []).length ? `<div class="fw-semibold mt-2 mb-1"><i class="bi bi-search"></i> Likely cause</div><ul class="small">${li(d.causes)}</ul>` : ''}
+        ${(d.fixes || []).length ? `<div class="fw-semibold mt-2 mb-1"><i class="bi bi-wrench-adjustable"></i> How to fix</div><ol class="diag-fix small">${li(d.fixes)}</ol>` : ''}
+        ${d.trace_id ? `<div class="small mt-2">Trace id: <code>${esc(d.trace_id)}</code></div>` : ''}
+        <div class="small text-muted mt-2"><i class="bi bi-robot"></i> Automated analysis</div>
+      </div></div></div>`;
   }
   function size(n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(2)} KB` : `${(n / 1048576).toFixed(2)} MB`; }
   // after a send, refresh the saved request's status badge in the left tree (no page reload needed)
@@ -1336,13 +1371,13 @@
     lastResponse = r;
     if (r.ok && current && current.item) updateItemBadge(current.item, r.status);
     $('respEmpty').hidden = true;
-    renderTests(r); renderConsole(r);
+    renderTests(r); renderConsole(r); renderDiagnosis(r);
     $('authHint').classList.toggle('d-none', !r.auth_hint); $('authHint').classList.toggle('d-flex', !!r.auth_hint);
     $('authHintText').textContent = r.auth_hint || '';
     if (!r.ok) {
       $('respError').textContent = r.error;
       $('respMeta').innerHTML = `<span class="stat stat-0">Error</span>`;
-      showRespTab('body');
+      showRespTab(r.diagnosis && r.diagnosis.level !== 'ok' ? 'diag' : 'body');
       return;
     }
     $('respMeta').innerHTML = (r.login ? `<span class="badge text-bg-light border me-2" title="Sent with this login's session cookies"><i class="bi bi-person-badge"></i> ${esc(r.login)}</span>` : '') + (r.auth ? `<span class="badge text-bg-warning me-2" title="${esc(r.auth)}"><i class="bi bi-shield-lock"></i> ${esc(r.auth.split(':')[0])}</span>` : '') + `Status: <span class="stat stat-${String(r.status)[0]}">${r.status} ${esc(r.reason)}</span>
@@ -1350,7 +1385,7 @@
     $('respLang').value = r.language || 'text';
     $('respHeaderRows').innerHTML = r.headers.map(([k, v]) => `<tr><td class="fw-semibold text-nowrap">${esc(k)}</td><td class="text-break">${esc(v)}</td></tr>`).join('');
     $('cnt-rh').textContent = r.headers.length || '';
-    showRespTab('body');
+    showRespTab(r.diagnosis && r.diagnosis.level !== 'ok' ? 'diag' : 'body');
     render();
   }
   document.querySelectorAll('#respTabs [data-rtab]').forEach(b => b.addEventListener('click', () => showRespTab(b.dataset.rtab)));

@@ -766,6 +766,27 @@ def api_ws_variable_set(request):
 
 @login_required
 @require_POST
+def api_ws_reorder_collections(request):
+    """Save a new order for the collections after a drag: {order: [collection id, ...]}."""
+    try:
+        data = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+    order = [int(x) for x in data.get('order', []) if str(x).isdigit()]
+    cols = {c.pk: c for c in ApiCollection.objects.filter(pk__in=order)}
+    changed = []
+    for pos, pk in enumerate(order, 1):
+        c = cols.get(pk)
+        if c and c.position != pos:
+            c.position = pos
+            changed.append(c)
+    if changed:
+        ApiCollection.objects.bulk_update(changed, ['position'])
+    return JsonResponse({'ok': True})
+
+
+@login_required
+@require_POST
 def api_ws_extract(request):
     """Save several response values as variables at once (the Extract variables dialog):
     {scope: environment|project|globals, environment, vars: [{key, value}, ...]}. Chosen names overwrite."""

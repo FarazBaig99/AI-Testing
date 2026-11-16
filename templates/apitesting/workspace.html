@@ -20,6 +20,11 @@
   .aw .tree summary:hover, .aw .tree .req:hover { background: #f1f5f9; }
   .aw .tree .grp > summary { font-weight: 700; color: #0f172a; }
   .aw .tree .fold { margin-left: 10px; }
+  .aw .col-grip { cursor: grab; color: #cbd5e1; margin-right: 2px; flex-shrink: 0; }
+  .aw .col-grip:hover { color: var(--pf); }
+  .aw details.col.col-dragging { opacity: .5; }
+  .aw details.col > summary.col-drop-top { box-shadow: inset 0 3px 0 var(--pf); }
+  .aw details.col > summary.col-drop-bot { box-shadow: inset 0 -3px 0 var(--pf); }
   .aw .tree details.col .fold > summary { font-weight: 600; color: #334155; }
   .aw .tree details.col .fold > .items { margin-left: 8px; border-left: 1px dashed #e2e8f0; }
   .aw .tree .new-folder-row { display: flex; gap: 4px; padding: 3px 6px 3px 20px; }
@@ -219,7 +224,7 @@
             <button class="btn btn-sm btn-pf text-nowrap"><i class="bi bi-plus"></i> New</button></form>
           {% for col in collections %}
           <details class="grp col" data-collection="{{ col.pk }}" data-name="{{ col.name }}" {% if open_item or col.pk|stringformat:'d' == open_collection %}open{% endif %}>
-            <summary class="d-flex align-items-center"><span class="flex-grow-1"><i class="bi bi-collection text-success"></i> <span class="col-name">{{ col.name }}</span> <span class="text-muted fw-normal cnt">{{ col.tree_.total }}</span></span>
+            <summary class="d-flex align-items-center"><i class="bi bi-grip-vertical col-grip" draggable="true" title="Drag to reorder collections" onclick="event.preventDefault();event.stopPropagation()"></i><span class="flex-grow-1"><i class="bi bi-collection text-success"></i> <span class="col-name">{{ col.name }}</span> <span class="text-muted fw-normal cnt">{{ col.tree_.total }}</span></span>
               <form method="post" class="d-inline" onclick="event.stopPropagation()">{% csrf_token %}<input type="hidden" name="action" value="add_request"><input type="hidden" name="collection" value="{{ col.pk }}">
                 <button class="btn btn-sm btn-link text-success p-0 px-1" title="Add a new GET request"><i class="bi bi-plus-lg"></i></button></form>
               <button type="button" class="btn btn-sm btn-link text-warning p-0 px-1 new-folder" title="New folder" data-collection="{{ col.pk }}" onclick="event.preventDefault();event.stopPropagation()"><i class="bi bi-folder-plus"></i></button>
@@ -598,7 +603,7 @@
 <script>
 (() => {
   const CSRF = '{{ csrf_token }}';
-  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', lovPage: '{% url "api_lov_page" %}',
+  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', reorderCols: '{% url "api_ws_reorder_collections" %}', lovPage: '{% url "api_lov_page" %}',
                 auth: '{% url "api_ws_auth" %}', cookies: '{% url "api_ws_cookies" %}', rename: '{% url "api_ws_rename" %}',
                 page: '{% url "api_workspace" %}'};
   const $ = id => document.getElementById(id);
@@ -924,6 +929,38 @@
     items.addEventListener('drop', e => { if (e.target.closest('.items') === items) drop(e, dropSpot(items, e.clientY)); });
     summary.addEventListener('drop', e => drop(e, null));
   });
+
+  // ---------- drag a collection by its grip to reorder the collections ----------
+  (() => {
+    let draggedCol = null;
+    const clear = () => document.querySelectorAll('.col-drop-top, .col-drop-bot').forEach(s => s.classList.remove('col-drop-top', 'col-drop-bot'));
+    document.querySelectorAll('#side-collections > details.col').forEach(d => {
+      const summary = d.querySelector(':scope > summary'), grip = summary.querySelector('.col-grip');
+      if (grip) {
+        grip.addEventListener('dragstart', e => {
+          draggedCol = d; d.classList.add('col-dragging'); closeMenu();
+          e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'col');
+        });
+        grip.addEventListener('dragend', () => { if (draggedCol) draggedCol.classList.remove('col-dragging'); draggedCol = null; clear(); });
+      }
+      summary.addEventListener('dragover', e => {
+        if (!draggedCol || d === draggedCol) return;
+        e.preventDefault(); e.stopPropagation(); clear();
+        const b = summary.getBoundingClientRect();
+        summary.classList.add(e.clientY > b.top + b.height / 2 ? 'col-drop-bot' : 'col-drop-top');
+      });
+      summary.addEventListener('drop', async e => {
+        if (!draggedCol || d === draggedCol) return;
+        e.preventDefault(); e.stopPropagation(); clear();
+        const b = summary.getBoundingClientRect(), after = e.clientY > b.top + b.height / 2;
+        d.parentNode.insertBefore(draggedCol, after ? d.nextElementSibling : d);
+        const order = [...document.querySelectorAll('#side-collections > details.col')].map(x => x.dataset.collection);
+        const res = await fetch(URLS.reorderCols, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+          body: JSON.stringify({order})});
+        if (!res.ok || !(await res.json()).ok) window.location.reload();
+      });
+    });
+  })();
 
   // ---------- script snippets ----------
   const O = '{' + '{', C = '}' + '}';      // written this way so the page template leaves them alone

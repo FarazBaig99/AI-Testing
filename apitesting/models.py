@@ -190,11 +190,12 @@ class ApiCollection(models.Model):
     variables = models.JSONField(default=list, blank=True)    # pm.collectionVariables
     pre_request_script = models.TextField(blank=True)         # runs before every request of the collection
     test_script = models.TextField(blank=True)                # runs after every response of the collection
+    position = models.PositiveIntegerField(default=0)         # manual order in the sidebar (drag to reorder)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['name']
+        ordering = ['position', 'name', 'id']
 
     def __str__(self):
         return self.name

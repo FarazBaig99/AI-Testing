@@ -40,7 +40,14 @@
   .aw .kv input.form-control, .aw .kv select { font-size: .8rem; font-family: monospace; }
   .aw .code { font-family: ui-monospace, Consolas, monospace; font-size: .8rem; }
   .aw textarea.code { min-height: 220px; tab-size: 2; }
-  .aw .resp-pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; max-height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .aw { --resp-h: 360px; }
+  .aw .resp-pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; height: var(--resp-h); overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .aw #respHeaders, .aw #respTests, .aw #respDiag { max-height: var(--resp-h); overflow: auto; }
+  .aw #respFrame { height: var(--resp-h) !important; }
+  /* Postman-style drag handle to resize the response area */
+  .aw .resp-split { height: 12px; margin: 2px 0; cursor: ns-resize; display: flex; align-items: center; justify-content: center; touch-action: none; }
+  .aw .resp-split::before { content: ''; width: 46px; height: 4px; border-radius: 3px; background: #cbd5e1; transition: background .12s, width .12s; }
+  .aw .resp-split:hover::before, .aw .resp-split.dragging::before { background: var(--pf); width: 70px; }
   .aw .j-key { color: #a21caf; } .aw .j-str { color: #15803d; } .aw .j-num { color: #2563eb; } .aw .j-lit { color: #c2410c; }
   .aw .j-val { cursor: pointer; border-bottom: 1px dotted #cbd5e1; border-radius: 3px; }
   .aw .j-val:hover, .aw .j-val.picked { background: #fef3c7; border-bottom-color: #f59e0b; }
@@ -332,6 +339,7 @@
 
           <!-- response -->
           <div class="border-top mt-3 pt-2">
+            <div class="resp-split" id="respSplit" title="Drag to resize the response area"></div>
             <div class="d-flex flex-wrap align-items-center gap-3 mb-1">
               <div class="rtabs border-0" id="respTabs">
                 <button type="button" data-rtab="body" class="active">Body</button>
@@ -1842,6 +1850,41 @@
   const openItem = '{{ open_item|escapejs }}', openCase = '{{ open_case|escapejs }}';
   const target = openItem ? document.querySelector(`.req[data-item="${openItem}"]`) : openCase ? document.querySelector(`.req[data-case="${openCase}"]`) : null;
   if (target) { target.closest('details.grp').open = true; (target.closest('details.fold') || {}).open = true; target.click(); target.scrollIntoView({block: 'center'}); }
+})();
+
+// Postman-style resizable response area: drag the handle to grow / shrink it; the size is remembered.
+(() => {
+  const split = document.getElementById('respSplit');
+  if (!split) return;
+  const host = split.closest('.aw') || document.querySelector('.aw');
+  if (!host) return;
+  const KEY = 'api_resp_h';
+  const curH = () => parseInt(getComputedStyle(host).getPropertyValue('--resp-h'), 10) || 360;
+  const setH = h => host.style.setProperty('--resp-h', Math.round(h) + 'px');
+  try { const s = parseInt(localStorage.getItem(KEY) || '', 10); if (s) setH(s); } catch (e) {}
+  let startY = 0, startH = 0;
+  function move(e) {
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const max = Math.max(200, window.innerHeight * 0.85);
+    setH(Math.max(140, Math.min(max, startH + (startY - y))));
+  }
+  function up() {
+    split.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    try { localStorage.setItem(KEY, curH()); } catch (e) {}
+  }
+  split.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    startY = e.clientY; startH = curH();
+    split.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
+  // double-click resets to the default height
+  split.addEventListener('dblclick', () => { setH(360); try { localStorage.setItem(KEY, 360); } catch (e) {} });
 })();
 </script>
 {% endblock %}

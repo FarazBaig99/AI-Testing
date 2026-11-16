@@ -990,7 +990,14 @@
     $('url').value = q ? `${base}?${q}` : base;
     counts();
   };
+  // {{baseUrl}} = ... hint: only show it when the URL actually uses a {{variable}} (otherwise it is redundant)
+  function updateBaseHint() {
+    const base = current && current.base_url, url = $('url').value || '';
+    $('baseHint').innerHTML = (base && url.includes('{' + '{'))
+      ? `<code>{% templatetag openvariable %}baseUrl{% templatetag closevariable %}</code> = <code>${esc(base)}</code>` : '';
+  }
   $('url').addEventListener('input', () => {
+    updateBaseHint();
     const [, query = ''] = $('url').value.split(/\?(.*)/s);
     const disabled = kv.params.get().filter(p => !p.enabled);
     const rows = query ? query.split('&').filter(Boolean).map(pair => {
@@ -1080,9 +1087,9 @@
     const where = [spec.collection_name && `<i class="bi bi-collection"></i> ${esc(spec.collection_name)}`,
                    spec.project_name && `${esc(spec.project_name)} · ${esc(spec.environment_name || 'no environment')}`].filter(Boolean);
     $('reqCtx').innerHTML = where.join(' &nbsp;|&nbsp; ') + (spec.kind === 'case' ? ` &nbsp;<span class="badge text-bg-light border" id="caseBadge">${spec.saved ? 'synced API · saved values' : 'synced API · as synced'}</span>` : '');
-    $('baseHint').innerHTML = spec.base_url ? `<code>{% templatetag openvariable %}baseUrl{% templatetag closevariable %}</code> = <code>${esc(spec.base_url)}</code>` : '';
     $('method').value = spec.method || 'GET'; colorMethod();
     $('url').value = spec.url || '';
+    updateBaseHint();
     kv.params.set(spec.params); kv.headers.set(spec.headers);
     kv.form.set(spec.form_data); kv.urlenc.set(spec.urlencoded);
     const a = spec.auth || {};

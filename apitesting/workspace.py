@@ -289,18 +289,21 @@ def api_workspace(request):
             if name:
                 c = ApiCollection.objects.create(name=name[:200], created_by=request.user)
                 messages.success(request, f'Collection "{c.name}" created. Open an API and press Save to add it.')
-            else:
-                messages.error(request, 'Give the collection a name.')
+                return redirect(f"{reverse('api_workspace')}?tab=collections&open={c.pk}")
+            messages.error(request, 'Give the collection a name.')
+            return redirect(f"{reverse('api_workspace')}?tab=collections")
         elif action == 'rename_collection':
             c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
             name = request.POST.get('name', '').strip()
             if name:
                 c.name = name[:200]
                 c.save(update_fields=['name'])
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={c.pk}")
         elif action == 'delete_collection':
             c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
             c.delete()
             messages.success(request, f'Collection "{c.name}" deleted.')
+            return redirect(f"{reverse('api_workspace')}?tab=collections")
         elif action == 'add_request':
             c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
             folder = _folder_of(request, c)
@@ -371,8 +374,10 @@ def api_workspace(request):
             return redirect(f"{reverse('api_workspace')}?open={copy.pk}")
         elif action == 'delete_item':
             item = get_object_or_404(CollectionRequest, pk=request.POST.get('item'))
+            collection_id = item.collection_id
             item.delete()
             messages.success(request, f'"{item.name}" removed from {item.collection.name}.')
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={collection_id}")
         return redirect('api_workspace')
 
     selection = get_selection(request)

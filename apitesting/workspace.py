@@ -1078,3 +1078,21 @@ def api_lov_template(request):
     resp = HttpResponse(out.getvalue(), content_type='text/csv')
     resp['Content-Disposition'] = 'attachment; filename="lov-template.csv"'
     return resp
+
+
+# ---------- Dependency Intelligence ----------
+
+@login_required
+def collection_intel(request, collection_id):
+    """Static dependency analysis of a collection: variable producers and consumers, token chains,
+    run-order problems and change impact. Reads only the saved requests - it changes nothing."""
+    from . import intel
+    collection = get_object_or_404(ApiCollection, pk=collection_id)
+    lov_names = set()
+    for l in ApiLov.objects.filter(enabled=True):
+        lov_names.add(l.name)
+        lov_names.update(a.strip() for a in (l.aliases or '').split(',') if a.strip())
+    result = intel.analyse(collection, lov_names=lov_names)
+    return render(request, 'apitesting/intel.html', {
+        'collection': collection, 'result': result, 'result_json': json.dumps(result),
+    })

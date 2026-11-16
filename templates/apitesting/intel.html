@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}Dependencies - {{ collection.name }}{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .intel .m { font-size: .6rem; font-weight: 800; font-family: monospace; }
+  .intel .m-GET { color: #16a34a; } .intel .m-POST { color: #d97706; } .intel .m-PUT { color: #2563eb; }
+  .intel .m-PATCH { color: #7c3aed; } .intel .m-DELETE { color: #dc2626; } .intel .m-HEAD, .intel .m-OPTIONS { color: #64748b; }
+  .intel .graph-wrap { overflow: auto; border: 1px solid #e2e8f0; border-radius: 12px; background:
+     linear-gradient(90deg, #fbfdff 0 1px, transparent 1px) 0 0 / 28px 28px,
+     linear-gradient(#fbfdff 0 1px, transparent 1px) 0 0 / 28px 28px, #fff; }
+  .intel svg text { font-family: inherit; }
+  .intel .nodebox { cursor: pointer; }
+  .intel .nodebox rect { fill: #fff; stroke: #cbd5e1; stroke-width: 1.5; rx: 8; transition: stroke .12s, fill .12s; }
+  .intel .nodebox:hover rect { stroke: #059669; }
+  .intel .nodebox.sel rect { stroke: #059669; stroke-width: 2.5; fill: #f0fdf4; }
+  .intel .nodebox.up rect { stroke: #2563eb; fill: #eff6ff; }
+  .intel .nodebox.down rect { stroke: #d97706; fill: #fffbeb; }
+  .intel .nodebox.dim { opacity: .3; }
+  .intel .edge { fill: none; stroke: #cbd5e1; stroke-width: 1.6; }
+  .intel .edge.token { stroke: #f59e0b; stroke-width: 2.2; }
+  .intel .edge.hot { stroke: #059669; stroke-width: 2.6; }
+  .intel .edge.dim { opacity: .12; }
+  .intel .chip { border-radius: 6px; padding: 0 6px; font-size: .68rem; font-weight: 700; font-family: monospace; display: inline-block; }
+  .intel .chip-token { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+  .intel .chip-var { background: #eef2ff; color: #4338ca; border: 1px solid #e0e7ff; }
+  .intel .legend span { font-size: .74rem; color: #475569; margin-right: 14px; }
+  .intel .legend i { display: inline-block; width: 22px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 4px; }
+</style>
+<div class="pf intel">
+  <div class="pf-head mb-3 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-auto">
+      <div class="pf-eyebrow">Dependency Intelligence</div>
+      <h4 class="fw-bold mb-1"><i class="bi bi-diagram-3 text-success"></i> {{ collection.name }}</h4>
+      <small class="text-muted">Which API produces a value, which API needs it, how tokens chain, and what breaks when one API changes.</small>
+    </div>
+    <a href="{% url 'api_workspace' %}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Workspace</a>
+    <a href="{% url 'api_collection_run' collection.pk %}" class="btn btn-sm btn-pf"><i class="bi bi-play-circle"></i> Run</a>
+  </div>
+
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md"><div class="kpi"><small>Requests</small><b class="fs-5">{{ result.nodes|length }}</b></div></div>
+    <div class="col-6 col-md"><div class="kpi"><small>Dependencies</small><b class="fs-5">{{ result.edges|length }}</b></div></div>
+    <div class="col-6 col-md"><div class="kpi"><small>Token chains</small><b class="fs-5 text-orange">{{ result.tokens|length }}</b></div></div>
+    <div class="col-6 col-md"><div class="kpi"><small>Unresolved vars</small><b class="fs-5 {% if result.unresolved %}text-danger{% endif %}">{{ result.unresolved|length }}</b></div></div>
+    <div class="col-6 col-md"><div class="kpi"><small>Order problems</small><b class="fs-5 {% if result.order %}text-danger{% endif %}">{{ result.order|length }}</b></div></div>
+  </div>
+
+  {% if result.nodes %}
+  <div class="panel mb-3">
+    <div class="d-flex flex-wrap align-items-center mb-2 gap-2">
+      <h6 class="mb-0 me-auto">Dependency graph <span class="small text-muted fw-normal">· click a request to trace what it needs and what depends on it</span></h6>
+      <span class="legend">
+        <span><i style="border-color:#f59e0b"></i>token / signature</span>
+        <span><i style="border-color:#cbd5e1"></i>data value</span>
+        <span class="text-primary fw-semibold">■ needs this</span>
+        <span class="text-orange fw-semibold">■ depends on this</span>
+      </span>
+      <button type="button" class="btn btn-sm btn-light border" id="clearSel" hidden><i class="bi bi-x-lg"></i> Clear</button>
+    </div>
+    <div class="graph-wrap"><div id="graph" style="min-height:120px"></div></div>
+    <div class="small text-muted mt-2" id="selInfo" hidden></div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="panel h-100">
+        <h6><i class="bi bi-key text-warning"></i> Token &amp; data chains</h6>
+        {% if result.tokens %}
+        <div class="small text-muted mb-2">A value one API produces and another sends on. Change the producer and every consumer is affected.</div>
+        {% for t in result.tokens %}
+          <div class="mb-2 pb-2 border-bottom">
+            <span class="chip chip-token">{{ t.var }}</span>
+            <div class="small mt-1">
+              <span class="text-muted">from</span>
+              {% for p in t.producers %}<b>{{ p.name }}</b>{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-danger">nobody (value must be set by hand or by a login)</span>{% endfor %}
+              <span class="text-muted">→</span>
+              {% for c in t.consumers %}{{ c.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-muted">unused</span>{% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+        {% else %}<div class="text-muted small py-2">No token or signature values flow between these requests.</div>{% endif %}
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="panel h-100">
+        <h6><i class="bi bi-exclamation-triangle text-danger"></i> Problems</h6>
+        {% if result.order %}
+        <div class="small fw-semibold text-danger mb-1">Used before it is produced</div>
+        {% for o in result.order %}
+          <div class="small mb-2"><b>{{ o.name }}</b> needs <span class="chip chip-var">{{ o.var }}</span>
+            but it is only set later by {% for p in o.producers %}{{ p.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. Reorder so the producer runs first.</div>
+        {% endfor %}
+        {% endif %}
+        {% if result.unresolved %}
+        <div class="small fw-semibold text-danger mb-1 mt-2">Unresolved variables</div>
+        <div class="small text-muted mb-1">No request, environment, project, global or LOV provides these. The request will send the literal <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code>.</div>
+        {% for u in result.unresolved %}
+          <div class="small mb-1"><b>{{ u.name }}</b> → <span class="chip chip-var">{{ u.var }}</span></div>
+        {% endfor %}
+        {% endif %}
+        {% if not result.order and not result.unresolved %}
+          <div class="text-success small py-2"><i class="bi bi-check-circle-fill"></i> Every variable is provided and produced before it is used.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="panel text-center text-muted py-5">
+    This collection has no saved requests yet. Add requests in the <a href="{% url 'api_workspace' %}">workspace</a>, then come back to see how they depend on each other.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script id="intel-data" type="application/json">{{ result_json|safe }}</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById('intel-data').textContent);
+  const box = document.getElementById('graph');
+  if (!DATA.nodes.length) return;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // ---- layout: column = longest dependency chain depth, row = stack within a column ----
+  const inEdges = {}, outEdges = {};
+  DATA.nodes.forEach(n => { inEdges[n.id] = []; outEdges[n.id] = []; });
+  DATA.edges.forEach(e => { if (inEdges[e.target]) inEdges[e.target].push(e); if (outEdges[e.source]) outEdges[e.source].push(e); });
+
+  const depth = {};
+  function depthOf(id, seen) {
+    if (depth[id] != null) return depth[id];
+    seen = seen || new Set();
+    if (seen.has(id)) return 0;            // break cycles
+    seen.add(id);
+    let d = 0;
+    for (const e of inEdges[id]) d = Math.max(d, depthOf(e.source, seen) + 1);
+    depth[id] = d;
+    return d;
+  }
+  DATA.nodes.forEach(n => depthOf(n.id));
+  const cols = {};
+  DATA.nodes.slice().sort((a, b) => a.position - b.position).forEach(n => {
+    (cols[depth[n.id]] = cols[depth[n.id]] || []).push(n);
+  });
+
+  const NW = 168, NH = 38, GX = 220, GY = 54, PAD = 16;
+  const pos = {};
+  let maxRow = 0;
+  Object.keys(cols).map(Number).sort((a, b) => a - b).forEach(c => {
+    cols[c].forEach((n, i) => { pos[n.id] = {x: PAD + c * GX, y: PAD + i * GY, col: c, row: i}; });
+    maxRow = Math.max(maxRow, cols[c].length);
+  });
+  const ncols = Math.max(...Object.keys(cols).map(Number)) + 1;
+  const W = PAD * 2 + (ncols - 1) * GX + NW, H = PAD * 2 + Math.max(1, maxRow) * GY;
+
+  function edgePath(e) {
+    const a = pos[e.source], b = pos[e.target];
+    if (!a || !b) return '';
+    const x1 = a.x + NW, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y + NH / 2, mx = (x1 + x2) / 2;
+    return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+  }
+  const edgesSvg = DATA.edges.map((e, i) =>
+    `<path class="edge ${e.token ? 'token' : ''}" data-s="${e.source}" data-t="${e.target}" d="${edgePath(e)}" marker-end="url(#arrow)"/>`).join('');
+  const nodesSvg = DATA.nodes.map(n => {
+    const p = pos[n.id];
+    const tok = n.tokens.length ? `<text x="${p.x + NW - 8}" y="${p.y + 14}" text-anchor="end" font-size="11">🔑</text>` : '';
+    return `<g class="nodebox" data-id="${n.id}" transform="translate(${p.x},${p.y})">
+      <rect width="${NW}" height="${NH}"/>
+      <text x="8" y="16" font-size="9" font-weight="800" class="m m-${esc(n.method)}">${esc(n.method)}</text>
+      <text x="8" y="29" font-size="11.5" fill="#0f172a">${esc(n.name.length > 24 ? n.name.slice(0, 23) + '…' : n.name)}</text>
+      </g>`.replace('</g>', tok + '</g>');
+  }).join('');
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker></defs>
+    ${edgesSvg}${nodesSvg}</svg>`;
+
+  // ---- click a node: trace upstream (needs) and downstream (depends on this) ----
+  function reach(start, edgeMap, key) {
+    const seen = new Set(), stack = [start];
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const e of edgeMap[cur] || []) {
+        const next = e[key];
+        if (!seen.has(next)) { seen.add(next); stack.push(next); }
+      }
+    }
+    return seen;
+  }
+  const svg = box.querySelector('svg');
+  const clearBtn = document.getElementById('clearSel'), info = document.getElementById('selInfo');
+  let selected = null;
+  function select(id) {
+    selected = id;
+    const up = reach(id, inEdges, 'source'), down = reach(id, outEdges, 'target');
+    svg.querySelectorAll('.nodebox').forEach(g => {
+      const nid = +g.dataset.id;
+      g.classList.remove('sel', 'up', 'down', 'dim');
+      if (nid === id) g.classList.add('sel');
+      else if (up.has(nid)) g.classList.add('up');
+      else if (down.has(nid)) g.classList.add('down');
+      else g.classList.add('dim');
+    });
+    svg.querySelectorAll('.edge').forEach(p => {
+      const s = +p.dataset.s, t = +p.dataset.t;
+      const onChain = (s === id || up.has(s) || down.has(s)) && (t === id || up.has(t) || down.has(t));
+      p.classList.toggle('hot', onChain && (s === id || t === id));
+      p.classList.toggle('dim', !onChain);
+    });
+    const n = DATA.nodes.find(x => x.id === id);
+    const nameOf = i => (DATA.nodes.find(x => x.id === i) || {}).name;
+    info.hidden = false; clearBtn.hidden = false;
+    info.innerHTML = `<b>${esc(n.name)}</b> — `
+      + `needs ${up.size ? [...up].map(i => esc(nameOf(i))).join(', ') : 'nothing upstream'}; `
+      + `<span class="text-orange">${down.size} request(s) depend on it${down.size ? ': ' + [...down].map(i => esc(nameOf(i))).join(', ') : ''}</span>.`;
+  }
+  function clear() {
+    selected = null; info.hidden = true; clearBtn.hidden = true;
+    svg.querySelectorAll('.nodebox').forEach(g => g.classList.remove('sel', 'up', 'down', 'dim'));
+    svg.querySelectorAll('.edge').forEach(p => p.classList.remove('hot', 'dim'));
+  }
+  svg.querySelectorAll('.nodebox').forEach(g => g.addEventListener('click', () => {
+    const id = +g.dataset.id; selected === id ? clear() : select(id);
+  }));
+  clearBtn.addEventListener('click', clear);
+})();
+</script>
+{% endblock %}

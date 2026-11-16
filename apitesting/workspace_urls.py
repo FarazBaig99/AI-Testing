@@ -19,6 +19,7 @@ urlpatterns = [
     path('cookies/', workspace.api_ws_cookies, name='api_ws_cookies'),
     path('collections/<int:collection_id>/settings/', workspace.api_ws_collection_settings,
          name='api_ws_collection_settings'),
+    path('collections/<int:collection_id>/intel/', workspace.collection_intel, name='api_collection_intel'),
     path('collections/<int:collection_id>/run/', runs.collection_run, name='api_collection_run'),
     path('runs/<int:run_id>/', runs.run_detail, name='api_run_detail'),
     path('runs/<int:run_id>/status/', runs.run_status, name='api_run_status'),

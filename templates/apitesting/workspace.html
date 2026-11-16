@@ -699,6 +699,7 @@
       {icon: 'plug', label: 'Add APIs', run: () => d.querySelector(':scope > summary .add-apis').click()},
       {icon: 'play-fill', label: 'Run collection', run: () => window.location = `${URLS.page}collections/${id}/run/`},
       {icon: 'calendar-event', label: 'Schedules & history', run: () => window.location = `${URLS.page}collections/${id}/run/?tab=schedules`},
+      {icon: 'diagram-3', label: 'Dependencies', run: () => window.location = `${URLS.page}collections/${id}/intel/`},
       {icon: 'sliders', label: 'Variables & scripts', run: () => openCollection(id)},
       '-',
       {icon: 'files', label: 'Copy to…', run: () => copyToMenu(x, y, id, target => post('copy_collection', 'collection', id, {target}))},

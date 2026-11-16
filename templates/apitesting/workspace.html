@@ -2031,6 +2031,7 @@
     e.preventDefault();
     startX = e.clientX; startW = curW();
     split.classList.add('dragging');
+    try { split.setPointerCapture(e.pointerId); } catch (_) {}
     document.body.style.userSelect = 'none';
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);

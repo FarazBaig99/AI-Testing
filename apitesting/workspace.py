@@ -752,6 +752,44 @@ def api_ws_variable_set(request):
 
 
 @login_required
+@require_POST
+def api_ws_extract(request):
+    """Save several response values as variables at once (the Extract variables dialog):
+    {scope: environment|project|globals, environment, vars: [{key, value}, ...]}. Chosen names overwrite."""
+    try:
+        data = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+    scope = str(data.get('scope') or 'environment')
+    env = _environment(data.get('environment'))
+    if scope in ('environment', 'project') and env is None:
+        return JsonResponse({'ok': False, 'error': 'This request has no environment; use the Global scope.'})
+    holder, label = _scope_target(scope, None, env)
+    if holder is None:
+        return JsonResponse({'ok': False, 'error': 'Unknown scope.'}, status=400)
+    rows = list(holder.variables)
+    by_key = {r.get('key'): r for r in rows}
+    saved, skipped = 0, []
+    for item in (data.get('vars') or [])[:500]:
+        key = str(item.get('key') or '').strip()
+        if not VARIABLE_NAME_RE.match(key) or key.startswith('$'):
+            skipped.append(key)
+            continue
+        value = item.get('value')
+        value = (value if isinstance(value, str) else json.dumps(value))[:10000]
+        if key in by_key:
+            by_key[key]['value'], by_key[key]['enabled'] = value, True
+        else:
+            r = {'key': key, 'value': value, 'enabled': True}
+            rows.append(r)
+            by_key[key] = r
+        saved += 1
+    holder.variables = rows
+    holder.save(update_fields=['variables'])
+    return JsonResponse({'ok': True, 'saved': saved, 'label': label, 'skipped': skipped})
+
+
+@login_required
 def api_ws_variables(request):
     """Globals and the variables of the environments selected in the workspace."""
     if request.method == 'POST':

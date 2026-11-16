@@ -370,7 +370,8 @@
                 <select id="respLang" class="form-select form-select-sm w-auto">
                   <option value="json">JSON</option><option value="xml">XML</option><option value="html">HTML</option>
                   <option value="javascript">JavaScript</option><option value="text">Text</option></select>
-                <button type="button" class="btn btn-sm btn-light border ms-auto" id="copyResp"><i class="bi bi-clipboard"></i> Copy</button>
+                <button type="button" class="btn btn-sm btn-light border ms-auto" id="extractVars" title="Create variables from the id fields in this response" hidden><i class="bi bi-braces-asterisk text-success"></i> Extract variables</button>
+                <button type="button" class="btn btn-sm btn-light border" id="copyResp"><i class="bi bi-clipboard"></i> Copy</button>
               </div>
               <pre class="resp-pre code" id="respPre"></pre>
               <iframe id="respFrame" sandbox="" class="w-100 border rounded" style="height:420px" hidden></iframe>
@@ -386,6 +387,29 @@
     </div>
   </div>
 </div>
+
+<!-- extract variables from a response -->
+<div class="modal fade" id="extractModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-braces-asterisk text-success"></i> Extract variables from the response</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="p-2 border-bottom d-flex flex-wrap align-items-center gap-2">
+    <span class="small text-muted">Save to</span>
+    <select id="extractScope" class="form-select form-select-sm w-auto">
+      <option value="environment">Environment</option><option value="project">Project</option><option value="globals">Global</option>
+    </select>
+    <span class="small text-muted" id="extractCount"></span>
+    <button type="button" class="btn btn-sm btn-link p-0 ms-auto" id="extractAll">Select all</button>
+    <button type="button" class="btn btn-sm btn-link p-0 text-muted" id="extractNone">None</button>
+  </div>
+  <div class="modal-body p-2" style="max-height:55vh">
+    <div class="small text-muted mb-2">Each <code>id</code> found in the response, named after a nearby field (code / name). Edit a name, untick what you don't need, then save. Existing names are overwritten.</div>
+    <table class="table table-sm align-middle mb-0"><thead><tr><th style="width:26px"></th><th style="width:45%">Variable name</th><th>Value</th></tr></thead>
+      <tbody id="extractRows"></tbody></table>
+    <div class="text-center text-muted small p-4" id="extractEmpty" hidden>No <code>id</code> fields found in this response.</div>
+  </div>
+  <div class="modal-footer"><span class="small me-auto" id="extractMsg"></span>
+    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+    <button type="button" class="btn btn-pf" id="extractSave"><i class="bi bi-floppy"></i> Save variables</button></div>
+</div></div></div>
 
 <!-- environment login (Keycloak) + cookie jar -->
 <div class="modal fade" id="authModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
@@ -561,7 +585,7 @@
 <script>
 (() => {
   const CSRF = '{{ csrf_token }}';
-  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', lovPage: '{% url "api_lov_page" %}',
+  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', lovPage: '{% url "api_lov_page" %}',
                 auth: '{% url "api_ws_auth" %}', cookies: '{% url "api_ws_cookies" %}', rename: '{% url "api_ws_rename" %}',
                 page: '{% url "api_workspace" %}'};
   const $ = id => document.getElementById(id);
@@ -1393,6 +1417,7 @@
     if (r.ok && current && current.item) updateItemBadge(current.item, r.status);
     $('respEmpty').hidden = true;
     renderTests(r); renderConsole(r); renderDiagnosis(r);
+    $('extractVars').hidden = !(r.ok && /^[\[{]/.test((r.body || '').trim()));
     $('authHint').classList.toggle('d-none', !r.auth_hint); $('authHint').classList.toggle('d-flex', !!r.auth_hint);
     $('authHintText').textContent = r.auth_hint || '';
     if (!r.ok) {
@@ -1436,6 +1461,60 @@
     $('respPre').textContent = (lang === 'xml' || lang === 'html') ? prettyMarkup(body) : body;
   }
   $('copyResp').addEventListener('click', () => lastResponse && navigator.clipboard.writeText(lastResponse.body || ''));
+
+  // ---------- Extract variables: create variables from the id fields in a response ----------
+  const extractModal = new bootstrap.Modal($('extractModal'));
+  function slugify(s) { return String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40); }
+  function singular(k) { k = String(k || ''); return k.endsWith('ies') ? k.slice(0, -3) + 'y' : k.endsWith('s') ? k.slice(0, -1) : k; }
+  function extractCandidates(body) {
+    let data; try { data = JSON.parse(body); } catch (e) { return []; }
+    const out = [], used = new Set();
+    const uniq = base => { base = (base || 'id').replace(/_+/g, '_').replace(/^_+|_+$/g, '') || 'id'; let n = base, i = 2; while (used.has(n)) n = base + '_' + (i++); used.add(n); return n; };
+    const labelOf = obj => { for (const k of ['iataCode', 'icaoCode', 'code', 'slug', 'key', 'name', 'title', 'label', 'username', 'email']) if (obj && typeof obj[k] === 'string' && obj[k].trim()) return slugify(obj[k]); return ''; };
+    function walk(node, hint) {
+      if (Array.isArray(node)) { node.forEach(v => walk(v, hint)); return; }
+      if (node && typeof node === 'object') {
+        for (const k of Object.keys(node)) {
+          const v = node[k];
+          if (/_?id$/i.test(k) && (typeof v === 'string' || typeof v === 'number')) {
+            const base = labelOf(node) || singular(hint) || 'item';
+            const suffix = /^_?id$/i.test(k) ? 'id' : k;
+            out.push({ key: uniq(base + '_' + suffix), value: String(v) });
+          }
+        }
+        for (const k of Object.keys(node)) walk(node[k], k);
+      }
+    }
+    walk(data, '');
+    return out.slice(0, 200);
+  }
+  $('extractVars').addEventListener('click', () => {
+    const cands = extractCandidates(lastResponse ? lastResponse.body : '');
+    $('extractRows').innerHTML = cands.map(c => `<tr><td><input type="checkbox" class="form-check-input ex-pick" checked></td>
+      <td><input class="form-control form-control-sm code ex-key" value="${esc(c.key)}"></td>
+      <td class="small text-muted text-break ex-val" data-v="${esc(c.value)}">${esc(c.value.length > 80 ? c.value.slice(0, 79) + '…' : c.value)}</td></tr>`).join('');
+    $('extractEmpty').hidden = cands.length > 0;
+    $('extractCount').textContent = cands.length ? `${cands.length} found` : '';
+    $('extractMsg').textContent = '';
+    $('extractScope').value = current && current.environment ? 'environment' : 'globals';
+    extractModal.show();
+  });
+  $('extractAll').addEventListener('click', () => document.querySelectorAll('.ex-pick').forEach(c => c.checked = true));
+  $('extractNone').addEventListener('click', () => document.querySelectorAll('.ex-pick').forEach(c => c.checked = false));
+  $('extractSave').addEventListener('click', async () => {
+    const vars = [...document.querySelectorAll('#extractRows tr')].filter(tr => tr.querySelector('.ex-pick').checked)
+      .map(tr => ({ key: tr.querySelector('.ex-key').value.trim(), value: tr.querySelector('.ex-val').dataset.v }))
+      .filter(v => v.key);
+    const msg = (cls, text) => { $('extractMsg').className = `small me-auto text-${cls}`; $('extractMsg').textContent = text; };
+    if (!vars.length) return msg('danger', 'Tick at least one variable.');
+    try {
+      const out = await (await fetch(URLS.extract, { method: 'POST', headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: $('extractScope').value, environment: current && current.environment, vars }) })).json();
+      if (!out.ok) return msg('danger', out.error);
+      msg('success', `Saved ${out.saved} variable(s) to ${out.label}.`);
+      setTimeout(() => extractModal.hide(), 1000);
+    } catch (e) { msg('danger', 'Could not save the variables.'); }
+  });
   function jsonNode(v, depth, path) {
     // pretty JSON like JSON.stringify(v, null, 2), but every scalar is a span that can be saved as a variable
     const pad = '  '.repeat(depth), inner = '  '.repeat(depth + 1);

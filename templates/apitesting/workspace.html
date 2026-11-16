@@ -44,7 +44,17 @@
   .aw .kv input.form-control, .aw .kv select { font-size: .8rem; font-family: monospace; }
   .aw .code { font-family: ui-monospace, Consolas, monospace; font-size: .8rem; }
   .aw textarea.code { min-height: 220px; tab-size: 2; }
-  .aw { --resp-h: 340px; }
+  .aw { --resp-h: 340px; --side-w: 320px; }
+  /* resizable left panel (large screens): drag the vertical handle to widen / narrow it */
+  @media (min-width: 992px) {
+    .aw #wsRow { flex-wrap: nowrap; }
+    .aw #sideCol { flex: 0 0 var(--side-w); width: var(--side-w); max-width: var(--side-w); }
+    .aw #mainCol { flex: 1 1 auto; min-width: 0; max-width: none; width: auto; }
+    .aw .side-split { flex: 0 0 10px; align-self: stretch; cursor: ew-resize; display: flex; align-items: center; justify-content: center; touch-action: none; }
+    .aw .side-split::before { content: ''; width: 4px; height: 46px; border-radius: 3px; background: #cbd5e1; transition: background .12s, height .12s; }
+    .aw .side-split:hover::before, .aw .side-split.dragging::before { background: var(--pf); height: 72px; }
+  }
+  @media (max-width: 991.98px) { .aw .side-split { display: none; } }
   .aw .resp-pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
   /* Postman-style drag handle to resize the response area */
   .aw .resp-split { height: 12px; margin: 2px 0; cursor: ns-resize; display: flex; align-items: center; justify-content: center; touch-action: none; }
@@ -169,9 +179,9 @@
     </div>
   </div>
 
-  <div class="row g-3">
+  <div class="row g-3" id="wsRow">
     <!-- left: APIs and collections -->
-    <div class="col-lg-4 col-xl-3">
+    <div class="col-lg-4 col-xl-3" id="sideCol">
       <div class="side">
         <div class="side-tabs">
           <button type="button" data-side="apis" class="{% if tab != 'collections' %}active{% endif %}"><i class="bi bi-plug"></i> APIs</button>
@@ -227,8 +237,9 @@
       </div>
     </div>
 
+    <div class="side-split" id="sideSplit" title="Drag to resize the panel"></div>
     <!-- right: request builder + response -->
-    <div class="col-lg-8 col-xl-9">
+    <div class="col-lg-8 col-xl-9" id="mainCol">
       <div class="main p-3">
         <div id="emptyState" class="text-center text-muted py-5">
           <i class="bi bi-send fs-1 text-success"></i>
@@ -1990,6 +2001,41 @@
   });
   // double-click resets to the default height
   split.addEventListener('dblclick', () => { setH(340); try { localStorage.setItem(KEY, 340); } catch (e) {} });
+})();
+
+// Resizable left panel: drag the vertical handle to widen / narrow it; the size is remembered.
+(() => {
+  const split = document.getElementById('sideSplit');
+  if (!split) return;
+  const host = split.closest('.aw') || document.querySelector('.aw');
+  const row = document.getElementById('wsRow');
+  if (!host || !row) return;
+  const KEY = 'api_side_w';
+  const curW = () => parseInt(getComputedStyle(host).getPropertyValue('--side-w'), 10) || 320;
+  const setW = w => host.style.setProperty('--side-w', Math.round(w) + 'px');
+  try { const s = parseInt(localStorage.getItem(KEY) || '', 10); if (s) setW(Math.max(200, Math.min(s, window.innerWidth - 420))); } catch (e) {}
+  let startX = 0, startW = 0;
+  function move(e) {
+    const x = e.touches ? e.touches[0].clientX : e.clientX;
+    const max = Math.max(300, (row.clientWidth || window.innerWidth) - 420);   // keep room for the builder
+    setW(Math.max(200, Math.min(max, startW + (x - startX))));
+  }
+  function up() {
+    split.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    try { localStorage.setItem(KEY, curW()); } catch (e) {}
+  }
+  split.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    startX = e.clientX; startW = curW();
+    split.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
+  split.addEventListener('dblclick', () => { setW(320); try { localStorage.setItem(KEY, 320); } catch (e) {} });
 })();
 </script>
 {% endblock %}

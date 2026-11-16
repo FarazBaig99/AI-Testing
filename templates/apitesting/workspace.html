@@ -1319,8 +1319,22 @@
     $('respConsole').hidden = !(has && name === 'console');
   }
   function size(n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(2)} KB` : `${(n / 1048576).toFixed(2)} MB`; }
+  // after a send, refresh the saved request's status badge in the left tree (no page reload needed)
+  function updateItemBadge(itemId, status) {
+    if (!itemId || !status) return;
+    const row = document.querySelector(`.side .tree .req[data-item="${itemId}"]`);
+    if (!row) return;
+    let stat = row.querySelector('.stat');
+    if (!stat) {
+      stat = document.createElement('span');
+      row.insertBefore(stat, row.querySelector('.more') || null);
+    }
+    stat.className = `stat stat-${String(status)[0]} small`;
+    stat.textContent = status;
+  }
   function showResponse(r) {
     lastResponse = r;
+    if (r.ok && current && current.item) updateItemBadge(current.item, r.status);
     $('respEmpty').hidden = true;
     renderTests(r); renderConsole(r);
     $('authHint').classList.toggle('d-none', !r.auth_hint); $('authHint').classList.toggle('d-flex', !!r.auth_hint);

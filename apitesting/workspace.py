@@ -362,6 +362,19 @@ def api_workspace(request):
             else:
                 messages.error(request, 'Pick at least one API.')
             return redirect(f"{reverse('api_workspace')}?tab=collections&open={c.pk}")
+        elif action == 'gen_tests_item':
+            item = get_object_or_404(CollectionRequest, pk=request.POST.get('item'))
+            folder, n = generate_tests_for_item(item)
+            messages.success(request, f'Generated {n} test{"s" if n != 1 else ""} for "{item.name}" in folder "{folder.name}".')
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={item.collection_id}")
+        elif action == 'gen_tests_collection':
+            c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
+            folder, n = generate_tests_for_collection(c)
+            if folder is None:
+                messages.warning(request, f'"{c.name}" has no requests to generate tests from.')
+            else:
+                messages.success(request, f'Generated {n} test{"s" if n != 1 else ""} across "{c.name}" in the "Generated tests" folder.')
+            return redirect(f"{reverse('api_workspace')}?tab=collections&open={c.pk}")
         elif action == 'duplicate_item':
             item = get_object_or_404(CollectionRequest, pk=request.POST.get('item'))
             copy = duplicate_item(item)
@@ -1157,6 +1170,71 @@ def _request_from_scenario(collection, case, scenario, position, folder):
         setattr(item, f, scenario.get(f, spec.get(f)))
     item.save()
     return item
+
+
+def _item_from_scenario(collection, source_item, scenario, position, folder):
+    """Save one generated scenario as a request, copying the source request's details with the scenario's changes."""
+    base = item_spec(source_item)
+    item = CollectionRequest(collection=collection, project=source_item.project, environment=source_item.environment,
+                             source=source_item.source, name=scenario['name'][:600], position=position, folder=folder)
+    for f in SPEC_FIELDS:
+        setattr(item, f, scenario.get(f, base.get(f)))
+    item.save()
+    return item
+
+
+def _generated_folder_ids(collection):
+    """Folder ids that already hold generated tests (the collection-level "Generated tests" folder and any
+    API-level "... · tests" folder), with their subfolders, so generation never tests its own output."""
+    folders = list(collection.folders.all())
+    roots = [f for f in folders
+             if (f.parent_id is None and f.name == 'Generated tests') or f.name.endswith('· tests')]
+    out, stack = set(), list(roots)
+    while stack:
+        f = stack.pop()
+        out.add(f.pk)
+        stack.extend([c for c in folders if c.parent_id == f.pk])
+    return out
+
+
+def generate_tests_for_item(item):
+    """Create a folder next to the request (same collection / parent folder) holding its generated test cases."""
+    from . import testgen
+    collection = item.collection
+    scenarios = testgen.generate(item_spec(item))
+    parent = item.folder
+    folder = CollectionFolder.objects.create(
+        collection=collection, parent=parent, name=f'{item.name[:188]} · tests',
+        position=(collection.folders.filter(parent=parent).aggregate(m=Max('position'))['m'] or 0) + 1)
+    with transaction.atomic():
+        for pos, sc in enumerate(scenarios, 1):
+            _item_from_scenario(collection, item, sc, pos, folder)
+    return folder, len(scenarios)
+
+
+def generate_tests_for_collection(collection):
+    """Create a 'Generated tests' folder with a subfolder per request, each holding that request's cases."""
+    from . import testgen
+    skip = _generated_folder_ids(collection)
+    items = [r for r in collection.ordered_requests() if r.folder_id not in skip]
+    if not items:
+        return None, 0
+    top = CollectionFolder.objects.create(
+        collection=collection, parent=None, name='Generated tests',
+        position=(collection.folders.filter(parent=None).aggregate(m=Max('position'))['m'] or 0) + 1)
+    total = 0
+    with transaction.atomic():
+        for item in items:
+            scenarios = testgen.generate(item_spec(item))
+            if not scenarios:
+                continue
+            sub = CollectionFolder.objects.create(
+                collection=collection, parent=top, name=item.name[:200],
+                position=(collection.folders.filter(parent=top).aggregate(m=Max('position'))['m'] or 0) + 1)
+            for pos, sc in enumerate(scenarios, 1):
+                _item_from_scenario(collection, item, sc, pos, sub)
+                total += 1
+    return top, total
 
 
 def _int_in(value, default, low, high):

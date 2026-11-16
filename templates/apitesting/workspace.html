@@ -758,6 +758,7 @@
     const name = row.dataset.name, col = row.closest('details.col').dataset.name;
     openMenu(x, y, [
       {icon: 'box-arrow-up-right', label: 'Open', run: () => row.click()},
+      {icon: 'magic', label: 'Generate tests', run: () => post('gen_tests_item', 'item', row.dataset.item)},
       {icon: 'pencil', label: 'Rename', run: () => renameInline(row.querySelector('.nm'), 'item', row.dataset.item, row)},
       {icon: 'copy', label: 'Duplicate', run: () => post('duplicate_item', 'item', row.dataset.item)},
       '-',
@@ -774,6 +775,7 @@
       {icon: 'play-fill', label: 'Run collection', run: () => window.location = `${URLS.page}collections/${id}/run/`},
       {icon: 'calendar-event', label: 'Schedules & history', run: () => window.location = `${URLS.page}collections/${id}/run/?tab=schedules`},
       {icon: 'diagram-3', label: 'Dependencies', run: () => window.location = `${URLS.page}collections/${id}/intel/`},
+      {icon: 'magic', label: 'Generate tests (all APIs)', run: () => post('gen_tests_collection', 'collection', id)},
       {icon: 'sliders', label: 'Variables & scripts', run: () => openCollection(id)},
       '-',
       {icon: 'files', label: 'Copy to…', run: () => copyToMenu(x, y, id, target => post('copy_collection', 'collection', id, {target}))},

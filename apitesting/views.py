@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 
@@ -57,23 +58,23 @@ def _read_upload(f):
     raise CollectionError('Could not read the uploaded file.')
 
 
-def _start_review(request, project, env, endpoints, label, source=None):
+def _start_review(request, project, env, endpoints, label, source=None, return_to=''):
     for ep in endpoints:
         ep['url'] = env.relativize(ep['url'])
         ep['fingerprint'] = fingerprint(ep)
     session = ImportSession.objects.create(project=project, environment=env, source=source, source_label=label,
-                                           endpoints=endpoints, created_by=request.user)
+                                           endpoints=endpoints, return_to=return_to, created_by=request.user)
     return redirect('api_review', pk=project.pk, session_id=session.pk)
 
 
-def _sync_source(request, project, source, env_text=''):
+def _sync_source(request, project, source, env_text='', return_to=''):
     try:
         doc, spec_url = load_from_url(source.url, source.auth_header)
         endpoints = parse_collection(doc, parse_environment(env_text), spec_url)
     except CollectionError as exc:
         messages.error(request, str(exc))
         return redirect(f'/projects/{project.pk}/api/import/?tab=link')
-    return _start_review(request, project, source.environment, endpoints, source.url, source)
+    return _start_review(request, project, source.environment, endpoints, source.url, source, return_to=return_to)
 
 
 # ---------- API Testing home & environments ----------
@@ -209,6 +210,7 @@ def api_import(request, pk):
     sources = env.sources.all()
     tab = request.GET.get('tab', 'upload')
     link_tab = f'/projects/{pk}/api/import/?tab=link'
+    nxt = _safe_next(request)       # where to go after the import is applied (e.g. the APIs & Databases page)
     manual = {}
 
     if request.method == 'POST':
@@ -233,7 +235,7 @@ def api_import(request, pk):
             except CollectionError as exc:
                 messages.error(request, str(exc))
                 return redirect('api_import', pk=pk)
-            return _start_review(request, project, env, endpoints, collection.name)
+            return _start_review(request, project, env, endpoints, collection.name, return_to=nxt)
 
         if action == 'add_url':
             url = request.POST.get('url', '').strip()
@@ -276,12 +278,12 @@ def api_import(request, pk):
             except CollectionError as exc:
                 messages.error(request, str(exc))
                 return redirect(link_tab)
-            return _sync_source(request, project, source, env_text)
+            return _sync_source(request, project, source, env_text, return_to=nxt)
 
     return render(request, 'apitesting/import.html', {
         'project': project, 'env': env, 'environments': project.api_environments.all(),
         'sources': sources, 'tab': tab, 'active_source': sources.filter(is_active=True).first(),
-        'folders': env.folders.all(), 'manual': manual,
+        'folders': env.folders.all(), 'manual': manual, 'next': nxt,
     })
 
 
@@ -350,7 +352,7 @@ def api_sync(request, pk):
     source = env.sources.filter(is_active=True).first() if env else None
     if request.method != 'POST' or not source:
         return redirect(f'/projects/{pk}/api/import/?tab=link')
-    return _sync_source(request, project, source)
+    return _sync_source(request, project, source, return_to=_safe_next(request))
 
 
 @login_required
@@ -376,10 +378,12 @@ def api_review(request, pk, session_id):
         rows.append({**ep, 'change': change, 'diff': diff, 'display_url': env.resolve(ep['url'])})
 
     if request.method == 'POST':
+        return_to = session.return_to      # where to go after applying / discarding (e.g. APIs & Databases)
+        done = return_to if return_to.startswith('/') else reverse('api_home', args=[pk])
         if 'discard' in request.POST:
             session.delete()
             messages.info(request, 'Import discarded. Nothing was saved.')
-            return redirect('api_home', pk=pk)
+            return redirect(done)
         selected = set(request.POST.getlist('k'))
         to_save = [r for r in rows if r['key'] in selected and r['change'] != 'unchanged']
         if not to_save:
@@ -408,7 +412,7 @@ def api_review(request, pk, session_id):
             session.delete()
         request.session[f'api_env_{project.pk}'] = env.pk
         messages.success(request, f'Successfully saved {len(to_save)} test cases into their respective modules ({env}).')
-        return redirect('api_home', pk=pk)
+        return redirect(done)
 
     filter_by = request.GET.get('filter', 'all')
     groups = {}

@@ -19,7 +19,7 @@
     <!-- Upload File -->
     <div class="tab-pane fade {% if tab != 'link' and tab != 'manual' %}show active{% endif %}" id="tab-upload">
       <form method="post" enctype="multipart/form-data">{% csrf_token %}
-        <input type="hidden" name="action" value="upload">
+        <input type="hidden" name="action" value="upload"><input type="hidden" name="next" value="{{ next }}">
         <label class="fw-semibold">1. Select API Collection file *</label>
         <div class="form-text mb-2">Supported formats: Postman Collection (v2.0/v2.1) or OpenAPI/Swagger JSON / YAML (2.0 and 3.x).</div>
         <input type="file" name="collection" accept=".json,.yaml,.yml" class="form-control mb-4" required>
@@ -72,7 +72,7 @@
       </div>
 
       <form method="post" enctype="multipart/form-data">{% csrf_token %}
-        <input type="hidden" name="action" value="sync">
+        <input type="hidden" name="action" value="sync"><input type="hidden" name="next" value="{{ next }}">
         <label class="fw-semibold">2. Authentication Header (Optional)</label>
         <div class="form-text mb-2">If your API spec URL requires authentication (Bearer token, API key, or credentials), enter it here.</div>
         <input name="auth_header" value="{{ active_source.auth_header }}" class="form-control font-monospace mb-4" placeholder="Bearer your-token-here or ApiKey xyz..." autocomplete="off">

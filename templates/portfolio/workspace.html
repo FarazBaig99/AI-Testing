@@ -275,8 +275,8 @@
           {% else %}<span class="badge text-bg-light border text-muted ms-2">No APIs yet</span>{% endif %}
           {% if e.last_import %}<span class="small text-muted ms-2" title="{{ e.last_import.url }}">last sync {{ e.last_import.last_synced_at|date:'d M Y H:i' }}</span>{% endif %}
           <span class="ms-auto text-nowrap">
-            {% if e.active_source %}<form method="post" action="{% url 'api_sync' project.pk %}?env={{ e.pk }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-link text-success p-0 me-2" title="Sync: fetch {{ e.active_source.url }} again and review the new or changed APIs"><i class="bi bi-arrow-repeat"></i></button></form>
-            {% else %}<a href="{% url 'api_import' project.pk %}?env={{ e.pk }}&tab=link" class="btn btn-sm btn-link text-muted p-0 me-2" title="No collection link yet: import the APIs first, then Sync brings the new ones"><i class="bi bi-arrow-repeat"></i></a>{% endif %}
+            {% if e.active_source %}<form method="post" action="{% url 'api_sync' project.pk %}?env={{ e.pk }}" class="d-inline">{% csrf_token %}<input type="hidden" name="next" value="{% url 'portfolio_workspace' project.pk 'apis' %}"><button class="btn btn-sm btn-link text-success p-0 me-2" title="Sync: fetch {{ e.active_source.url }} again and review the new or changed APIs"><i class="bi bi-arrow-repeat"></i></button></form>
+            {% else %}<a href="{% url 'api_import' project.pk %}?env={{ e.pk }}&tab=link&next={% url 'portfolio_workspace' project.pk 'apis' %}" class="btn btn-sm btn-link text-muted p-0 me-2" title="No collection link yet: import the APIs first, then Sync brings the new ones"><i class="bi bi-arrow-repeat"></i></a>{% endif %}
             <a href="{% url 'api_environment_edit' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-muted p-0 me-2" title="Rename"><i class="bi bi-pencil"></i></a>
             <a href="{% url 'api_environment_delete' project.pk e.pk %}?next={{ env_tab_url|urlencode }}" class="btn btn-sm btn-link text-danger p-0" title="Delete environment and its APIs"><i class="bi bi-trash"></i></a>
           </span>
@@ -342,7 +342,7 @@
     <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
       <h6 class="mb-0"><i class="bi bi-cloud-arrow-up text-success"></i> Environments &amp; API Registry</h6>
       <div class="ms-auto d-flex gap-2">
-        {% if api_envs %}<a href="{% url 'api_import' project.pk %}" class="btn btn-sm btn-pf" title="Import an API collection; pick the environment on the import page"><i class="bi bi-upload"></i> Import API Collection</a>{% endif %}
+        {% if api_envs %}<a href="{% url 'api_import' project.pk %}?next={% url 'portfolio_workspace' project.pk 'apis' %}" class="btn btn-sm btn-pf" title="Import an API collection; pick the environment on the import page"><i class="bi bi-upload"></i> Import API Collection</a>{% endif %}
         <a href="{% url 'api_home' project.pk %}" class="btn btn-sm btn-outline-pf">Open API Testing →</a>
       </div>
     </div>
@@ -355,8 +355,8 @@
         <td class="text-center">{{ e.n_folders }}</td><td class="text-center">{{ e.n_cases }}</td>
         <td class="text-center text-success">{{ e.n_pass }}</td><td class="text-center text-danger">{{ e.n_fail }}</td>
         <td class="text-end text-nowrap">
-          <a href="{% url 'api_import' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-outline-pf" title="Import an API collection into {{ e.name }}"><i class="bi bi-upload"></i> Import</a>
-          {% if e.source and e.source.is_active %}<form method="post" action="{% url 'api_sync' project.pk %}?env={{ e.pk }}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-light border" title="Fetch the source again and review the changes"><i class="bi bi-arrow-repeat"></i> Sync</button></form>{% endif %}
+          <a href="{% url 'api_import' project.pk %}?env={{ e.pk }}&next={% url 'portfolio_workspace' project.pk 'apis' %}" class="btn btn-sm btn-outline-pf" title="Import an API collection into {{ e.name }}"><i class="bi bi-upload"></i> Import</a>
+          {% if e.source and e.source.is_active %}<form method="post" action="{% url 'api_sync' project.pk %}?env={{ e.pk }}" class="d-inline">{% csrf_token %}<input type="hidden" name="next" value="{% url 'portfolio_workspace' project.pk 'apis' %}"><button class="btn btn-sm btn-light border" title="Fetch the source again and review the changes"><i class="bi bi-arrow-repeat"></i> Sync</button></form>{% endif %}
           <a href="{% url 'api_home' project.pk %}?env={{ e.pk }}" class="btn btn-sm btn-light border" title="Modules and APIs of {{ e.name }}">Open</a>
           <button type="button" class="btn btn-sm btn-light border" disabled title="Database connections come with the Database Testing module"><i class="bi bi-database"></i> Integrate database</button>
         </td></tr>

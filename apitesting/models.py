@@ -171,6 +171,7 @@ class ImportSession(models.Model):
     source = models.ForeignKey(CollectionSource, on_delete=models.SET_NULL, null=True, blank=True)
     source_label = models.CharField(max_length=500)
     endpoints = models.JSONField(default=list)
+    return_to = models.CharField(max_length=500, blank=True)   # page to return to after the import is applied
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

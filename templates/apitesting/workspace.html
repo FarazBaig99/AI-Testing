@@ -154,7 +154,6 @@
     <button type="button" class="btn btn-sm btn-light border ms-auto" id="authBtn" title="Environment login (Keycloak) and cookies"><i class="bi bi-shield-lock"></i> Auth &amp; Cookies</button>
     <button type="button" class="btn btn-sm btn-light border" id="varsBtn" title="Global and environment variables"><i class="bi bi-braces"></i> Variables</button>
     <a class="btn btn-sm btn-light border" href="{% url "api_lov_page" %}" title="LOV Management: categories of values filled into requests (defined values, unique values, dates, generated values)"><i class="bi bi-list-check"></i> LOV</a>
-    <a class="btn btn-sm btn-light border" href="{% url "api_testgen" %}" title="Autonomous Test Generation: build positive, negative, boundary and auth tests from a synced API"><i class="bi bi-magic"></i> Generate tests</a>
     <a href="{% url 'api_mail_settings' %}" class="btn btn-sm btn-light border" title="SMTP server for run reports"><i class="bi bi-envelope-gear"></i> Mail Settings</a>
     <div class="dropdown">
       <button class="btn btn-sm btn-pf dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-upload"></i> Import API</button>
@@ -253,7 +252,10 @@
             <button class="btn btn-primary px-4" id="sendBtn"><i class="bi bi-send"></i> Send</button>
             <button class="btn btn-outline-secondary" id="saveBtn"><i class="bi bi-floppy"></i> Save</button>
           </div>
-          <div class="ctx mb-2" id="baseHint"></div>
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <button type="button" class="btn btn-sm btn-light border" id="genTestsBtn" title="Generate positive / negative / boundary / auth tests for this API into a folder beside it"><i class="bi bi-magic text-success"></i> Generate tests</button>
+            <div class="ctx flex-grow-1" id="baseHint"></div>
+          </div>
 
           <div class="rtabs mb-2" id="reqTabs">
             <button type="button" data-tab="params" class="active">Params <sup id="cnt-params"></sup></button>
@@ -1634,6 +1636,14 @@
     $('saveName').value = current.name || '';
     $('saveError').textContent = '';
     modal.show();
+  });
+
+  // Generate tests for the request that is open in the builder (no "choose an API" step)
+  $('genTestsBtn').addEventListener('click', () => {
+    if (!current) return;
+    if (current.item) post('gen_tests_item', 'item', current.item);         // saved request: folder beside it
+    else if (current.case) window.location = `${URLS.page}generate/?case=${current.case}`;  // synced API
+    else window.location = `${URLS.page}generate/`;                          // unsaved: pick an API on the page
   });
   $('saveConfirm').addEventListener('click', () => save({name: $('saveName').value, collection: $('saveCollection').value,
                                                           new_collection: $('saveCollection').value ? '' : $('saveNewCollection').value}));

@@ -43,6 +43,13 @@
   .aw .body-split { height: 12px; margin: 1px 0 4px; cursor: ns-resize; display: flex; align-items: center; justify-content: center; touch-action: none; }
   .aw .body-split::before { content: ''; width: 46px; height: 4px; border-radius: 3px; background: #cbd5e1; transition: background .12s, width .12s; }
   .aw .body-split:hover::before, .aw .body-split.dragging::before { background: var(--pf); width: 70px; }
+  /* variable autocomplete dropdown (appended to body, so it is not scoped to .aw) */
+  #varSuggest { position: fixed; z-index: 3000; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,.16); max-height: 260px; overflow: auto; min-width: 230px; max-width: 380px; padding: 4px; }
+  #varSuggest .vs-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  #varSuggest .vs-item.sel, #varSuggest .vs-item:hover { background: #ecfdf5; }
+  #varSuggest .vs-name { font-family: ui-monospace, Consolas, monospace; font-weight: 700; color: #065f46; font-size: .8rem; }
+  #varSuggest .vs-scope { font-size: .64rem; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
+  #varSuggest .vs-val { margin-left: auto; color: #94a3b8; font-size: .72rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, monospace; }
   .aw #respSection { flex: none; height: var(--resp-h); min-height: 120px; display: flex; flex-direction: column; }
   .aw #respScroll { flex: 1 1 auto; overflow: auto; min-height: 0; }
   .aw .url-row .form-select { max-width: 120px; font-weight: 700; font-family: monospace; }
@@ -1343,6 +1350,86 @@
     m.scrollLeft = field.scrollLeft; m.scrollTop = field.scrollTop;
   }
   function recolorVars() { document.querySelectorAll('[data-var-hover], [data-var-color]').forEach(colorVars); }
+
+  // ---------- variable autocomplete: suggest {{names}} as you type ----------
+  const vsMenu = document.createElement('div');
+  vsMenu.id = 'varSuggest'; vsMenu.hidden = true;
+  document.body.appendChild(vsMenu);
+  let vsField = null, vsItems = [], vsSel = 0;
+  const VS_OPEN = /\{\{\s*([\w.\-$]*)$/;         // an unclosed {{ with a partial name, ending at the caret
+  function vsNames() {
+    const map = new Map();
+    for (const s of varScopes) for (const [k, v] of Object.entries(s.values || {})) if (!map.has(k)) map.set(k, {scope: s.scope, value: v});
+    for (const d of Object.keys(DYNAMIC)) if (!map.has(d)) map.set(d, {scope: 'Dynamic', value: DYNAMIC[d]});
+    return map;
+  }
+  function vsPartial(field) {
+    const pos = field.selectionStart;
+    if (pos == null) return null;
+    const m = field.value.slice(0, pos).match(VS_OPEN);
+    return m ? {q: m[1], start: pos - m[1].length} : null;
+  }
+  function vsCaret(field) {
+    const pos = field.selectionStart, st = getComputedStyle(field), r = field.getBoundingClientRect();
+    const div = document.createElement('div');
+    ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'lineHeight', 'paddingTop', 'paddingRight',
+     'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'boxSizing'].forEach(p => div.style[p] = st[p]);
+    div.style.position = 'absolute'; div.style.visibility = 'hidden'; div.style.overflow = 'hidden';
+    div.style.whiteSpace = field.tagName === 'TEXTAREA' ? 'pre-wrap' : 'pre';
+    div.style.width = field.clientWidth + 'px';
+    div.textContent = field.value.slice(0, pos);
+    const span = document.createElement('span'); span.textContent = '​'; div.appendChild(span);
+    document.body.appendChild(div);
+    const lh = parseFloat(st.lineHeight) || parseFloat(st.fontSize) * 1.3;
+    const x = r.left + span.offsetLeft - field.scrollLeft, y = r.top + span.offsetTop - field.scrollTop;
+    document.body.removeChild(div);
+    return {x, bottom: y + lh};
+  }
+  function vsMark() { [...vsMenu.children].forEach((el, i) => el.classList.toggle('sel', i === vsSel)); const s = vsMenu.children[vsSel]; if (s) s.scrollIntoView({block: 'nearest'}); }
+  function vsShow(field, q) {
+    const map = vsNames(), ql = q.toLowerCase();
+    vsItems = [...map.keys()].filter(n => n.toLowerCase().includes(ql))
+      .sort((a, b) => { const ap = a.toLowerCase().startsWith(ql), bp = b.toLowerCase().startsWith(ql); return ap === bp ? a.localeCompare(b) : (ap ? -1 : 1); })
+      .slice(0, 14);
+    if (!vsItems.length) return vsHide();
+    vsSel = 0; vsField = field;
+    vsMenu.innerHTML = vsItems.map(n => { const info = map.get(n);
+      return `<div class="vs-item"><span class="vs-name">${esc(n)}</span><span class="vs-scope">${esc(info.scope)}</span><span class="vs-val">${esc(String(info.value ?? '').slice(0, 30))}</span></div>`; }).join('');
+    [...vsMenu.children].forEach((el, i) => el.addEventListener('mousedown', e => { e.preventDefault(); vsAccept(i); }));
+    vsMenu.hidden = false;
+    const c = vsCaret(field);
+    vsMenu.style.left = Math.max(6, Math.min(c.x, window.innerWidth - vsMenu.offsetWidth - 8)) + 'px';
+    vsMenu.style.top = Math.min(c.bottom + 2, window.innerHeight - vsMenu.offsetHeight - 8) + 'px';
+    vsMark();
+  }
+  function vsHide() { vsMenu.hidden = true; vsField = null; vsItems = []; }
+  function vsAccept(i) {
+    if (!vsField || vsItems[i] == null) return vsHide();
+    const field = vsField, p = vsPartial(field);
+    if (!p) return vsHide();
+    const name = vsItems[i], before = field.value.slice(0, p.start), afterCaret = field.value.slice(field.selectionStart);
+    field.value = before + name + (afterCaret.startsWith('}}') ? '' : '}}') + afterCaret;
+    const caret = before.length + name.length + 2;      // just after the closing }}
+    field.focus(); field.setSelectionRange(caret, caret);
+    field.dispatchEvent(new Event('input', {bubbles: true}));
+    vsHide();
+  }
+  function vsUpdate(field) { const p = vsPartial(field); p ? vsShow(field, p.q) : vsHide(); }
+  function attachSuggest(field) {
+    if (field.dataset.vsOn) return;
+    field.dataset.vsOn = '1';
+    field.addEventListener('input', () => vsUpdate(field));
+    field.addEventListener('click', () => vsUpdate(field));
+    field.addEventListener('keydown', e => {
+      if (vsMenu.hidden || vsField !== field) return;
+      if (e.key === 'ArrowDown') { vsSel = (vsSel + 1) % vsItems.length; vsMark(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { vsSel = (vsSel - 1 + vsItems.length) % vsItems.length; vsMark(); e.preventDefault(); }
+      else if (e.key === 'Enter' || e.key === 'Tab') { vsAccept(vsSel); e.preventDefault(); }
+      else if (e.key === 'Escape') { vsHide(); e.preventDefault(); }
+    });
+    field.addEventListener('blur', () => setTimeout(vsHide, 150));
+  }
+  document.addEventListener('mousedown', e => { if (!vsMenu.hidden && !vsMenu.contains(e.target) && e.target !== vsField) vsHide(); });
   // values set by code (URL <-> params sync, loading a request) do not fire input events: catch up quietly
   setInterval(() => document.querySelectorAll('[data-var-hover], [data-var-color]').forEach(f => { if (f._mirror && f._mirror.dataset.v !== f.value) colorVars(f); }), 500);
   function watchVars(input) {
@@ -1354,12 +1441,14 @@
     });
     input.addEventListener('mouseleave', () => tip.hidden = true);
     input.addEventListener('input', () => colorVars(input));
+    attachSuggest(input);
     colorVars(input);
   }
   function watchColor(field) {        // multi-line fields: tokens are coloured and hoverable through the mirror
     if (field.dataset.varColor) return;
     field.dataset.varColor = '1';
     field.addEventListener('input', () => colorVars(field));
+    attachSuggest(field);
     colorVars(field);
   }
   watchVars($('url'));

@@ -12,6 +12,7 @@
   .aw .side-tabs button { flex: 1; border: 0; background: none; padding: 10px; font-size: .85rem; font-weight: 600; color: #64748b; border-bottom: 2px solid transparent; }
   .aw .side-tabs button.active { color: var(--pf-dark); border-bottom-color: var(--pf); }
   .aw .tree { overflow-y: auto; flex: 1; padding: 6px; font-size: .82rem; }
+  .aw .tree [hidden], #apisModal .tree [hidden] { display: none !important; }
   .aw .tree summary { list-style: none; cursor: pointer; padding: 4px 6px; border-radius: 6px; user-select: none; }
   .aw .tree summary::-webkit-details-marker { display: none; }
   .aw .tree summary::before { content: '▸'; display: inline-block; width: 12px; color: #94a3b8; transition: transform .1s; }
@@ -548,14 +549,38 @@
     $('side-collections').hidden = b.dataset.side !== 'collections';
     $('treeSearch').dispatchEvent(new Event('input'));
   }));
-  $('treeSearch').addEventListener('input', e => {
-    const q = e.target.value.trim().toLowerCase();
-    document.querySelectorAll('.side .tree .req').forEach(r => r.hidden = q && !r.dataset.text.includes(q));
-    document.querySelectorAll('.side .tree details.fold, .side .tree details.grp').forEach(d => {
-      if (!q) return;
-      const any = [...d.querySelectorAll('.req')].some(r => !r.hidden);
-      d.open = any;
+  // remember each folder's / group's default open state so clearing the search restores it
+  document.querySelectorAll('.side details, #apisModal details').forEach(d => { d.dataset.open0 = d.open ? '1' : '0'; });
+
+  // Professional search for a project > folder > request tree: all typed words must match (AND),
+  // non-matching requests AND their folders / groups hide, matching folders open, and a "no match"
+  // note shows when nothing is found. Clearing the box restores the tree.
+  function filterTree(root, raw, rowSel, noteHost) {
+    const terms = (raw || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const q = terms.length > 0;
+    const match = t => terms.every(w => (t || '').includes(w));
+    root.querySelectorAll(rowSel).forEach(r => { r.hidden = q && !match(r.dataset.text); });
+    root.querySelectorAll('details.grp, details.fold').forEach(d => {
+      const any = [...d.querySelectorAll(rowSel)].some(r => !r.hidden);
+      d.hidden = q && !any;
+      d.open = q ? any : d.dataset.open0 === '1';
     });
+    // hide stray placeholder lines (e.g. "No APIs synced yet") while searching
+    root.querySelectorAll('.side-note').forEach(n => { n.hidden = q; });
+    if (noteHost) {
+      const anyVisible = [...root.querySelectorAll(rowSel)].some(r => !r.hidden);
+      let note = noteHost.querySelector(':scope > .search-empty');
+      if (q && !anyVisible) {
+        if (!note) { note = document.createElement('div'); note.className = 'search-empty text-center text-muted small p-4'; noteHost.appendChild(note); }
+        note.innerHTML = `<i class="bi bi-search d-block fs-4 mb-1"></i>No API matches “${raw.trim().replace(/[<>&]/g, '')}”.`;
+        note.hidden = false;
+      } else if (note) { note.hidden = true; }
+    }
+  }
+
+  $('treeSearch').addEventListener('input', e => {
+    const panel = document.querySelector('#side-collections:not([hidden])') ? $('side-collections') : $('side-apis');
+    filterTree(panel, e.target.value, '.req', panel);
   });
   document.querySelectorAll('.side .tree .req').forEach(r => r.addEventListener('click', () => {
     document.querySelectorAll('.side .tree .req.active').forEach(x => x.classList.remove('active'));
@@ -588,11 +613,8 @@
     picked = []; renderPicked();
     apisModal.show();
   }));
-  $('apisSearch').addEventListener('input', e => {
-    const q = e.target.value.trim().toLowerCase();
-    document.querySelectorAll('#apisModal .pick').forEach(r => r.hidden = q && !r.dataset.text.includes(q));
-    if (q) document.querySelectorAll('#apisModal details').forEach(d => d.open = [...d.querySelectorAll('.pick')].some(r => !r.hidden));
-  });
+  $('apisSearch').addEventListener('input', e =>
+    filterTree($('apisModal'), e.target.value, '.pick', $('apisModal').querySelector('.modal-body')));
 
   // ---------- context menu (right-click or "...") ----------
   const ctx = $('ctxMenu');

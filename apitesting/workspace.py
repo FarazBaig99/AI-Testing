@@ -766,6 +766,18 @@ def api_ws_variable_set(request):
 
 @login_required
 @require_POST
+def api_ws_lov_quick(request):
+    """Create an LOV from the request builder (the autocomplete 'Create LOV' action). Reuses the LOV save,
+    so the same validation and name-clash checks apply; returns the saved LOV brief or an error."""
+    try:
+        data = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+    return JsonResponse(_save_lov(request, data))
+
+
+@login_required
+@require_POST
 def api_ws_reorder_collections(request):
     """Save a new order for the collections after a drag: {order: [collection id, ...]}."""
     try:

@@ -50,6 +50,8 @@
   #varSuggest .vs-name { font-family: ui-monospace, Consolas, monospace; font-weight: 700; color: #065f46; font-size: .8rem; }
   #varSuggest .vs-scope { font-size: .64rem; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
   #varSuggest .vs-val { margin-left: auto; color: #94a3b8; font-size: .72rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, monospace; }
+  #varSuggest .vs-create { color: #059669; font-weight: 600; border-top: 1px solid #f1f5f9; margin-top: 2px; }
+  #varSuggest .vs-create i { margin-right: 4px; }
   .aw #respSection { flex: none; height: var(--resp-h); min-height: 120px; display: flex; flex-direction: column; }
   .aw #respScroll { flex: 1 1 auto; overflow: auto; min-height: 0; }
   .aw .url-row .form-select { max-width: 120px; font-weight: 700; font-family: monospace; }
@@ -443,6 +445,28 @@
     <button type="button" class="btn btn-pf" id="extractSave"><i class="bi bi-floppy"></i> Save variables</button></div>
 </div></div></div>
 
+<!-- quick-create an LOV from the request builder -->
+<div class="modal fade" id="quickLovModal" tabindex="-1"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-magic text-success"></i> Create LOV</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="small text-muted mb-2">A value that is filled into the request every time you send it. Create it here without leaving the request.</div>
+    <label class="form-label small fw-semibold mb-1">Name</label>
+    <input id="qlName" class="form-control form-control-sm code mb-2" placeholder="legalName">
+    <label class="form-label small fw-semibold mb-1">Produces</label>
+    <select id="qlProduces" class="form-select form-select-sm mb-2">
+      <option value="defined">Defined values (pick from a list)</option>
+      <option value="unique">Unique value (never repeats)</option>
+      <option value="date">Date</option>
+      <option value="generated">Generated value (name, email, number...)</option>
+    </select>
+    <div id="qlFields" class="row g-2"></div>
+    <div class="small text-muted mt-2">Need more control? <a href="{% url 'api_lov_page' %}" target="_blank">Open LOV Management</a>.</div>
+  </div>
+  <div class="modal-footer"><span class="small me-auto" id="qlMsg"></span>
+    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+    <button type="button" class="btn btn-pf" id="qlSave"><i class="bi bi-floppy"></i> Create &amp; insert</button></div>
+</div></div></div>
+
 <!-- environment login (Keycloak) + cookie jar -->
 <div class="modal fade" id="authModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
   <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-shield-lock text-success"></i> Auth &amp; Cookies</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -617,7 +641,7 @@
 <script>
 (() => {
   const CSRF = '{{ csrf_token }}';
-  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', reorderCols: '{% url "api_ws_reorder_collections" %}', lovPage: '{% url "api_lov_page" %}',
+  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', reorderCols: '{% url "api_ws_reorder_collections" %}', lovQuick: '{% url "api_ws_lov_quick" %}', lovPage: '{% url "api_lov_page" %}',
                 auth: '{% url "api_ws_auth" %}', cookies: '{% url "api_ws_cookies" %}', rename: '{% url "api_ws_rename" %}',
                 page: '{% url "api_workspace" %}'};
   const $ = id => document.getElementById(id);
@@ -1355,7 +1379,7 @@
   const vsMenu = document.createElement('div');
   vsMenu.id = 'varSuggest'; vsMenu.hidden = true;
   document.body.appendChild(vsMenu);
-  let vsField = null, vsItems = [], vsSel = 0;
+  let vsField = null, vsItems = [], vsSel = 0, vsStart = 0;
   const VS_OPEN = /\{\{\s*([\w.\-$]*)$/;         // an unclosed {{ with a partial name, ending at the caret
   function vsNames() {
     const map = new Map();
@@ -1386,16 +1410,23 @@
     return {x, bottom: y + lh};
   }
   function vsMark() { [...vsMenu.children].forEach((el, i) => el.classList.toggle('sel', i === vsSel)); const s = vsMenu.children[vsSel]; if (s) s.scrollIntoView({block: 'nearest'}); }
-  function vsShow(field, q) {
-    const map = vsNames(), ql = q.toLowerCase();
+  function vsShow(field, p) {
+    const map = vsNames(), ql = p.q.toLowerCase(), typed = p.q.trim();
     vsItems = [...map.keys()].filter(n => n.toLowerCase().includes(ql))
       .sort((a, b) => { const ap = a.toLowerCase().startsWith(ql), bp = b.toLowerCase().startsWith(ql); return ap === bp ? a.localeCompare(b) : (ap ? -1 : 1); })
-      .slice(0, 14);
-    if (!vsItems.length) return vsHide();
-    vsSel = 0; vsField = field;
-    vsMenu.innerHTML = vsItems.map(n => { const info = map.get(n);
-      return `<div class="vs-item"><span class="vs-name">${esc(n)}</span><span class="vs-scope">${esc(info.scope)}</span><span class="vs-val">${esc(String(info.value ?? '').slice(0, 30))}</span></div>`; }).join('');
-    [...vsMenu.children].forEach((el, i) => el.addEventListener('mousedown', e => { e.preventDefault(); vsAccept(i); }));
+      .slice(0, 12);
+    const canCreate = typed.length > 0 && !map.has(typed) && /^[\w.\-]+$/.test(typed) && !typed.startsWith('$');
+    if (!vsItems.length && !canCreate) return vsHide();
+    vsSel = 0; vsField = field; vsStart = p.start;
+    let html = vsItems.map(n => { const info = map.get(n);
+      return `<div class="vs-item" data-kind="pick"><span class="vs-name">${esc(n)}</span><span class="vs-scope">${esc(info.scope)}</span><span class="vs-val">${esc(String(info.value ?? '').slice(0, 30))}</span></div>`; }).join('');
+    if (canCreate) html += `<div class="vs-item vs-create" data-kind="create"><i class="bi bi-magic"></i> Create LOV “${esc(typed)}”</div>`;
+    vsMenu.innerHTML = html;
+    [...vsMenu.children].forEach((el, i) => el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      if (el.dataset.kind === 'create') { const end = field.selectionStart; vsHide(); openQuickLov(typed, field, p.start, end); }
+      else vsAccept(i);
+    }));
     vsMenu.hidden = false;
     const c = vsCaret(field);
     vsMenu.style.left = Math.max(6, Math.min(c.x, window.innerWidth - vsMenu.offsetWidth - 8)) + 'px';
@@ -1414,7 +1445,7 @@
     field.dispatchEvent(new Event('input', {bubbles: true}));
     vsHide();
   }
-  function vsUpdate(field) { const p = vsPartial(field); p ? vsShow(field, p.q) : vsHide(); }
+  function vsUpdate(field) { const p = vsPartial(field); p ? vsShow(field, p) : vsHide(); }
   function attachSuggest(field) {
     if (field.dataset.vsOn) return;
     field.dataset.vsOn = '1';
@@ -1430,6 +1461,68 @@
     field.addEventListener('blur', () => setTimeout(vsHide, 150));
   }
   document.addEventListener('mousedown', e => { if (!vsMenu.hidden && !vsMenu.contains(e.target) && e.target !== vsField) vsHide(); });
+
+  // ---------- quick-create an LOV from the builder (the "Create LOV" row in the autocomplete) ----------
+  const quickLovModal = new bootstrap.Modal($('quickLovModal'));
+  let qlTarget = null;      // {field, start, end} where to insert {{name}} after creating
+  const QL_FIELDS = {
+    defined: [{k: '_values', t: 'area', label: 'Values (one per line)', ph: 'PIA\nEmirates\nQatar'}],
+    unique: [{k: 'length', t: 'number', label: 'Length', def: 6},
+             {k: 'data_type', t: 'select', label: 'Characters', opts: ['alphanumeric', 'alphabets', 'integer']},
+             {k: 'case', t: 'select', label: 'Case', opts: ['upper', 'lower']}],
+    date: [{k: 'base', t: 'select', label: 'When', opts: ['current', 'future', 'past']},
+           {k: 'amount', t: 'number', label: 'Amount', def: 1},
+           {k: 'unit', t: 'select', label: 'Unit', opts: ['days', 'weeks', 'months']},
+           {k: 'format', t: 'text', label: 'Format', def: 'yyyy-MM-dd'}],
+    generated: [{k: 'kind', t: 'select', label: 'Kind', opts: ['name', 'email', 'company', 'city', 'country', 'number', 'text', 'phone', 'uuid', 'sequence', 'boolean', 'lorem']},
+                {k: 'prefix', t: 'text', label: 'Prefix'}, {k: 'suffix', t: 'text', label: 'Suffix'}],
+  };
+  function qlRender() {
+    const p = $('qlProduces').value;
+    $('qlFields').innerHTML = QL_FIELDS[p].map(f => {
+      const id = 'ql_' + f.k;
+      let input;
+      if (f.t === 'area') input = `<textarea id="${id}" class="form-control form-control-sm code" rows="4" placeholder="${esc(f.ph || '')}"></textarea>`;
+      else if (f.t === 'select') input = `<select id="${id}" class="form-select form-select-sm">${f.opts.map(o => `<option>${esc(o)}</option>`).join('')}</select>`;
+      else input = `<input id="${id}" type="${f.t === 'number' ? 'number' : 'text'}" class="form-control form-control-sm" value="${esc(String(f.def ?? ''))}" placeholder="${esc(f.ph || '')}">`;
+      return `<div class="${f.t === 'area' ? 'col-12' : 'col-6'}"><label class="form-label small mb-0">${esc(f.label)}</label>${input}</div>`;
+    }).join('');
+  }
+  function openQuickLov(name, field, start, end) {
+    qlTarget = field ? {field, start, end} : null;
+    $('qlName').value = name || '';
+    $('qlProduces').value = 'unique';
+    $('qlMsg').textContent = '';
+    qlRender();
+    quickLovModal.show();
+    setTimeout(() => $('qlName').focus(), 250);
+  }
+  $('qlProduces').addEventListener('change', qlRender);
+  $('qlSave').addEventListener('click', async () => {
+    const name = $('qlName').value.trim(), produces = $('qlProduces').value;
+    const data = {name, produces, options: {}, values: []};
+    for (const f of QL_FIELDS[produces]) {
+      const el = $('ql_' + f.k);
+      if (!el) continue;
+      if (f.k === '_values') data.values = el.value.split('\n').map(s => s.trim()).filter(Boolean);
+      else data.options[f.k] = el.value;
+    }
+    const msg = (cls, t) => { $('qlMsg').className = `small me-auto text-${cls}`; $('qlMsg').textContent = t; };
+    if (!name) return msg('danger', 'Give the LOV a name.');
+    try {
+      const out = await (await fetch(URLS.lovQuick, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(data)})).json();
+      if (!out.ok) return msg('danger', out.error || 'Could not create the LOV.');
+      if (qlTarget && qlTarget.field) {           // drop {{name}} where the user was typing
+        const field = qlTarget.field, before = field.value.slice(0, qlTarget.start), after = field.value.slice(qlTarget.end);
+        field.value = before + name + (after.startsWith('}}') ? '' : '}}') + after;
+        const caret = before.length + name.length + 2;
+        field.focus(); field.setSelectionRange(caret, caret);
+        field.dispatchEvent(new Event('input', {bubbles: true}));
+      }
+      loadVarScopes();
+      quickLovModal.hide();
+    } catch (e) { msg('danger', 'Could not create the LOV.'); }
+  });
   // values set by code (URL <-> params sync, loading a request) do not fire input events: catch up quietly
   setInterval(() => document.querySelectorAll('[data-var-hover], [data-var-color]').forEach(f => { if (f._mirror && f._mirror.dataset.v !== f.value) colorVars(f); }), 500);
   function watchVars(input) {

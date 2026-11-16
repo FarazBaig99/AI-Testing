@@ -14,6 +14,7 @@ urlpatterns = [
     path('variables/set/', workspace.api_ws_variable_set, name='api_ws_variable_set'),
     path('variables/extract/', workspace.api_ws_extract, name='api_ws_extract'),
     path('collections/reorder/', workspace.api_ws_reorder_collections, name='api_ws_reorder_collections'),
+    path('lov/quick/', workspace.api_ws_lov_quick, name='api_ws_lov_quick'),
     path('generate/', workspace.api_testgen, name='api_testgen'),
     path('lov/', workspace.api_lov_page, name='api_lov_page'),
     path('lov/data/', workspace.api_ws_lov, name='api_ws_lov'),

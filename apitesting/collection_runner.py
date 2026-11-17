@@ -48,6 +48,16 @@ def is_pass(result, expected):
     return result['status'] == expected if expected else 200 <= result['status'] < 300
 
 
+def _request_snapshot(req):
+    """What was actually sent, for the run detail. Body is capped and the auth secret is left out."""
+    auth = req.get('auth') or {}
+    safe_auth = {k: auth.get(k) for k in ('type', 'username', 'key', 'add_to', 'profile') if auth.get(k)}
+    body = req.get('body') or ''
+    return {'method': req.get('method', ''), 'url': req.get('url', ''),
+            'headers': req.get('headers') or [], 'params': req.get('params') or [],
+            'body_mode': req.get('body_mode', ''), 'body': body[:BODY_LIMIT], 'auth': safe_auth}
+
+
 def _spec(item):
     return {f: getattr(item, f) for f in SPEC_FIELDS}
 
@@ -155,6 +165,7 @@ def _functional_loop(run, items, iterations, cfg, summary, variables, engine, se
                 status_code=result.get('status'), ms=result.get('ms'), size=result.get('size'), passed=passed,
                 error='\n'.join(p for p in problems if p), response_headers=result.get('headers', []),
                 response_body=body[:BODY_LIMIT] + ('\n... (cut)' if len(body) > BODY_LIMIT else ''),
+                request_snapshot=_request_snapshot(out.get('request') or {}),
                 tests=tests, console=out['console'])
             summary['tests_total'] += len(tests)
             summary['tests_passed'] += len(tests) - len(failed_tests)

@@ -181,6 +181,17 @@ def collection_run(request, collection_id):
 
 
 @login_required
+def collection_last_run(request, collection_id):
+    """Jump straight to this collection's most recent run (or the run page if it has never run)."""
+    collection = get_object_or_404(ApiCollection, pk=collection_id)
+    run = collection.runs.first()      # CollectionRun is ordered by -created_at
+    if run:
+        return redirect('api_run_detail', run_id=run.pk)
+    messages.info(request, f'"{collection.name}" has not been run yet — run it once and its last run shows here.')
+    return redirect('api_collection_run', collection_id=collection.pk)
+
+
+@login_required
 def run_detail(request, run_id):
     run = get_object_or_404(CollectionRun.objects.select_related('collection', 'schedule', 'created_by'), pk=run_id)
     return render(request, 'apitesting/run_detail.html', {
@@ -197,7 +208,7 @@ def run_status(request, run_id):
     results = [{'id': r.pk, 'iteration': r.iteration, 'position': r.position, 'name': r.name, 'method': r.method,
                 'url': r.url, 'expected': r.expected, 'status_code': r.status_code, 'ms': r.ms, 'size': r.size,
                 'passed': r.passed, 'error': r.error, 'headers': r.response_headers, 'body': r.response_body,
-                'tests': r.tests, 'console': r.console}
+                'request': r.request_snapshot, 'tests': r.tests, 'console': r.console}
                for r in run.results.filter(pk__gt=after)[:500]]
     return JsonResponse({'status': run.status, 'status_label': run.get_status_display(), 'active': run.is_active,
                          'summary': run.summary, 'error': run.error, 'email_status': run.email_status,

@@ -399,6 +399,7 @@ class RunResult(models.Model):
     error = models.TextField(blank=True)
     response_headers = models.JSONField(default=list, blank=True)
     response_body = models.TextField(blank=True)
+    request_snapshot = models.JSONField(default=dict, blank=True)   # what was actually sent: {method, url, headers, body, auth}
     tests = models.JSONField(default=list, blank=True)       # [{name, passed, error}] from the scripts
     console = models.JSONField(default=list, blank=True)     # console.log lines of the scripts
     created_at = models.DateTimeField(auto_now_add=True)

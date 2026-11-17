@@ -6,27 +6,67 @@ Diagnosis tab shows. The structure (`level`, `title`, `summary`, `causes`, `fixe
 `trace_id`, `source`) is stable, so an AI explanation can be layered on later without changing callers.
 """
 import json
+import re
+
+
+def _error_messages(data):
+    """Human-readable messages pulled out of the common error-body shapes."""
+    out = []
+    # flat message-ish keys: {"message": ...}, {"detail": ...}, {"error": {"message": ...}}, ...
+    for k in ('message', 'error_description', 'error', 'detail', 'title', 'Message', 'errorMessage'):
+        v = data.get(k)
+        if isinstance(v, str) and v.strip():
+            out.append(v.strip())
+        elif isinstance(v, dict) and isinstance(v.get('message'), str):
+            out.append(v['message'].strip())
+    errors = data.get('errors') if isinstance(data, dict) else None
+    if isinstance(errors, list):                       # [{code, message, category}, ...] (ACS / BFF)
+        for e in errors:
+            if isinstance(e, dict) and isinstance(e.get('message'), str) and e['message'].strip():
+                out.append(e['message'].strip())
+            elif isinstance(e, str) and e.strip():
+                out.append(e.strip())
+    elif isinstance(errors, dict):                     # {field: [msg, ...]} (ASP.NET ModelState)
+        for field, msgs in errors.items():
+            for m in (msgs if isinstance(msgs, list) else [msgs]):
+                if isinstance(m, str) and m.strip():
+                    out.append(f'{field}: {m.strip()}')
+    seen, uniq = set(), []                             # de-duplicate, keep order
+    for m in out:
+        if m not in seen:
+            seen.add(m)
+            uniq.append(m)
+    return uniq
 
 
 def _json_message(body):
-    """The server's own error message and trace id from a JSON body, if any."""
+    """The server's own error message(s) and trace id from a JSON body, if any."""
     try:
         data = json.loads(body)
     except (ValueError, TypeError):
         return None, None
+    if isinstance(data, list):                         # a bare list of error objects
+        data = {'errors': data}
     if not isinstance(data, dict):
         return None, None
-    msg = None
-    for k in ('message', 'error_description', 'error', 'detail', 'title', 'Message', 'errorMessage'):
-        v = data.get(k)
-        if isinstance(v, str) and v.strip():
-            msg = v.strip()
-            break
-        if isinstance(v, dict) and isinstance(v.get('message'), str):
-            msg = v['message'].strip()
-            break
+    msgs = _error_messages(data)
+    msg = ' • '.join(msgs[:3]) if msgs else None
     trace = data.get('traceId') or data.get('trace_id') or data.get('traceID') or data.get('correlationId')
     return msg, (str(trace) if trace else None)
+
+
+def _field_from_message(msg):
+    """The field a validation message is about, e.g. 'Path: $.licenseNumber' -> licenseNumber."""
+    if not msg:
+        return None
+    m = re.search(r'Path:\s*\$\.([\w\[\]().]+)', msg)       # System.Text.Json: "Path: $.licenseNumber"
+    if m:
+        return m.group(1).strip('.')
+    m = re.match(r'([A-Za-z_][\w.\[\]]*)\s*:', msg)          # ModelState: "licenseNumber: The field is required."
+    if m:
+        return m.group(1)
+    m = re.search(r"field '([^']+)'", msg, re.I)
+    return m.group(1) if m else None
 
 
 def _result(level, title, summary, causes, fixes, server_message=None, trace_id=None):
@@ -118,12 +158,19 @@ def _status(status, spec, body, server_message, trace_id, has_login, picked):
                        ['Check the URL and that {{baseUrl}} points to the right service for this API.',
                         'Verify any id / path value exists.'], server_message, trace_id)
     if status == 400:
+        field = _field_from_message(server_message)
+        summary = 'The request reached the server, but its body or parameters are not valid.'
+        causes = ['A required field is missing or has the wrong type.',
+                  'The body is not valid JSON, or the Content-Type is wrong.']
+        fixes = ['Open the Body tab and check required fields and valid JSON.',
+                 'Check the Params and the Content-Type header.']
+        if field:
+            summary = f'The server rejected the field “{field}”. Read its message below.'
+            causes = [f'“{field}” has the wrong type or format, or a value it could not read (see the message below).'] + causes
+            fixes = [f'Fix “{field}” in the Body tab so it matches the type the API expects '
+                     '(text in quotes, a number without quotes, a valid date…), then Send again.'] + fixes
         return _result('error', '400 Bad Request — the server rejected the input',
-                       'The request reached the server, but its body or parameters are not valid.',
-                       ['A required field is missing or has the wrong type.',
-                        'The body is not valid JSON, or the Content-Type is wrong.'],
-                       ['Open the Body tab and check required fields and valid JSON.',
-                        'Check the Params and the Content-Type header.'], server_message, trace_id)
+                       summary, causes, fixes, server_message, trace_id)
     if status == 405:
         return _result('error', '405 Method Not Allowed',
                        f'This endpoint does not accept {spec.get("method", "this")} requests.',

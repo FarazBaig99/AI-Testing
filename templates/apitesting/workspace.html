@@ -1894,7 +1894,9 @@
     $('respLang').value = r.language || 'text';
     $('respHeaderRows').innerHTML = r.headers.map(([k, v]) => `<tr><td class="fw-semibold text-nowrap">${esc(k)}</td><td class="text-break">${esc(v)}</td></tr>`).join('');
     $('cnt-rh').textContent = r.headers.length || '';
-    showRespTab(r.diagnosis && r.diagnosis.level !== 'ok' ? 'diag' : 'body');
+    // stay on the response Body even when the status is a problem (e.g. 400); Diagnosis is still a click
+    // away, flagged by the red dot on its tab
+    showRespTab('body');
     render();
   }
   document.querySelectorAll('#respTabs [data-rtab]').forEach(b => b.addEventListener('click', () => showRespTab(b.dataset.rtab)));

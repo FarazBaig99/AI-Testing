@@ -22,7 +22,9 @@ from . import auth, autofill, lov, runner, scripting
 from .parsers import is_empty_body
 from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiLov, ApiLovDateFormat, ApiLovUsedValue,
                      ApiParamType, ApiTestCase, AuthProfile, ProjectVariables, CollectionFolder, CollectionRequest,
-                     Environment)
+                     Environment, RequestRun)
+
+RUN_HISTORY_KEEP = 20           # how many past runs to keep per saved request / synced API
 
 SESSION_KEY = 'api_ws'
 METHODS = [m for m, _ in ApiTestCase.METHOD_CHOICES]
@@ -447,6 +449,7 @@ def api_ws_send(request, opener=None, login_opener=None):
     spec = clean_spec(data)
     env = _environment(data.get('environment'))
     item = CollectionRequest.objects.select_related('collection').filter(pk=data.get('item') or 0).first()
+    case = ApiTestCase.objects.filter(pk=data.get('case') or 0).first()
     collection = item.collection if item else None
     scopes = scripting.load_scopes(env, collection)
     with scripting.ScriptEngine() as engine:       # Node only starts when the request has scripts
@@ -463,8 +466,58 @@ def api_ws_send(request, opener=None, login_opener=None):
     has_login = bool(env) and any(p.is_active for p in env.auth_profiles.all())
     diag = diagnosis.diagnose(spec, result, env, has_login=has_login, picked=auth.choice_of(spec),
                               tests=out['tests'], errors=out['errors'])
+    _save_request_run(item, case, env, data, spec, result, out, diag)
     return JsonResponse(dict(result, tests=out['tests'], console=out['console'], script_errors=out['errors'],
                              lov=out.get('lov', {}), diagnosis=diag))
+
+
+def _save_request_run(item, case, env, data, spec, result, out, diag):
+    """Keep a snapshot of this send so the builder's Run history can reopen it. Only for a saved request or a
+    synced API (ad-hoc sends have nothing to attach to); the oldest runs beyond RUN_HISTORY_KEEP are pruned."""
+    if not item and not case:
+        return
+    resp = {k: result.get(k) for k in ('status', 'reason', 'headers', 'body', 'login', 'auth', 'truncated',
+                                        'language', 'size', 'ms', 'ok', 'auth_hint')}
+    try:
+        RequestRun.objects.create(
+            item=item, case=case, environment=env,
+            name=(item.name if item else (case.name if case else data.get('name', ''))) or 'Request',
+            spec=spec, ok=bool(result.get('ok')), status_code=result.get('status'),
+            reason=(result.get('reason') or '')[:200], ms=result.get('ms'), size=result.get('size'),
+            response=resp, tests=out.get('tests', []), console=out.get('console', []),
+            diagnosis=diag or {}, error=(result.get('error') or '')[:5000])
+        keep_ids = list(RequestRun.objects.filter(item=item, case=case)
+                        .values_list('pk', flat=True)[:RUN_HISTORY_KEEP])
+        RequestRun.objects.filter(item=item, case=case).exclude(pk__in=keep_ids).delete()
+    except Exception:
+        pass        # a send must never fail because history could not be written
+
+
+@login_required
+def api_ws_runs(request):
+    """GET ?item= or ?case= -> the recent run snapshots for that request (most recent first)."""
+    item_id, case_id = request.GET.get('item'), request.GET.get('case')
+    qs = RequestRun.objects.filter(item_id=item_id) if item_id else \
+        RequestRun.objects.filter(case_id=case_id) if case_id else RequestRun.objects.none()
+    runs = [{'id': r.pk, 'when': timezone.localtime(r.created_at).strftime('%d %b %Y, %H:%M:%S'),
+             'ok': r.ok, 'status': r.status_code, 'reason': r.reason, 'ms': r.ms,
+             'error': bool(r.error), 'method': (r.spec or {}).get('method', '')}
+            for r in qs[:RUN_HISTORY_KEEP]]
+    return JsonResponse({'runs': runs})
+
+
+@login_required
+def api_ws_run(request, run_id):
+    """GET -> one run's full request + response snapshot; POST (action=delete) removes it."""
+    r = get_object_or_404(RequestRun, pk=run_id)
+    if request.method == 'POST':
+        r.delete()
+        return JsonResponse({'ok': True})
+    return JsonResponse({
+        'id': r.pk, 'name': r.name, 'when': timezone.localtime(r.created_at).strftime('%d %b %Y, %H:%M:%S'),
+        'environment': r.environment_id, 'spec': r.spec, 'ok': r.ok, 'status': r.status_code,
+        'reason': r.reason, 'ms': r.ms, 'size': r.size, 'response': r.response,
+        'tests': r.tests, 'console': r.console, 'diagnosis': r.diagnosis, 'error': r.error})
 
 
 # ---------- variables and collection settings ----------

@@ -536,3 +536,32 @@ class ApiParamType(models.Model):
 
     def __str__(self):
         return f'{self.name} = {self.data_type}'
+
+
+class RequestRun(models.Model):
+    """A saved snapshot of one send from the request builder: the full request and its response, so a past
+    run can be reopened, its response read again, a variable extracted from it, or the exact request re-sent.
+    (Collection runs are stored separately as CollectionRun / RunResult.)"""
+    item = models.ForeignKey(CollectionRequest, on_delete=models.CASCADE, null=True, blank=True, related_name='run_history')
+    case = models.ForeignKey(ApiTestCase, on_delete=models.CASCADE, null=True, blank=True, related_name='run_history')
+    name = models.CharField(max_length=600, blank=True)
+    environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    spec = models.JSONField(default=dict, blank=True)         # the request that was sent (method, url, headers, body...)
+    ok = models.BooleanField(default=False)                   # a response was received (even a 4xx/5xx)
+    status_code = models.PositiveIntegerField(null=True, blank=True)
+    reason = models.CharField(max_length=200, blank=True)
+    ms = models.PositiveIntegerField(null=True, blank=True)
+    size = models.PositiveIntegerField(null=True, blank=True)
+    response = models.JSONField(default=dict, blank=True)     # {status, reason, headers, body, login, auth, language...}
+    tests = models.JSONField(default=list, blank=True)
+    console = models.JSONField(default=list, blank=True)
+    diagnosis = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)                      # transport error, when no response came back
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'run of {self.name or "request"} @ {self.created_at:%Y-%m-%d %H:%M:%S}'

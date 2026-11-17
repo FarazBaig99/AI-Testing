@@ -52,6 +52,10 @@
   #varSuggest .vs-val { margin-left: auto; color: #94a3b8; font-size: .72rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, monospace; }
   #varSuggest .vs-create { color: #059669; font-weight: 600; border-top: 1px solid #f1f5f9; margin-top: 2px; }
   #varSuggest .vs-create i { margin-right: 4px; }
+  #lovChip { position: fixed; z-index: 3000; background: #065f46; color: #fff; border: 0; border-radius: 999px; box-shadow: 0 6px 18px rgba(6,95,70,.35); padding: 5px 12px; font-size: .78rem; font-weight: 600; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+  #lovChip:hover { background: #047857; }
+  #lovChip i { font-size: .8rem; }
+  #lovChip b { font-weight: 700; }
   .aw #respSection { flex: none; height: var(--resp-h); min-height: 120px; display: flex; flex-direction: column; }
   .aw #respScroll { flex: 1 1 auto; overflow: auto; min-height: 0; }
   .aw .url-row .form-select { max-width: 120px; font-weight: 700; font-family: monospace; }
@@ -335,7 +339,6 @@
               {% endfor %}
               <select id="rawLang" class="form-select form-select-sm w-auto" hidden>{% for value, label in raw_languages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
               <button type="button" class="btn btn-sm btn-link text-success p-0" id="beautify" hidden>Beautify</button>
-              <button type="button" class="btn btn-sm btn-link text-success p-0" id="fillLov" hidden title="Put an LOV token into every JSON field whose name matches an LOV category or alias"><i class="bi bi-list-check"></i> Fill with LOV</button>
             </div>
             <div data-body="none" class="small text-muted py-3">This request does not have a body.</div>
             <div data-body="form-data" hidden><table class="table table-sm kv mb-0" id="kv-form"></table></div>
@@ -1131,43 +1134,8 @@
   $('authType').addEventListener('change', () =>
     document.querySelectorAll('[data-auth]').forEach(d => d.hidden = d.dataset.auth !== $('authType').value));
   function bodyMode() { return (document.querySelector('input[name=bodyMode]:checked') || {}).value || 'none'; }
-  // ---- Fill with LOV: JSON body fields named like a category (or alias) get {{category}}; same for form rows
-  const norm = k => String(k).toLowerCase().replace(/[^a-z0-9]/g, '');
-  function lovFor(key) {
-    const scope = varScopes.find(s => s.scope === 'LOV');
-    if (!scope) return null;
-    const n = norm(key);
-    const hit = Object.keys(scope.values).find(name => norm(name) === n);
-    return hit ? ((scope.aliases || {})[hit] || hit) : null;
-  }
-  function fillLovInto(node, count) {
-    if (Array.isArray(node)) return node.map(v => fillLovInto(v, count));
-    if (node && typeof node === 'object') {
-      for (const k of Object.keys(node)) {
-        const v = node[k];
-        if (v && typeof v === 'object') { node[k] = fillLovInto(v, count); continue; }
-        const name = lovFor(k);
-        if (name) { node[k] = `${O}${name}${C}`; count.n++; }
-      }
-    }
-    return node;
-  }
-  $('fillLov').addEventListener('click', () => {
-    const count = {n: 0}, mode = bodyMode();
-    if (mode === 'raw') {
-      let parsed;
-      try { parsed = JSON.parse($('rawBody').value || '{}'); } catch (e) { return toast('The body is not valid JSON, so fields cannot be matched.', 'danger'); }
-      $('rawBody').value = JSON.stringify(fillLovInto(parsed, count), null, 2);
-      $('rawBody').dispatchEvent(new Event('input', {bubbles: true}));
-    } else if (mode === 'form-data' || mode === 'urlencoded') {
-      const table = mode === 'form-data' ? kv.form : kv.urlenc;
-      table.set(table.get().map(r => { const name = lovFor(r.key); if (name) { count.n++; return {...r, value: `${O}${name}${C}`}; } return r; }));
-    }
-    toast(count.n ? `${count.n} field${count.n > 1 ? 's' : ''} now use an LOV category.` : 'No field name matches an LOV category or alias.', count.n ? 'success' : 'warning');
-  });
   function showBody() {
     const mode = bodyMode();
-    $('fillLov').hidden = !['raw', 'form-data', 'urlencoded'].includes(mode);
     document.querySelectorAll('[data-body]').forEach(d => d.hidden = d.dataset.body !== mode);
     $('rawLang').hidden = mode !== 'raw';
     $('beautify').hidden = !(mode === 'raw' && $('rawLang').value === 'json');
@@ -1488,8 +1456,8 @@
       return `<div class="${f.t === 'area' ? 'col-12' : 'col-6'}"><label class="form-label small mb-0">${esc(f.label)}</label>${input}</div>`;
     }).join('');
   }
-  function openQuickLov(name, field, start, end) {
-    qlTarget = field ? {field, start, end} : null;
+  function openQuickLov(name, field, start, end, opts) {
+    qlTarget = field ? {field, start, end, wrap: !!(opts && opts.wrap)} : null;
     $('qlName').value = name || '';
     $('qlProduces').value = 'unique';
     $('qlMsg').textContent = '';
@@ -1512,10 +1480,12 @@
     try {
       const out = await (await fetch(URLS.lovQuick, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(data)})).json();
       if (!out.ok) return msg('danger', out.error || 'Could not create the LOV.');
-      if (qlTarget && qlTarget.field) {           // drop {{name}} where the user was typing
+      if (qlTarget && qlTarget.field) {           // drop {{name}} where the user was typing (or on the clicked value)
         const field = qlTarget.field, before = field.value.slice(0, qlTarget.start), after = field.value.slice(qlTarget.end);
-        field.value = before + name + (after.startsWith('}}') ? '' : '}}') + after;
-        const caret = before.length + name.length + 2;
+        let token, caret;
+        if (qlTarget.wrap) { token = '{' + '{' + name + '}' + '}'; caret = before.length + token.length; }
+        else { token = name + (after.startsWith('}}') ? '' : '}}'); caret = before.length + name.length + 2; }
+        field.value = before + token + after;
         field.focus(); field.setSelectionRange(caret, caret);
         field.dispatchEvent(new Event('input', {bubbles: true}));
       }
@@ -1523,6 +1493,61 @@
       quickLovModal.hide();
     } catch (e) { msg('danger', 'Could not create the LOV.'); }
   });
+  // ---------- click a value in the JSON body to turn it into an LOV ("faraz" -> {{legalName}}) ----------
+  const lovChip = document.createElement('div');
+  lovChip.id = 'lovChip'; lovChip.hidden = true;
+  document.body.appendChild(lovChip);
+  let lovChipFor = null;                                  // {field, key, start, end}
+  function hideLovChip() { lovChip.hidden = true; lovChipFor = null; }
+  // find the JSON "key": value pair whose value the caret sits on; returns the value's span (quotes excluded)
+  function valueAtCaret(field) {
+    if (field.selectionStart == null || field.selectionStart !== field.selectionEnd) return null;
+    const text = field.value, pos = field.selectionStart;
+    const re = /"((?:[^"\\]|\\.)*)"\s*:\s*(?:"((?:[^"\\]|\\.)*)"|(-?\d[\d.eE+-]*|true|false|null))/g;
+    let m;
+    while ((m = re.exec(text))) {
+      const key = m[1];
+      let start, end;
+      if (m[2] !== undefined) { end = re.lastIndex - 1; start = end - m[2].length; }   // string value, inside the quotes
+      else { end = re.lastIndex; start = end - m[3].length; }                          // number / true / false / null
+      if (pos >= start && pos <= end) {
+        if (!/^[\w.\-]+$/.test(key)) return null;                 // only simple names make valid variables
+        const cur = text.slice(start, end);
+        if (/\{\{.*\}\}/.test(cur)) return null;                  // already a variable
+        return {key, start, end};
+      }
+    }
+    return null;
+  }
+  function maybeLovChip(field) {
+    if (!vsMenu.hidden) return hideLovChip();                     // don't collide with the {{ autocomplete
+    const v = valueAtCaret(field);
+    if (!v) return hideLovChip();
+    lovChipFor = {field, key: v.key, start: v.start, end: v.end};
+    lovChip.innerHTML = `<i class="bi bi-magic"></i> Set LOV for <b>${esc(v.key)}</b>`;
+    lovChip.hidden = false;
+    const c = vsCaret(field);
+    lovChip.style.left = Math.max(6, Math.min(c.x, window.innerWidth - lovChip.offsetWidth - 8)) + 'px';
+    lovChip.style.top = Math.min(c.bottom + 4, window.innerHeight - lovChip.offsetHeight - 8) + 'px';
+  }
+  lovChip.addEventListener('mousedown', e => {
+    e.preventDefault();
+    if (!lovChipFor) return;
+    const t = lovChipFor; hideLovChip();
+    openQuickLov(t.key, t.field, t.start, t.end, {wrap: true});
+  });
+  (function attachLovClick() {
+    const body = $('rawBody');
+    if (!body) return;
+    body.addEventListener('click', () => setTimeout(() => maybeLovChip(body), 0));
+    body.addEventListener('keyup', e => { if (e.key.startsWith('Arrow')) maybeLovChip(body); else if (e.key !== 'Shift') hideLovChip(); });
+    body.addEventListener('scroll', hideLovChip);
+    body.addEventListener('blur', () => setTimeout(hideLovChip, 200));
+  })();
+  document.addEventListener('mousedown', e => {
+    if (!lovChip.hidden && e.target !== lovChip && !lovChip.contains(e.target) && e.target !== $('rawBody')) hideLovChip();
+  });
+
   // values set by code (URL <-> params sync, loading a request) do not fire input events: catch up quietly
   setInterval(() => document.querySelectorAll('[data-var-hover], [data-var-color]').forEach(f => { if (f._mirror && f._mirror.dataset.v !== f.value) colorVars(f); }), 500);
   function watchVars(input) {

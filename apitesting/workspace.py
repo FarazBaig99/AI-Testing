@@ -495,6 +495,60 @@ def _save_request_run(item, case, env, data, spec, result, out, diag):
 
 
 @login_required
+@require_POST
+def api_ws_brain(request):
+    """The understanding brain's training panel:
+    {action:'load', names:[...]}        -> what the brain knows about these parameters + the pools it has
+    {action:'import', text, filename}   -> parse a document and merge what it describes into the brain
+    {action:'save', params:[...]}       -> store manual edits for these parameters."""
+    try:
+        data = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+    action = data.get('action')
+    if action == 'load':
+        names = [str(n) for n in (data.get('names') or []) if n][:300]
+        pools = [{'entity': e.entity, 'count': len(e.values or []), 'source': e.source_url}
+                 for e in ApiEntityPool.objects.all()]
+        return JsonResponse({'ok': True, 'params': learn.known_params(names), 'pools': pools, 'types': autofill.TYPES})
+    if action == 'import':
+        params = learn.extract_params(str(data.get('text') or ''), str(data.get('filename') or ''))
+        if not params:
+            return JsonResponse({'ok': False, 'error': 'Could not read any parameters from that document. Use an '
+                                 'OpenAPI / Swagger spec, a JSON Schema, an example JSON body, or a CSV '
+                                 '(columns: name, type, max_length).'})
+        n = learn.apply_params(params, source='document')
+        return JsonResponse({'ok': True, 'imported': n, 'params': [dict(name=k, **v) for k, v in params.items()]})
+    if action == 'save':
+        clean = {}
+        for r in (data.get('params') or []):
+            if not isinstance(r, dict):
+                continue
+            name = str(r.get('name') or '').strip()
+            if not name:
+                continue
+            info = {}
+            if r.get('data_type') in autofill.TYPE_KEYS:
+                info['data_type'] = r['data_type']
+            for k in ('min_len', 'max_len'):
+                if str(r.get(k, '')).strip() not in ('', 'None', 'null'):
+                    try:
+                        info[k] = int(r[k])
+                    except (TypeError, ValueError):
+                        pass
+            if r.get('charset'):
+                info['charset'] = r['charset']
+            if r.get('required') is not None:
+                info['required'] = bool(r['required'])
+            if r.get('samples'):
+                s = r['samples']
+                info['samples'] = s if isinstance(s, list) else [x.strip() for x in str(s).split(',') if x.strip()]
+            clean[name] = info
+        return JsonResponse({'ok': True, 'saved': learn.apply_params(clean, source='manual')})
+    return JsonResponse({'ok': False, 'error': 'Unknown action.'}, status=400)
+
+
+@login_required
 def api_ws_runs(request):
     """GET ?item= or ?case= -> the recent run snapshots for that request (most recent first)."""
     item_id, case_id = request.GET.get('item'), request.GET.get('case')

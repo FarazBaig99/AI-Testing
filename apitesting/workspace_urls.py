@@ -16,6 +16,7 @@ urlpatterns = [
     path('collections/reorder/', workspace.api_ws_reorder_collections, name='api_ws_reorder_collections'),
     path('lov/quick/', workspace.api_ws_lov_quick, name='api_ws_lov_quick'),
     path('autofill/', workspace.api_ws_autofill, name='api_ws_autofill'),
+    path('brain/', workspace.api_ws_brain, name='api_ws_brain'),
     path('request-runs/', workspace.api_ws_runs, name='api_ws_runs'),
     path('request-runs/<int:run_id>/', workspace.api_ws_run, name='api_ws_run'),
     path('generate/', workspace.api_testgen, name='api_testgen'),

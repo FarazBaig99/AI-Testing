@@ -290,6 +290,7 @@
           <div class="d-flex align-items-center gap-2 mb-1">
             <button type="button" class="btn btn-sm btn-light border" id="genTestsBtn" title="Generate positive / negative / boundary / auth tests for this API into a folder beside it"><i class="bi bi-magic text-success"></i> Generate tests</button>
             <button type="button" class="btn btn-sm btn-light border" id="autofillBtn" title="Analyse the body and fill every parameter with a realistic random value of the right type"><i class="bi bi-dice-5 text-success"></i> Autofill values</button>
+            <button type="button" class="btn btn-sm btn-light border" id="brainBtn" title="Teach the brain about this API's parameters — upload a document (OpenAPI / JSON Schema / CSV) or set types, max length and examples by hand"><span style="font-size:.95rem">🧠</span> Train brain</button>
             <div class="ctx flex-grow-1" id="baseHint"></div>
           </div>
 
@@ -492,6 +493,30 @@
     <button type="button" class="btn btn-pf" id="qlSave"><i class="bi bi-floppy"></i> Create &amp; insert</button></div>
 </div></div></div>
 
+<!-- train the understanding brain about this API's parameters -->
+<div class="modal fade" id="brainModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><span style="font-size:1.1rem">🧠</span> Train the brain <span id="brainName" class="text-muted small ms-2"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="small text-muted mb-2">The brain already learns from your runs. Here you can teach it directly — so Autofill knows, for example, that <code>cityId</code> comes from the cities API and <code>ntn</code> is a 7-digit number.</div>
+    <div class="d-flex flex-wrap align-items-center gap-2 p-2 mb-3 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0">
+      <span class="small fw-semibold"><i class="bi bi-upload"></i> Import a document</span>
+      <input type="file" id="brainFile" class="form-control form-control-sm w-auto" accept=".json,.yaml,.yml,.csv,.txt">
+      <button type="button" class="btn btn-sm btn-pf" id="brainImport"><i class="bi bi-magic"></i> Learn from it</button>
+      <span class="small text-muted">OpenAPI / Swagger, JSON Schema, an example JSON body, or a CSV (<code>name,type,max_length</code>)</span>
+      <span class="small ms-auto" id="brainImportMsg"></span>
+    </div>
+    <table class="table table-sm align-middle mb-2"><thead><tr class="small text-muted">
+      <th style="width:26%">Parameter</th><th style="width:16%">Type</th><th style="width:10%">Max len</th><th style="width:10%">Min len</th>
+      <th style="width:9%">Required</th><th>Example values (comma-separated)</th><th style="width:30px"></th></tr></thead>
+      <tbody id="brainRows"></tbody></table>
+    <button type="button" class="btn btn-sm btn-light border" id="brainAdd"><i class="bi bi-plus-lg"></i> Add parameter</button>
+    <div id="brainPools" class="small text-muted mt-3"></div>
+  </div>
+  <div class="modal-footer"><span class="small me-auto" id="brainMsg"></span>
+    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Close</button>
+    <button type="button" class="btn btn-pf" id="brainSave"><i class="bi bi-floppy"></i> Save to brain</button></div>
+</div></div></div>
+
 <!-- autofill the body with realistic random values -->
 <div class="modal fade" id="autofillModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
   <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-dice-5 text-success"></i> Autofill values</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -684,7 +709,7 @@
 <script>
 (() => {
   const CSRF = '{{ csrf_token }}';
-  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', reorderCols: '{% url "api_ws_reorder_collections" %}', lovQuick: '{% url "api_ws_lov_quick" %}', autofill: '{% url "api_ws_autofill" %}', lovData: '{% url "api_ws_lov" %}', runs: '{% url "api_ws_runs" %}', lovPage: '{% url "api_lov_page" %}',
+  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', reorderCols: '{% url "api_ws_reorder_collections" %}', lovQuick: '{% url "api_ws_lov_quick" %}', autofill: '{% url "api_ws_autofill" %}', lovData: '{% url "api_ws_lov" %}', runs: '{% url "api_ws_runs" %}', brain: '{% url "api_ws_brain" %}', lovPage: '{% url "api_lov_page" %}',
                 auth: '{% url "api_ws_auth" %}', cookies: '{% url "api_ws_cookies" %}', rename: '{% url "api_ws_rename" %}',
                 page: '{% url "api_workspace" %}'};
   const $ = id => document.getElementById(id);
@@ -1833,6 +1858,98 @@
     if ($('afRemember').checked) { try { await afPost(afState.rows.map(r => ({name: r.name, type: r.type})), true); } catch (e) {} }
     autofillModal.hide();
     toast(`Filled ${afState.rows.length} field${afState.rows.length > 1 ? 's' : ''} with random values.`, 'success');
+  });
+
+  // ---------- Train the brain: teach parameter types / limits by document upload or by hand ----------
+  const brainModal = new bootstrap.Modal($('brainModal'));
+  let brainTypes = [];
+  async function brainPost(payload) {
+    return (await (await fetch(URLS.brain, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)})).json());
+  }
+  function brainTypeSelect(sel) {
+    return `<select class="form-select form-select-sm bp-type"><option value="">(guess)</option>${brainTypes.map(([k, label]) =>
+      `<option value="${esc(k)}"${k === sel ? ' selected' : ''}>${esc(label)}</option>`).join('')}</select>`;
+  }
+  function brainRowCells(p) {
+    p = p || {};
+    const num = v => (v === 0 || v) ? esc(String(v)) : '';
+    return `<td><input class="form-control form-control-sm code bp-name" value="${esc(p.name || '')}" placeholder="fieldName"></td>
+      <td>${brainTypeSelect(p.data_type || '')}</td>
+      <td><input type="number" min="1" class="form-control form-control-sm bp-max" value="${num(p.max_len)}"></td>
+      <td><input type="number" min="0" class="form-control form-control-sm bp-min" value="${num(p.min_len)}"></td>
+      <td class="text-center"><input type="checkbox" class="form-check-input bp-req"${p.required ? ' checked' : ''}></td>
+      <td><input class="form-control form-control-sm bp-samples" value="${esc((p.samples || []).join(', '))}" placeholder="${esc(p.entity ? 'from the ' + p.entity + ' API' : '')}"></td>
+      <td><button type="button" class="btn btn-sm btn-link text-muted p-0 bp-del"><i class="bi bi-trash"></i></button></td>`;
+  }
+  function brainAddRow(p) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = brainRowCells(p);
+    $('brainRows').appendChild(tr);
+    tr.querySelector('.bp-del').addEventListener('click', () => tr.remove());
+    return tr;
+  }
+  function brainMergeParams(params) {       // update existing rows by name, add the rest
+    const byName = {};
+    $('brainRows').querySelectorAll('tr').forEach(tr => { byName[tr.querySelector('.bp-name').value.trim()] = tr; });
+    (params || []).forEach(p => {
+      const tr = byName[p.name];
+      if (tr) {
+        if (p.data_type) tr.querySelector('.bp-type').value = p.data_type;
+        if (p.max_len != null) tr.querySelector('.bp-max').value = p.max_len;
+        if (p.min_len != null) tr.querySelector('.bp-min').value = p.min_len;
+        if (p.required) tr.querySelector('.bp-req').checked = true;
+        if ((p.samples || []).length) tr.querySelector('.bp-samples').value = p.samples.join(', ');
+      } else { brainAddRow(p); }
+    });
+  }
+  async function openBrain() {
+    const c = afCollect();                  // reuse the body parser to seed the table with this API's fields
+    const names = (c && c.leaves ? c.leaves.map(l => l.name) : []).filter((v, i, a) => a.indexOf(v) === i);
+    $('brainName').textContent = current ? (current.name || '') : '';
+    $('brainMsg').textContent = ''; $('brainImportMsg').textContent = ''; $('brainFile').value = '';
+    $('brainRows').innerHTML = '';
+    const out = await brainPost({action: 'load', names});
+    brainTypes = out.types || [];
+    (out.params || []).forEach(p => brainAddRow(p));
+    if (!(out.params || []).length) brainAddRow({});
+    const pools = out.pools || [];
+    $('brainPools').innerHTML = pools.length
+      ? `<i class="bi bi-stars text-success"></i> The brain can pull real ids from: ${pools.map(p => `<span class="badge text-bg-light border">${esc(p.entity)} (${p.count})</span>`).join(' ')}. Send a listing API (like the cities API) to teach it more.`
+      : '<i class="bi bi-info-circle"></i> No id pools learned yet — send a listing API (e.g. the cities API) and its ids become available to fields like <code>cityId</code>.';
+    brainModal.show();
+  }
+  function brainCollect() {
+    return [...$('brainRows').querySelectorAll('tr')].map(tr => ({
+      name: tr.querySelector('.bp-name').value.trim(),
+      data_type: tr.querySelector('.bp-type').value,
+      max_len: tr.querySelector('.bp-max').value, min_len: tr.querySelector('.bp-min').value,
+      required: tr.querySelector('.bp-req').checked, samples: tr.querySelector('.bp-samples').value,
+    })).filter(r => r.name);
+  }
+  $('brainBtn').addEventListener('click', openBrain);
+  $('brainAdd').addEventListener('click', () => brainAddRow({}));
+  $('brainImport').addEventListener('click', () => {
+    const f = $('brainFile').files[0];
+    if (!f) return; $('brainImportMsg').textContent = '';
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const out = await brainPost({action: 'import', text: String(reader.result || ''), filename: f.name});
+      const msg = (cls, t) => { $('brainImportMsg').className = `small text-${cls}`; $('brainImportMsg').textContent = t; };
+      if (!out.ok) return msg('danger', out.error || 'Could not read that document.');
+      brainMergeParams(out.params || []);
+      msg('success', `Learned ${out.imported} parameter${out.imported === 1 ? '' : 's'} from ${esc(f.name)}.`);
+    };
+    reader.readAsText(f);
+  });
+  $('brainSave').addEventListener('click', async () => {
+    const params = brainCollect();
+    const msg = (cls, t) => { $('brainMsg').className = `small me-auto text-${cls}`; $('brainMsg').textContent = t; };
+    if (!params.length) return msg('danger', 'Add at least one parameter.');
+    const out = await brainPost({action: 'save', params});
+    if (!out.ok) return msg('danger', out.error || 'Could not save.');
+    msg('success', `Saved ${out.saved} parameter${out.saved === 1 ? '' : 's'} to the brain.`);
+    setTimeout(() => brainModal.hide(), 900);
   });
 
   // values set by code (URL <-> params sync, loading a request) do not fire input events: catch up quietly

@@ -160,9 +160,13 @@ def generate_value(data_type, intel=None):
     if data_type == 'integer' and mx:
         digits = max(1, mn or mx)
         options = {'kind': 'number', 'min': 10 ** (digits - 1) if digits > 1 else 0, 'max': 10 ** mx - 1, 'decimals': 0}
-    elif data_type in ('string', 'text', 'code') and mx:
+    elif data_type in ('string', 'text', 'code') and (mx or intel.get('charset') in ('digits', 'alnum', 'alpha')):
         options['kind'] = options.get('kind', 'text')
-        options['min_len'], options['max_len'] = (mn or mx), mx
+        if mx:
+            options['min_len'], options['max_len'] = (mn or mx), mx
+        cs = intel.get('charset')
+        if cs in ('digits', 'alnum', 'alpha'):
+            options['charset'] = {'digits': 'digits', 'alnum': 'alnum', 'alpha': 'letters'}[cs]
     raw = lov.make(produces, options, [])
     if data_type in NUMERIC_TYPES:
         try:

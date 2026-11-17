@@ -210,3 +210,172 @@ def observe(spec, result):
         _learn_pool(result.get('url') or spec.get('url'), result.get('body') or '')
     except Exception:
         pass
+
+
+# ---------- training the brain directly: from an uploaded document, or manual entries ----------
+
+FREE_TYPE = {
+    'int': 'integer', 'integer': 'integer', 'long': 'integer', 'bigint': 'integer', 'number': 'number',
+    'decimal': 'number', 'float': 'number', 'double': 'number', 'bool': 'boolean', 'boolean': 'boolean',
+    'string': 'string', 'text': 'string', 'varchar': 'string', 'char': 'string', 'str': 'string',
+    'email': 'email', 'date': 'date', 'datetime': 'datetime', 'timestamp': 'datetime', 'uuid': 'uuid',
+    'guid': 'uuid', 'phone': 'phone', 'city': 'city', 'country': 'country', 'name': 'name', 'code': 'code',
+}
+
+
+def _map_free_type(word):
+    w = re.sub(r'[^a-z0-9]', '', str(word or '').lower())
+    return FREE_TYPE.get(w, 'string')
+
+
+def _type_from_schema(prop):
+    t, fmt = prop.get('type'), (prop.get('format') or '').lower()
+    if isinstance(t, list):
+        t = next((x for x in t if x != 'null'), 'string')
+    if t == 'string':
+        return {'email': 'email', 'date': 'date', 'date-time': 'datetime', 'datetime': 'datetime',
+                'uuid': 'uuid', 'guid': 'uuid'}.get(fmt, 'string')
+    return {'integer': 'integer', 'number': 'number', 'boolean': 'boolean'}.get(t, 'string')
+
+
+def _props_to_params(props, required=()):
+    out = {}
+    for name, prop in (props or {}).items():
+        if not isinstance(prop, dict):
+            continue
+        if prop.get('type') == 'object' and isinstance(prop.get('properties'), dict):
+            out.update(_props_to_params(prop['properties'], prop.get('required', [])))
+            continue
+        if prop.get('type') == 'array':
+            continue
+        info = {'data_type': _type_from_schema(prop)}
+        if str(prop.get('maxLength', '')).isdigit():
+            info['max_len'] = int(prop['maxLength'])
+        if str(prop.get('minLength', '')).isdigit():
+            info['min_len'] = int(prop['minLength'])
+        if isinstance(prop.get('enum'), list) and prop['enum']:
+            info['samples'] = [str(x) for x in prop['enum'][:MAX_SAMPLES]]
+        if re.search(r'\d|\[0-9\]|digit', prop.get('pattern') or ''):
+            info['charset'] = 'digits'
+        if name in (required or []):
+            info['required'] = True
+        out[str(name)] = info
+    return out
+
+
+def _find_schemas(obj, acc):
+    """Every JSON-Schema / OpenAPI schema object (one with a properties map) anywhere in the document."""
+    if isinstance(obj, dict):
+        if isinstance(obj.get('properties'), dict):
+            acc.append((obj['properties'], obj.get('required', [])))
+        for v in obj.values():
+            _find_schemas(v, acc)
+    elif isinstance(obj, list):
+        for v in obj:
+            _find_schemas(v, acc)
+
+
+def _csv_params(text):
+    import csv
+    import io
+    out = {}
+    for raw in csv.DictReader(io.StringIO(text)):
+        row = {(k or '').strip().lower(): (v or '').strip() for k, v in raw.items()}
+        name = row.get('name') or row.get('parameter') or row.get('field') or row.get('key')
+        if not name:
+            continue
+        info = {}
+        dt = row.get('type') or row.get('data_type') or row.get('datatype')
+        if dt:
+            info['data_type'] = _map_free_type(dt)
+        for k in ('max_length', 'maxlength', 'max_len', 'maxlen', 'max'):
+            if row.get(k, '').replace('.', '', 1).isdigit():
+                info['max_len'] = int(float(row[k]))
+                break
+        for k in ('min_length', 'minlength', 'min_len', 'minlen', 'min'):
+            if row.get(k, '').replace('.', '', 1).isdigit():
+                info['min_len'] = int(float(row[k]))
+                break
+        if row.get('required', '').lower() in ('1', 'true', 'yes', 'y'):
+            info['required'] = True
+        sample_raw = row.get('samples') or row.get('example') or row.get('examples') or row.get('values')
+        if sample_raw:
+            info['samples'] = [x.strip() for x in re.split(r'[|;]', sample_raw) if x.strip()][:MAX_SAMPLES]
+        out[name] = info
+    return out
+
+
+def extract_params(text, filename=''):
+    """Pull a {name: {data_type, max_len, min_len, charset, samples, required}} map out of an uploaded
+    document: an OpenAPI / Swagger spec, a JSON Schema, a plain example JSON body, or a CSV."""
+    text = (text or '').strip()
+    if not text:
+        return {}
+    first = text.splitlines()[0]
+    if filename.lower().endswith('.csv') or (',' in first and not text.lstrip().startswith(('{', '['))):
+        return _csv_params(text)
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return {}
+    schemas = []
+    _find_schemas(data, schemas)
+    if schemas:
+        params = {}
+        for props, req in schemas:
+            params.update(_props_to_params(props, req))
+        return params
+    if isinstance(data, (dict, list)):
+        params = {}
+        for name, value in _leaves(data):
+            info = {'data_type': autofill.detect_type(name, value)}
+            s = str(value)
+            if s and '{{' not in s and not isinstance(value, bool):
+                info.update(max_len=len(s), min_len=len(s), charset=_charset(s), samples=[s])
+            params[str(name)] = info
+        return params
+    return {}
+
+
+def apply_params(params, source='manual'):
+    """Write trained parameter info into the brain (ApiParamType + intel). Merges with what is already known."""
+    n = 0
+    for name, info in (params or {}).items():
+        name = str(name).strip()[:200]
+        if not name or not isinstance(info, dict):
+            continue
+        pt, _ = ApiParamType.objects.get_or_create(name=name, defaults={'data_type': info.get('data_type') or 'string'})
+        if info.get('data_type'):
+            pt.data_type = info['data_type']
+        intel = dict(pt.intel or {})
+        for k in ('min_len', 'max_len', 'charset'):
+            if info.get(k) not in (None, ''):
+                intel[k] = info[k]
+        if info.get('samples'):
+            keep = [x for x in (intel.get('samples') or []) if x not in info['samples']]
+            intel['samples'] = (list(info['samples']) + keep)[:MAX_SAMPLES]
+        if info.get('required') is not None:
+            intel['required'] = bool(info['required'])
+        ent = entity_of_field(name)
+        if ent:
+            intel['entity'] = ent
+        intel['source'] = source
+        pt.intel = intel
+        pt.save()
+        n += 1
+    return n
+
+
+def known_params(names):
+    """What the brain currently knows about each of these parameter names (for the training panel)."""
+    rows = {pt.name: pt for pt in ApiParamType.objects.filter(name__in=list(names))}
+    out = []
+    for name in names:
+        pt = rows.get(name)
+        intel = (pt.intel if pt else {}) or {}
+        out.append({'name': name, 'data_type': pt.data_type if pt else '',
+                    'min_len': intel.get('min_len'), 'max_len': intel.get('max_len'),
+                    'charset': intel.get('charset', ''), 'required': bool(intel.get('required')),
+                    'samples': intel.get('samples') or [], 'entity': intel.get('entity', ''),
+                    'known': pt is not None})
+    return out

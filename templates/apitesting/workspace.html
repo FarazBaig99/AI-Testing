@@ -85,6 +85,8 @@
   .aw .resp-split::before { content: ''; width: 46px; height: 4px; border-radius: 3px; background: #cbd5e1; transition: background .12s, width .12s; }
   .aw .resp-split:hover::before, .aw .resp-split.dragging::before { background: var(--pf); width: 70px; }
   .aw .j-key { color: #a21caf; } .aw .j-str { color: #15803d; } .aw .j-num { color: #2563eb; } .aw .j-lit { color: #c2410c; }
+  .aw .j-bind { cursor: pointer; border-radius: 3px; }
+  .aw .j-bind:hover, .aw .j-bind.picked { background: #dbeafe; outline: 1px solid #93c5fd; }
   .aw .j-val { cursor: pointer; border-bottom: 1px dotted #cbd5e1; border-radius: 3px; }
   .aw .j-val:hover, .aw .j-val.picked { background: #fef3c7; border-bottom-color: #f59e0b; }
   #valPop { position: fixed; z-index: 2150; width: 360px; max-width: calc(100vw - 24px); background: #fff; border: 1px solid #cbd5e1;
@@ -96,6 +98,13 @@
   #valPop .vp-scope:has(input:checked) { border-color: #16a34a; background: #f0fdf4; }
   #valPop .vp-scope.off { opacity: .5; cursor: not-allowed; }
   #valPop .vp-scope small { display: block; color: #64748b; }
+  #bindPop { position: fixed; z-index: 2150; width: 380px; max-width: calc(100vw - 24px); background: #fff; border: 1px solid #cbd5e1;
+    border-radius: 10px; box-shadow: 0 12px 30px rgba(15,23,42,.18); padding: 10px 12px; font-size: .82rem; }
+  #bindPop .bp-path { font-family: monospace; color: #1d4ed8; word-break: break-all; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 3px 6px; margin: 4px 0; }
+  #bindPop .vp-scope { display: flex; align-items: flex-start; gap: 6px; padding: 4px 6px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 4px; cursor: pointer; }
+  #bindPop .vp-scope:has(input:checked) { border-color: #16a34a; background: #f0fdf4; }
+  #bindPop .vp-scope.off { opacity: .5; cursor: not-allowed; }
+  #bindPop .vp-scope small { display: block; color: #64748b; }
   .aw .stat { font-weight: 700; }
   .aw .stat-2 { color: #16a34a; } .aw .stat-3 { color: #2563eb; } .aw .stat-4 { color: #d97706; } .aw .stat-5, .aw .stat-0 { color: #dc2626; }
   .aw .diag-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; vertical-align: 1px; margin-left: 2px; }
@@ -2301,7 +2310,9 @@
     if (v && typeof v === 'object') {
       const keys = Object.keys(v);
       if (!keys.length) return '{}';
-      return '{\n' + keys.map(k => `${inner}<span class="j-key">${esc(JSON.stringify(k))}</span>: ${jsonNode(v[k], depth + 1, path ? `${path}.${k}` : k)}`).join(',\n') + '\n' + pad + '}';
+      return '{\n' + keys.map(k => { const kp = path ? `${path}.${k}` : k;
+        return `${inner}<span class="j-key j-bind" data-path="${esc(kp)}" title="Click this field to save it to a variable on every run">${esc(JSON.stringify(k))}</span>: ${jsonNode(v[k], depth + 1, kp)}`;
+      }).join(',\n') + '\n' + pad + '}';
     }
     const cls = typeof v === 'string' ? 'j-str' : typeof v === 'number' ? 'j-num' : 'j-lit';
     const raw = typeof v === 'string' ? v : JSON.stringify(v);
@@ -2383,12 +2394,81 @@
       $('vpMsg').innerHTML = `<span class="text-danger">${esc(out.error || 'Could not save.')}</span>`;
     });
   }
+  // ---------- bind a response field (by its key / path) to a variable on EVERY run (a post-response script) ----------
+  const bindPop = document.createElement('div');
+  bindPop.id = 'bindPop'; bindPop.hidden = true;
+  document.body.appendChild(bindPop);
+  let bindPick = null, bindScope = 'environment';
+  const SETTER = {environment: 'pm.environment.set', collection: 'pm.collectionVariables.set',
+                  project: 'pm.projectVariables.set', globals: 'pm.globals.set'};
+  function hideBindPop() { bindPop.hidden = true; if (bindPick) bindPick.classList.remove('picked'); bindPick = null; }
+  function pathToAccessor(path) {               // data.id / items[0].id -> jsonData["data"]["id"] / jsonData["items"][0]["id"]
+    const toks = path.match(/[^.\[\]]+|\[\d+\]/g) || [];
+    return 'jsonData' + toks.map(t => /^\[\d+\]$/.test(t) ? t : `[${JSON.stringify(t)}]`).join('');
+  }
+  function addBinding(varName, line) {
+    let lines = ($('postScript').value || '').split('\n');
+    if (!lines.some(l => /\bvar\s+jsonData\s*=\s*pm\.response\.json\(\)/.test(l)))
+      lines.unshift('var jsonData = pm.response.json();');
+    const setRe = new RegExp(`\\.set\\(\\s*["']${varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`);
+    lines = lines.filter(l => !setRe.test(l));          // replace any existing binding for this variable
+    lines.push(line);
+    $('postScript').value = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+    $('postScript').dispatchEvent(new Event('input', {bubbles: true}));
+  }
+  function openBindPop(span) {
+    hideValPop();
+    if (bindPick) bindPick.classList.remove('picked');
+    bindPick = span; span.classList.add('picked');
+    const path = span.dataset.path, accessor = pathToAccessor(path);
+    const hasEnv = !!(current && current.environment), hasColl = !!(current && current.collection_name);
+    if (!hasEnv && bindScope !== 'globals' && bindScope !== 'collection') bindScope = 'globals';
+    const scopes = [
+      ['environment', 'Environment variable', hasEnv ? `${esc(current.project_name)} · ${esc(current.environment_name)}` : 'this request has no environment', hasEnv],
+      ['collection', 'Collection variable', hasColl ? esc(current.collection_name) : 'this request is not in a collection', hasColl],
+      ['project', 'Project variable', hasEnv ? `every environment of ${esc(current.project_name)}` : 'this request has no project', hasEnv],
+      ['globals', 'Global variable', 'every project and environment', true],
+    ];
+    bindPop.innerHTML = `<div class="d-flex align-items-center"><b><i class="bi bi-link-45deg"></i> Save to a variable on every run</b>
+        <button type="button" class="btn-close btn-sm ms-auto" id="bpClose"></button></div>
+      <div class="small text-muted mt-1">Each time you send this request, the value at this field is saved to the variable (a post-response script).</div>
+      <div class="bp-path">${esc(accessor)}</div>
+      <label class="form-label mb-0 fw-semibold">Variable name</label>
+      <input id="bpName" class="form-control form-control-sm font-monospace mb-2" value="${esc(suggestName(path))}" spellcheck="false">
+      ${scopes.map(([v, t, d, on]) => `<label class="vp-scope${on ? '' : ' off'}"><input type="radio" name="bpScope" value="${v}" class="form-check-input mt-1"${on ? '' : ' disabled'}${v === bindScope ? ' checked' : ''}><span><b>${t}</b><small>${d}</small></span></label>`).join('')}
+      <div id="bpMsg" class="small mt-1"></div>
+      <div class="d-flex mt-2"><button type="button" class="btn btn-sm btn-pf ms-auto" id="bpSave"><i class="bi bi-link-45deg"></i> Create binding</button></div>`;
+    bindPop.hidden = false;
+    const r = span.getBoundingClientRect(), w = bindPop.offsetWidth, h = bindPop.offsetHeight;
+    let left = Math.min(r.left, window.innerWidth - w - 12), top = r.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    bindPop.style.left = `${Math.max(8, left)}px`; bindPop.style.top = `${top}px`;
+    $('bpName').focus(); $('bpName').select();
+    $('bpClose').addEventListener('click', hideBindPop);
+    bindPop.querySelectorAll('input[name="bpScope"]').forEach(x => x.addEventListener('change', () => { bindScope = x.value; $('bpMsg').innerHTML = ''; }));
+    $('bpName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('bpSave').click(); } });
+    $('bpSave').addEventListener('click', () => {
+      const name = $('bpName').value.trim();
+      if (!/^[\w.\-]{1,200}$/.test(name) || name.startsWith('$')) { $('bpMsg').innerHTML = '<span class="text-danger">Name: letters, digits, dot, dash or underscore only.</span>'; return; }
+      const scope = (bindPop.querySelector('input[name="bpScope"]:checked') || {}).value;
+      if (!scope) { $('bpMsg').innerHTML = '<span class="text-danger">Pick where to save the variable.</span>'; return; }
+      addBinding(name, `${SETTER[scope]}("${name}", ${accessor});`);
+      hideBindPop();
+      document.querySelector('#reqTabs [data-tab="post"]').click();     // show the script we just added
+      toast(`<i class="bi bi-link-45deg"></i> <code>{% templatetag openvariable %}${esc(name)}{% templatetag closevariable %}</code> will be saved from this field on every send. Press <b>Save</b> to keep it with the request.`);
+    });
+  }
   $('respPre').addEventListener('click', e => {
+    const key = e.target.closest('.j-bind');
+    if (key && key.dataset.path) return openBindPop(key);
     const span = e.target.closest('.j-val');
     if (span) openValPop(span);
   });
-  document.addEventListener('mousedown', e => { if (!valPop.hidden && !valPop.contains(e.target) && !e.target.closest('.j-val')) hideValPop(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !valPop.hidden) hideValPop(); });
+  document.addEventListener('mousedown', e => {
+    if (!valPop.hidden && !valPop.contains(e.target) && !e.target.closest('.j-val')) hideValPop();
+    if (!bindPop.hidden && !bindPop.contains(e.target) && !e.target.closest('.j-bind')) hideBindPop();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (!valPop.hidden) hideValPop(); if (!bindPop.hidden) hideBindPop(); } });
   function prettyMarkup(text) {
     let depth = 0;
     return text.replace(/>\s*</g, '>\n<').split('\n').map(line => {

@@ -1570,21 +1570,83 @@
   // ---------- Autofill: analyse the body and fill every parameter with a realistic random value ----------
   const autofillModal = new bootstrap.Modal($('autofillModal'));
   let afState = null;                 // {mode, root|formSnapshot, table, types, rows:[{name, path, type, value}]}
-  // walk a parsed JSON value, collecting every primitive leaf with the key it sits under
-  function afWalk(node, path, out, keyName) {
-    if (Array.isArray(node)) node.forEach((v, i) => afWalk(v, path.concat(i), out, keyName));
-    else if (node && typeof node === 'object') Object.keys(node).forEach(k => afWalk(node[k], path.concat(k), out, k));
-    else out.push({path, name: keyName || String(path[path.length - 1] ?? ''), value: node});
+  // Tolerant JSON reader: treats {{variable}} as an atomic value (so Postman bodies parse), and records
+  // each primitive value's text span so we can fill it in place without disturbing the rest of the body.
+  // Returns {leaves, error}; each leaf is {path, name, start, end, value, isVar}.
+  function afJsonLeaves(text) {
+    let i = 0; const n = text.length, leaves = [];
+    const ws = () => { while (i < n && /\s/.test(text[i])) i++; };
+    function str() {               // text[i] === '"'; returns decoded string, advances past the closing quote
+      i++; let out = '';
+      while (i < n) {
+        const c = text[i++];
+        if (c === '\\') { const e = text[i++];
+          if (e === 'u') { out += String.fromCharCode(parseInt(text.substr(i, 4), 16) || 0); i += 4; }
+          else out += ({n: '\n', t: '\t', r: '\r', b: '\b', f: '\f'})[e] ?? e; }
+        else if (c === '"') return out;
+        else out += c;
+      }
+      throw 'unterminated string';
+    }
+    function val(path, keyName) {
+      ws();
+      if (i >= n) throw 'unexpected end of body';
+      const ch = text[i];
+      if (ch === '{' && text[i + 1] === '{') {               // {{ variable }} used as a value
+        const start = i; i += 2;
+        while (i < n && !(text[i] === '}' && text[i + 1] === '}')) i++;
+        i += 2;
+        leaves.push({path, name: keyName, start, end: i, value: text.slice(start, i), isVar: true});
+      } else if (ch === '{') {
+        i++; ws();
+        if (text[i] === '}') { i++; return; }
+        while (i < n) {
+          ws(); if (text[i] !== '"') throw 'expected a property name';
+          const key = str(); ws();
+          if (text[i] !== ':') throw 'expected ":"'; i++;
+          val(path.concat(key), key); ws();
+          if (text[i] === ',') { i++; continue; }
+          if (text[i] === '}') { i++; return; }
+          throw 'expected "," or "}"';
+        }
+        throw 'unterminated object';
+      } else if (ch === '[') {
+        i++; ws(); let idx = 0;
+        if (text[i] === ']') { i++; return; }
+        while (i < n) {
+          val(path.concat(idx), keyName); idx++; ws();
+          if (text[i] === ',') { i++; continue; }
+          if (text[i] === ']') { i++; return; }
+          throw 'expected "," or "]"';
+        }
+        throw 'unterminated array';
+      } else if (ch === '"') {
+        const start = i, s = str();
+        leaves.push({path, name: keyName, start, end: i, value: s, isVar: /\{\{/.test(s || '')});
+      } else {                                               // number / true / false / null / bare token
+        const start = i;
+        while (i < n && !',}]'.includes(text[i]) && !/\s/.test(text[i])) i++;
+        const raw = text.slice(start, i);
+        let value = raw;
+        if (raw === 'true') value = true; else if (raw === 'false') value = false;
+        else if (raw === 'null') value = null;
+        else if (/^-?\d/.test(raw) && !isNaN(Number(raw))) value = Number(raw);
+        leaves.push({path, name: keyName, start, end: i, value, isVar: /\{\{/.test(raw)});
+      }
+    }
+    try { ws(); if (i >= n) return {leaves: []}; val([], null); return {leaves}; }
+    catch (e) { return {error: String(e)}; }
   }
   function afCollect() {
     const mode = bodyMode();
     if (mode === 'raw' && $('rawLang').value === 'json') {
-      let root;
-      try { root = JSON.parse($('rawBody').value || 'null'); }
-      catch (e) { return {error: 'The JSON body is not valid, so it cannot be analysed. Fix it and try again.'}; }
-      if (!root || typeof root !== 'object') return {error: 'Add a JSON object body with some fields first.'};
-      const leaves = []; afWalk(root, [], leaves, null);
-      return {mode: 'json', root, leaves: leaves.filter(l => l.name)};
+      const text = $('rawBody').value || '';
+      if (!text.trim()) return {error: 'Add a JSON body with some fields first.'};
+      const {leaves, error} = afJsonLeaves(text);
+      if (error) return {error: `The JSON body could not be read (${error}). Fix it and try again.`};
+      const fillable = (leaves || []).filter(l => l.name && !l.isVar);
+      const vars = (leaves || []).filter(l => l.isVar).length;
+      return {mode: 'json', rawText: text, leaves: fillable, varCount: vars};
     }
     if (mode === 'form-data' || mode === 'urlencoded') {
       const table = mode === 'form-data' ? kv.form : kv.urlenc;
@@ -1628,19 +1690,31 @@
   async function openAutofill() {
     const c = afCollect();
     if (c.error) return toast(c.error, 'warning');
-    afSetMsg('muted', '');
-    if (!c.leaves.length) { afState = {...c, types: afState ? afState.types : [], rows: []}; afRender(); autofillModal.show(); return; }
+    if (!c.leaves.length) {
+      return toast(c.varCount ? `Every field is already a ${O}variable${C} — nothing to autofill.`
+                              : 'No fillable fields were found in the body.', 'info');
+    }
+    afSetMsg('muted', c.varCount ? `${c.varCount} field${c.varCount > 1 ? 's are' : ' is'} already a ${O}variable${C} and left as is.` : '');
     const out = await afPost(c.leaves.map(l => ({name: l.name, value: l.value})), false);
     if (!out.ok) return toast(out.error || 'Could not analyse the body.', 'danger');
-    afState = {...c, types: out.types, rows: c.leaves.map((l, i) => ({name: l.name, path: l.path, type: out.fields[i].type, value: out.fields[i].value}))};
+    afState = {...c, types: out.types, rows: c.leaves.map((l, i) =>
+      ({name: l.name, path: l.path, start: l.start, end: l.end, type: out.fields[i].type, value: out.fields[i].value}))};
     afRender();
     autofillModal.show();
   }
-  function afCoerce(type, value) {
-    if (type === 'integer' || type === 'number') { const n = Number(value); return Number.isFinite(n) && String(value).trim() !== '' ? n : String(value); }
-    if (type === 'boolean') { const s = String(value).trim().toLowerCase();
-      if (['true', '1', 'yes', 'y'].includes(s)) return true; if (['false', '0', 'no', 'n'].includes(s)) return false; return String(value); }
-    return String(value);
+  // the value as a JSON text fragment: a bare number / true / false for those types, else a quoted string
+  function afEncode(type, value) {
+    if (type === 'integer' || type === 'number') {
+      const num = Number(value);
+      return (String(value).trim() !== '' && Number.isFinite(num)) ? String(num) : JSON.stringify(String(value));
+    }
+    if (type === 'boolean') {
+      const s = String(value).trim().toLowerCase();
+      if (['true', '1', 'yes', 'y'].includes(s)) return 'true';
+      if (['false', '0', 'no', 'n'].includes(s)) return 'false';
+      return JSON.stringify(String(value));
+    }
+    return JSON.stringify(String(value));
   }
   $('autofillBtn').addEventListener('click', openAutofill);
   $('afRegen').addEventListener('click', async () => {
@@ -1653,12 +1727,13 @@
   $('afFill').addEventListener('click', async () => {
     if (!afState || !afState.rows.length) { autofillModal.hide(); return; }
     if (afState.mode === 'json') {
-      afState.rows.forEach(r => {
-        let node = afState.root;
-        for (let k = 0; k < r.path.length - 1; k++) node = node[r.path[k]];
-        node[r.path[r.path.length - 1]] = afCoerce(r.type, r.value);
-      });
-      $('rawBody').value = JSON.stringify(afState.root, null, 2);
+      // replace each value's text span in place (from the end back, so earlier spans keep their offsets):
+      // everything else - the {{variables}}, nulls, comments, spacing - is left exactly as it was
+      const edits = afState.rows.map(r => ({start: r.start, end: r.end, text: afEncode(r.type, r.value)}))
+        .sort((a, b) => b.start - a.start);
+      let out = afState.rawText;
+      for (const e of edits) out = out.slice(0, e.start) + e.text + out.slice(e.end);
+      $('rawBody').value = out;
       $('rawBody').dispatchEvent(new Event('input', {bubbles: true}));
     } else {
       const rows = afState.formSnapshot.map(r => ({...r}));

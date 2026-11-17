@@ -1329,7 +1329,9 @@
     m.className = `${field.className} var-mirror${field.tagName === 'TEXTAREA' ? ' multi' : ''}`;
     m.setAttribute('aria-hidden', 'true');
     const st = getComputedStyle(field);          // same metrics as the field, whatever rules style it
-    ['font', 'letterSpacing', 'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderWidth', 'textAlign', 'height']
+    // NB: do NOT copy height — the mirror is position:absolute inset:0, so it always fills (and follows the
+    // resize of) the field. Baking a height here froze it at the field's start size and blanked the rest.
+    ['font', 'letterSpacing', 'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderWidth', 'textAlign']
       .forEach(k => m.style[k] = st[k]);
     wrap.appendChild(m);
     field._mirror = m; field._wrap = wrap;

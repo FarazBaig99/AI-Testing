@@ -18,11 +18,11 @@ from django.views.decorators.http import require_POST
 
 from projects.models import Project
 
-from . import auth, autofill, lov, runner, scripting
+from . import auth, autofill, learn, lov, runner, scripting
 from .parsers import is_empty_body
-from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiLov, ApiLovDateFormat, ApiLovUsedValue,
-                     ApiParamType, ApiTestCase, AuthProfile, ProjectVariables, CollectionFolder, CollectionRequest,
-                     Environment, RequestRun)
+from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiEntityPool, ApiGlobals, ApiLov, ApiLovDateFormat,
+                     ApiLovUsedValue, ApiParamType, ApiTestCase, AuthProfile, ProjectVariables, CollectionFolder,
+                     CollectionRequest, Environment, RequestRun)
 
 RUN_HISTORY_KEEP = 20           # how many past runs to keep per saved request / synced API
 
@@ -467,6 +467,7 @@ def api_ws_send(request, opener=None, login_opener=None):
     diag = diagnosis.diagnose(spec, result, env, has_login=has_login, picked=auth.choice_of(spec),
                               tests=out['tests'], errors=out['errors'])
     _save_request_run(item, case, env, data, spec, result, out, diag)
+    learn.observe(spec, result)                 # the understanding brain learns from this send
     return JsonResponse(dict(result, tests=out['tests'], console=out['console'], script_errors=out['errors'],
                              lov=out.get('lov', {}), diagnosis=diag))
 
@@ -848,16 +849,36 @@ def api_ws_autofill(request):
     fields = data.get('fields')
     if not isinstance(fields, list) or not fields:
         return JsonResponse({'ok': False, 'error': 'There are no fields to fill. Add a body first.'}, status=400)
-    learned = dict(ApiParamType.objects.values_list('name', 'data_type'))
+    learned, intels = {}, {}
+    for name, dtype, intel in ApiParamType.objects.values_list('name', 'data_type', 'intel'):
+        learned[name], intels[name] = dtype, (intel or {})
+    pools = {e.entity: e for e in ApiEntityPool.objects.all()}
+    import random
     out, to_save = [], []
     for f in fields[:500]:
         if not isinstance(f, dict):
             continue
         name = str(f.get('name') or '')
         chosen = f.get('type') if f.get('type') in autofill.TYPE_KEYS else None
-        dtype = chosen or autofill.detect_type(name, f.get('value'), learned.get(name))
-        out.append({'name': name, 'type': dtype, 'value': autofill.generate_value(dtype)})
-        if data.get('save') and name:
+        intel = intels.get(name, {})
+        # 1) a real id from the API that produces this kind of thing (cityId <- the cities API)
+        pf = learn.pool_for_field(name, pools) if (chosen is None or chosen == 'reference') else None
+        pick = random.choice(pf[1].values) if (pf and pf[1].values) else None
+        if pick:
+            entity, pool = pf
+            src = f'from the {entity} API' + (f' · {pick["label"]}' if pick.get('label') else '')
+            out.append({'name': name, 'type': 'reference', 'value': pick['id'], 'source': src})
+            continue
+        # 2) a value of the learned/guessed type, kept within the learned length
+        dtype = chosen if (chosen and chosen != 'reference') else learned.get(name) or autofill.detect_type(name, f.get('value'))
+        source = ''
+        if intel.get('samples'):
+            ln = intel.get('max_len')
+            source = 'learned from your runs' + (f' ({intel.get("charset", "")}, up to {ln} chars)' if ln else '')
+        elif learned.get(name):
+            source = 'remembered type'
+        out.append({'name': name, 'type': dtype, 'value': autofill.generate_value(dtype, intel), 'source': source})
+        if data.get('save') and name and dtype != 'reference':
             to_save.append((name, dtype))
     for name, dtype in to_save:
         ApiParamType.objects.update_or_create(

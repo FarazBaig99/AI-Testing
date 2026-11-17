@@ -526,9 +526,13 @@ class ApiLovDateFormat(models.Model):
 
 class ApiParamType(models.Model):
     """A parameter's data type, learned once and reused: so Autofill knows next time that, say, `age`
-    takes an integer and `email` takes an email. Keyed by the parameter name across the project."""
+    takes an integer and `email` takes an email. Keyed by the parameter name across the project.
+
+    `intel` is what the "understanding brain" learned by watching real sends: observed length range,
+    character set, a few known-good sample values, and the entity a `...Id` field refers to."""
     name = models.CharField(max_length=200, unique=True)
     data_type = models.CharField(max_length=30)
+    intel = models.JSONField(default=dict, blank=True)   # {count, min_len, max_len, charset, samples[], entity}
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -537,6 +541,21 @@ class ApiParamType(models.Model):
 
     def __str__(self):
         return f'{self.name} = {self.data_type}'
+
+
+class ApiEntityPool(models.Model):
+    """Real ids an API hands out, learned from its list responses: the brain remembers that the cities API
+    returns city ids, so Autofill can put a real city id into a `cityId` field instead of a random one."""
+    entity = models.CharField(max_length=120, unique=True)      # normalized singular, e.g. 'city', 'country'
+    source_url = models.CharField(max_length=2000, blank=True)
+    values = models.JSONField(default=list, blank=True)         # [{id, label}], most recent response, capped
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['entity']
+
+    def __str__(self):
+        return f'{self.entity} ({len(self.values or [])} ids)'
 
 
 class RequestRun(models.Model):

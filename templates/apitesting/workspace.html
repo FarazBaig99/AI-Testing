@@ -1754,20 +1754,26 @@
       const where = r.path.length > 1 ? `<div class="text-muted" style="font-size:.68rem">${esc(r.path.join(' › '))}</div>` : '';
       return `<tr data-i="${i}"><td><code>${esc(r.name)}</code>${where}</td>
         <td>${afTypeSelect(r.type)}</td>
-        <td><input class="form-control form-control-sm af-val" value="${esc(String(r.value))}"></td>
+        <td><input class="form-control form-control-sm af-val" value="${esc(String(r.value))}">
+          <div class="af-src text-success" style="font-size:.66rem">${r.source ? `<i class="bi bi-stars"></i> ${esc(r.source)}` : ''}</div></td>
         <td><button type="button" class="btn btn-sm btn-link text-muted p-0 af-one" title="New value"><i class="bi bi-arrow-repeat"></i></button></td></tr>`;
     }).join('');
     $('afRows').querySelectorAll('tr').forEach(tr => {
       const i = +tr.dataset.i;
+      const apply = (tr, out) => {        // update value + source from a single-field response
+        afState.rows[i].value = out.fields[0].value; afState.rows[i].source = out.fields[0].source || '';
+        tr.querySelector('.af-val').value = String(out.fields[0].value);
+        tr.querySelector('.af-src').innerHTML = afState.rows[i].source ? `<i class="bi bi-stars"></i> ${esc(afState.rows[i].source)}` : '';
+      };
       tr.querySelector('.af-type').addEventListener('change', async e => {
         afState.rows[i].type = e.target.value;
         const out = await afPost([{name: afState.rows[i].name, type: e.target.value}], false);
-        if (out.ok) { afState.rows[i].value = out.fields[0].value; tr.querySelector('.af-val').value = String(out.fields[0].value); }
+        if (out.ok) apply(tr, out);
       });
       tr.querySelector('.af-val').addEventListener('input', e => { afState.rows[i].value = e.target.value; });
       tr.querySelector('.af-one').addEventListener('click', async () => {
         const out = await afPost([{name: afState.rows[i].name, type: afState.rows[i].type}], false);
-        if (out.ok) { afState.rows[i].value = out.fields[0].value; tr.querySelector('.af-val').value = String(out.fields[0].value); }
+        if (out.ok) apply(tr, out);
       });
     });
   }
@@ -1782,7 +1788,7 @@
     const out = await afPost(c.leaves.map(l => ({name: l.name, value: l.value})), false);
     if (!out.ok) return toast(out.error || 'Could not analyse the body.', 'danger');
     afState = {...c, types: out.types, rows: c.leaves.map((l, i) =>
-      ({name: l.name, path: l.path, start: l.start, end: l.end, type: out.fields[i].type, value: out.fields[i].value}))};
+      ({name: l.name, path: l.path, start: l.start, end: l.end, type: out.fields[i].type, value: out.fields[i].value, source: out.fields[i].source || ''}))};
     afRender();
     autofillModal.show();
   }
@@ -1805,7 +1811,7 @@
     if (!afState || !afState.rows.length) return;
     const out = await afPost(afState.rows.map(r => ({name: r.name, type: r.type})), false);
     if (!out.ok) return afSetMsg('danger', out.error || 'Could not regenerate.');
-    afState.rows.forEach((r, i) => r.value = out.fields[i].value);
+    afState.rows.forEach((r, i) => { r.value = out.fields[i].value; r.source = out.fields[i].source || ''; });
     afRender();
   });
   $('afFill').addEventListener('click', async () => {

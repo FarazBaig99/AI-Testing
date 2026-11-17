@@ -32,6 +32,7 @@ TYPES = [
     ('country', 'Country'),
     ('company', 'Company name'),
     ('text', 'Sentence'),
+    ('reference', 'From an API'),
 ]
 TYPE_KEYS = {t for t, _ in TYPES}
 
@@ -145,9 +146,23 @@ def detect_type(name, value, learned=None):
     return 'string'
 
 
-def generate_value(data_type):
-    """A fresh random value for a type, as a Python value (str, int, float or bool)."""
+def generate_value(data_type, intel=None):
+    """A fresh random value for a type, as a Python value (str, int, float or bool). When the brain has learned
+    a length range for this field (`intel`), the value is kept within it - so a 7-char `ntn` stays 7 chars."""
+    intel = intel or {}
     produces, options = _GEN.get(data_type, _GEN['string'])
+    options = dict(options)
+    try:
+        mx = int(intel['max_len']) if intel.get('max_len') else None
+        mn = int(intel['min_len']) if intel.get('min_len') else None
+    except (TypeError, ValueError):
+        mx = mn = None
+    if data_type == 'integer' and mx:
+        digits = max(1, mn or mx)
+        options = {'kind': 'number', 'min': 10 ** (digits - 1) if digits > 1 else 0, 'max': 10 ** mx - 1, 'decimals': 0}
+    elif data_type in ('string', 'text', 'code') and mx:
+        options['kind'] = options.get('kind', 'text')
+        options['min_len'], options['max_len'] = (mn or mx), mx
     raw = lov.make(produces, options, [])
     if data_type in NUMERIC_TYPES:
         try:

@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+{% block title %}{{ workflow.name }} - Workflow{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .wf { --line:#cbd5e1; }
+  .wf .topbar { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:8px 12px; }
+  .wf .stage { position:relative; height:calc(100vh - 170px); min-height:460px; display:flex; gap:10px; }
+  .wf .canvas-wrap { position:relative; flex:1; overflow:auto; background:#f8fafc;
+      background-image:radial-gradient(#e2e8f0 1px, transparent 1px); background-size:22px 22px;
+      border:1px solid #e2e8f0; border-radius:12px; }
+  .wf .canvas { position:relative; width:3000px; height:2000px; }
+  .wf svg.edges { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+  .wf svg.edges path.edge { stroke:var(--line); stroke-width:2.5; fill:none; }
+  .wf svg.edges path.hit { stroke:transparent; stroke-width:16; fill:none; pointer-events:stroke; cursor:pointer; }
+  .wf svg.edges path.edge.sel { stroke:var(--pf); stroke-width:3; }
+  .wf svg.edges path.edge.map { stroke:#0ea5e9; }
+  .wf .node { position:absolute; width:200px; background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+      box-shadow:0 1px 4px rgba(0,0,0,.05); user-select:none; }
+  .wf .node.sel { border-color:var(--pf); box-shadow:0 0 0 2px var(--pf-soft); }
+  .wf .node .hd { display:flex; align-items:center; gap:6px; padding:8px 10px; cursor:grab; border-bottom:1px solid #f1f5f9; }
+  .wf .node .hd:active { cursor:grabbing; }
+  .wf .node .m { font-size:.6rem; font-weight:800; font-family:monospace; padding:1px 5px; border-radius:5px; background:#f1f5f9; }
+  .wf .m-GET{color:#16a34a;} .wf .m-POST{color:#d97706;} .wf .m-PUT{color:#2563eb;}
+  .wf .m-PATCH{color:#7c3aed;} .wf .m-DELETE{color:#dc2626;} .wf .m-HEAD,.wf .m-OPTIONS{color:#64748b;}
+  .wf .node .nm { font-size:.8rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .wf .node .url { padding:6px 10px; font-size:.68rem; color:#64748b; font-family:monospace; white-space:nowrap;
+      overflow:hidden; text-overflow:ellipsis; }
+  .wf .node .st { padding:0 10px 8px; font-size:.68rem; font-weight:700; display:none; }
+  .wf .node.run-passed .st{display:block;color:#15803d;} .wf .node.run-failed .st{display:block;color:#b91c1c;}
+  .wf .node.run-skipped .st{display:block;color:#64748b;} .wf .node.run-running .st{display:block;color:#0369a1;}
+  .wf .port { position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; border:2px solid var(--line);
+      top:50%; transform:translateY(-50%); }
+  .wf .port.out { right:-8px; cursor:crosshair; } .wf .port.out:hover { border-color:var(--pf); background:var(--pf-soft); }
+  .wf .port.in { left:-8px; }
+  .wf .panel { width:340px; flex:0 0 auto; background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:auto; padding:14px; }
+  .wf .panel .lbl { font-size:.72rem; font-weight:700; color:#475569; margin:10px 0 3px; }
+  .wf .empty-hint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#94a3b8;
+      font-size:.9rem; pointer-events:none; text-align:center; }
+  .wf .map-row { display:grid; grid-template-columns:1fr 1fr auto; gap:6px; align-items:center; margin-bottom:6px; }
+  .wf .res-node { border:1px solid #e2e8f0; border-radius:10px; padding:8px 10px; margin-bottom:6px; }
+  .wf .res-node .bd { display:none; margin-top:6px; }
+  .wf .chip { font-size:.66rem; font-weight:700; padding:1px 8px; border-radius:10px; }
+  .wf .chip-pass{background:#dcfce7;color:#15803d;} .wf .chip-fail{background:#fee2e2;color:#b91c1c;}
+  .wf .chip-skip{background:#f1f5f9;color:#475569;}
+  .wf pre.resp { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:8px; font-size:.7rem; max-height:220px;
+      overflow:auto; white-space:pre-wrap; word-break:break-all; }
+  .wf .pathbtn { font-size:.68rem; font-family:monospace; cursor:pointer; color:#0369a1; }
+  .wf .pathbtn:hover { text-decoration:underline; }
+</style>
+
+<div class="wf container-fluid py-3">
+  <div class="topbar mb-2 d-flex align-items-center flex-wrap gap-2">
+    <a href="{% url 'api_workflow_list' %}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i></a>
+    <input id="wfName" class="form-control form-control-sm fw-bold" style="width:240px" value="{{ workflow.name }}" maxlength="200">
+    <span class="text-muted small">Environment</span>
+    <select id="wfEnv" class="form-select form-select-sm" style="width:230px"></select>
+    <button id="addBtn" class="btn btn-sm btn-success"><i class="bi bi-plus-lg"></i> Add step</button>
+    <span class="ms-auto"></span>
+    <span id="runSummary" class="small text-muted me-1"></span>
+    <button id="saveBtn" class="btn btn-sm btn-light border"><i class="bi bi-floppy"></i> Save</button>
+    <button id="runBtn" class="btn btn-sm btn-primary"><i class="bi bi-play-fill"></i> Run workflow</button>
+  </div>
+
+  <div class="stage">
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="canvas" id="canvas">
+        <svg class="edges" id="edges"><defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"></path></marker>
+          <marker id="arrowSel" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="var(--pf)"></path></marker>
+        </defs></svg>
+      </div>
+      <div class="empty-hint" id="emptyHint">Press <b>&nbsp;Add step&nbsp;</b>&nbsp;to drop your first API on the canvas,<br>then drag from a node's right dot to another to link them.</div>
+    </div>
+    <div class="panel" id="panel">
+      <div class="text-muted small">Select a step or a link to edit it. Drag from a node's right dot onto another node to connect them.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Add-step picker -->
+<div class="modal fade" id="pickModal" tabindex="-1"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-success"></i> Add a step</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <button class="btn btn-sm btn-light border w-100 mb-3 text-start" id="addBlank"><i class="bi bi-pencil-square"></i> Blank request (build it inline)</button>
+    <div class="lbl small fw-bold text-muted mb-1">From a collection</div>
+    <div id="pickTree"></div>
+  </div>
+</div></div></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const CSRF = '{{ csrf_token }}';
+  const WFID = {{ workflow.pk }};
+  const URLS = {
+    add: '{% url "api_workflow_add_node" workflow.pk %}',
+    save: '{% url "api_workflow_save" workflow.pk %}',
+    run: '{% url "api_workflow_run" workflow.pk %}',
+  };
+  const G = {{ graph_json|safe }};
+  const COLLECTIONS = {{ collections_json|safe }};
+  const ENVS = {{ environments_json|safe }};
+  const SCOPES = {{ scopes_json|safe }};
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const post = (url, body) => fetch(url, {method:'POST', headers:{'X-CSRFToken':CSRF,'Content-Type':'application/json'},
+      body: JSON.stringify(body||{})}).then(r => r.json());
+
+  let sel = null;                 // {type:'node'|'edge', id}
+  let results = {};               // node id -> run result
+  let dirty = false;
+  const canvas = $('canvas'), svg = $('edges'), wrap = $('canvasWrap');
+
+  // ---------- environment picker ----------
+  function fillEnv() {
+    $('wfEnv').innerHTML = '<option value="">— pick environment —</option>' +
+      ENVS.map(e => `<option value="${e.id}" ${String(G.environment)===String(e.id)?'selected':''}>${esc(e.project)} · ${esc(e.name)}</option>`).join('');
+  }
+  $('wfEnv').addEventListener('change', () => { G.environment = $('wfEnv').value || null; markDirty(); });
+  $('wfName').addEventListener('input', () => { G.name = $('wfName').value; markDirty(); });
+
+  function markDirty() { dirty = true; $('saveBtn').classList.add('btn-warning'); $('saveBtn').classList.remove('btn-light'); }
+  function clean() { dirty = false; $('saveBtn').classList.remove('btn-warning'); $('saveBtn').classList.add('btn-light'); }
+
+  // ---------- render ----------
+  function methodClass(m){ return 'm-' + (m||'GET').toUpperCase(); }
+  function render() {
+    // nodes
+    [...canvas.querySelectorAll('.node')].forEach(n => n.remove());
+    G.nodes.forEach(n => canvas.appendChild(nodeEl(n)));
+    $('emptyHint').style.display = G.nodes.length ? 'none' : 'flex';
+    drawEdges();
+  }
+  function nodeEl(n) {
+    const d = document.createElement('div');
+    d.className = 'node' + (sel && sel.type==='node' && sel.id===n.id ? ' sel':'');
+    const r = results[n.id];
+    if (r) d.classList.add('run-' + (r.status||''));
+    d.style.left = n.x + 'px'; d.style.top = n.y + 'px'; d.dataset.id = n.id;
+    const m = (n.spec && n.spec.method) || 'GET';
+    const url = (n.spec && n.spec.url) || '';
+    const stTxt = r ? (r.status==='passed' ? `✔ ${r.status_code||''} passed` : r.status==='failed' ? `✖ ${r.status_code||'error'} failed`
+                       : r.status==='skipped' ? '— skipped' : '…') : '';
+    d.innerHTML = `
+      <div class="hd"><span class="m ${methodClass(m)}">${esc(m.toUpperCase())}</span>
+        <span class="nm">${esc(n.name||'Request')}</span></div>
+      <div class="url">${esc(url||'(no url)')}</div>
+      <div class="st">${esc(stTxt)}</div>
+      <div class="port in"></div><div class="port out" title="Drag to another step to link"></div>`;
+    d.querySelector('.hd').addEventListener('mousedown', e => startDrag(e, n, d));
+    d.addEventListener('mousedown', e => { if (!e.target.classList.contains('port')) selectNode(n.id); });
+    d.querySelector('.port.out').addEventListener('mousedown', e => startLink(e, n));
+    return d;
+  }
+  function portCenter(nodeId, which) {
+    const el = canvas.querySelector(`.node[data-id="${nodeId}"] .port.${which}`);
+    if (!el) return null;
+    const cr = canvas.getBoundingClientRect(), pr = el.getBoundingClientRect();
+    return { x: pr.left - cr.left + pr.width/2, y: pr.top - cr.top + pr.height/2 };
+  }
+  function path(a, b) {
+    const dx = Math.max(40, Math.abs(b.x-a.x)/2);
+    return `M${a.x},${a.y} C${a.x+dx},${a.y} ${b.x-dx},${b.y} ${b.x},${b.y}`;
+  }
+  function drawEdges() {
+    [...svg.querySelectorAll('path.edge, path.hit')].forEach(p => p.remove());
+    G.edges.forEach(e => {
+      const a = portCenter(e.source,'out'), b = portCenter(e.target,'in');
+      if (!a || !b) return;
+      const d = path(a, b), isSel = sel && sel.type==='edge' && sel.id===e.id;
+      const hasMap = (e.mappings||[]).length > 0;
+      const hit = document.createElementNS('http://www.w3.org/2000/svg','path');
+      hit.setAttribute('d', d); hit.setAttribute('class','hit');
+      hit.addEventListener('mousedown', () => selectEdge(e.id));
+      svg.appendChild(hit);
+      const vis = document.createElementNS('http://www.w3.org/2000/svg','path');
+      vis.setAttribute('d', d);
+      vis.setAttribute('class', 'edge' + (isSel?' sel':'') + (hasMap && !isSel?' map':''));
+      vis.setAttribute('marker-end', isSel ? 'url(#arrowSel)' : 'url(#arrow)');
+      svg.appendChild(vis);
+    });
+  }
+
+  // ---------- drag a node ----------
+  function startDrag(e, n, d) {
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, ox = n.x, oy = n.y;
+    function move(ev){ n.x = Math.max(0, ox + (ev.clientX-sx)); n.y = Math.max(0, oy + (ev.clientY-sy));
+      d.style.left = n.x+'px'; d.style.top = n.y+'px'; drawEdges(); }
+    function up(){ document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); markDirty(); }
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  }
+
+  // ---------- drag to create a link ----------
+  function startLink(e, from) {
+    e.preventDefault(); e.stopPropagation();
+    const a = portCenter(from.id,'out');
+    const temp = document.createElementNS('http://www.w3.org/2000/svg','path');
+    temp.setAttribute('class','edge'); temp.setAttribute('marker-end','url(#arrow)'); svg.appendChild(temp);
+    function move(ev){ const cr = canvas.getBoundingClientRect();
+      temp.setAttribute('d', path(a, {x:ev.clientX-cr.left, y:ev.clientY-cr.top})); }
+    function up(ev){
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); temp.remove();
+      const tgt = ev.target.closest('.node'); if (!tgt) return;
+      const tid = +tgt.dataset.id;
+      if (tid === from.id) return;
+      if (G.edges.some(x => x.source===from.id && x.target===tid)) return;
+      G.edges.push({ id: 'new-'+Date.now(), source: from.id, target: tid, mappings: [] });
+      markDirty(); drawEdges(); selectEdge(G.edges[G.edges.length-1].id);
+    }
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  }
+
+  // ---------- selection + inspector ----------
+  function selectNode(id){ sel = {type:'node', id}; render(); inspectNode(); }
+  function selectEdge(id){ sel = {type:'edge', id}; render(); inspectEdge(); }
+  function clearSel(){ sel = null; render(); $('panel').innerHTML =
+    '<div class="text-muted small">Select a step or a link to edit it. Drag from a node\'s right dot onto another node to connect them.</div>'; }
+
+  function inspectNode() {
+    const n = G.nodes.find(x => x.id===sel.id); if (!n) return;
+    const s = n.spec || {};
+    const r = results[n.id];
+    $('panel').innerHTML = `
+      <div class="d-flex align-items-center mb-2"><b class="small">Step</b>
+        <button class="btn btn-sm btn-link text-danger ms-auto p-0" id="delNode"><i class="bi bi-trash"></i> Remove</button></div>
+      <div class="lbl">Name</div><input id="nName" class="form-control form-control-sm" value="${esc(n.name||'')}">
+      <div class="lbl">Method & URL</div>
+      <div class="d-flex gap-1">
+        <select id="nMethod" class="form-select form-select-sm" style="width:92px">
+          ${['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].map(m=>`<option ${(s.method||'GET')===m?'selected':''}>${m}</option>`).join('')}
+        </select>
+        <input id="nUrl" class="form-control form-control-sm code" value="${esc(s.url||'')}" placeholder="{% templatetag openvariable %}baseUrl{% templatetag closevariable %}/path">
+      </div>
+      <div class="lbl">Body (raw)</div>
+      <textarea id="nBody" class="form-control form-control-sm code" rows="6" spellcheck="false" placeholder="JSON body… use {% templatetag openvariable %}variable{% templatetag closevariable %} to insert a captured value">${esc(s.body||'')}</textarea>
+      <div class="d-flex gap-2 mt-2">
+        <div class="flex-grow-1"><div class="lbl">Expected status</div>
+          <input id="nExp" class="form-control form-control-sm" value="${esc(s.expected_status||'')}" placeholder="any 2xx"></div>
+        <div class="flex-grow-1"><div class="lbl">If it fails</div>
+          <select id="nFail" class="form-select form-select-sm">
+            <option value="stop" ${n.on_fail!=='continue'?'selected':''}>Stop the run</option>
+            <option value="continue" ${n.on_fail==='continue'?'selected':''}>Carry on</option></select></div>
+      </div>
+      <div class="form-text mt-1">Pick a saved request when adding, or edit the essentials here. Captured values from earlier steps work as <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code>.</div>
+      ${r ? responseBlock(r) : ''}`;
+    const bind = (elid, key, isSpec) => $(elid).addEventListener('input', () => {
+      if (isSpec) n.spec[key] = $(elid).value; else n[key] = $(elid).value; markDirty();
+      if (key==='method'||key==='url'||key==='name') render(); });
+    $('nName').addEventListener('input', ()=>{ n.name=$('nName').value; markDirty(); render(); });
+    $('nMethod').addEventListener('change', ()=>{ n.spec.method=$('nMethod').value; markDirty(); render(); });
+    $('nUrl').addEventListener('input', ()=>{ n.spec.url=$('nUrl').value; markDirty(); render(); });
+    $('nBody').addEventListener('input', ()=>{ n.spec.body=$('nBody').value; n.spec.body_mode = n.spec.body_mode==='none'||!n.spec.body_mode?'raw':n.spec.body_mode; markDirty(); });
+    $('nExp').addEventListener('input', ()=>{ n.spec.expected_status = $('nExp').value ? +$('nExp').value : null; markDirty(); });
+    $('nFail').addEventListener('change', ()=>{ n.on_fail=$('nFail').value; markDirty(); });
+    $('delNode').addEventListener('click', ()=>{ removeNode(n.id); });
+  }
+
+  function inspectEdge() {
+    const e = G.edges.find(x => x.id===sel.id); if (!e) return;
+    const src = G.nodes.find(x => x.id===e.source), tgt = G.nodes.find(x => x.id===e.target);
+    const r = results[e.source];
+    $('panel').innerHTML = `
+      <div class="d-flex align-items-center mb-2"><b class="small">Link</b>
+        <button class="btn btn-sm btn-link text-danger ms-auto p-0" id="delEdge"><i class="bi bi-trash"></i> Remove</button></div>
+      <div class="small text-muted mb-2"><b>${esc(src?src.name:'?')}</b> → <b>${esc(tgt?tgt.name:'?')}</b></div>
+      <div class="lbl">Carry data forward</div>
+      <div class="form-text mb-2">Read a value from <b>${esc(src?src.name:'the source')}</b>'s response and save it to a variable the next steps use as <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code>.</div>
+      <div id="maps"></div>
+      <button class="btn btn-sm btn-light border w-100 mt-1" id="addMap"><i class="bi bi-plus-lg"></i> Add a mapping</button>
+      ${r ? `<div class="lbl mt-3">Pick from ${esc(src.name)}'s last response</div>${pathPicker(r)}` : ''}`;
+    renderMaps(e);
+    $('addMap').addEventListener('click', ()=>{ e.mappings.push({from_path:'', to_var:'', scope:'collection'}); markDirty(); renderMaps(e); drawEdges(); });
+    $('delEdge').addEventListener('click', ()=>{ removeEdge(e.id); });
+  }
+  function renderMaps(e) {
+    const box = $('maps'); box.innerHTML = '';
+    (e.mappings||[]).forEach((m, i) => {
+      const row = document.createElement('div'); row.className = 'map-row';
+      row.innerHTML = `
+        <input class="form-control form-control-sm code" placeholder="data.id" value="${esc(m.from_path||'')}" data-k="from_path">
+        <input class="form-control form-control-sm code" placeholder="variable" value="${esc(m.to_var||'')}" data-k="to_var">
+        <button class="btn btn-sm btn-light border text-danger" title="Remove"><i class="bi bi-x"></i></button>`;
+      row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', ()=>{ m[inp.dataset.k]=inp.value; markDirty(); drawEdges(); }));
+      row.querySelector('button').addEventListener('click', ()=>{ e.mappings.splice(i,1); markDirty(); renderMaps(e); drawEdges(); });
+      box.appendChild(row);
+      const sc = document.createElement('div'); sc.style.gridColumn='1 / -1'; sc.className='mb-2';
+      sc.innerHTML = `<select class="form-select form-select-sm">${SCOPES.map(s=>`<option value="${s}" ${m.scope===s?'selected':''}>save as ${s} variable</option>`).join('')}</select>`;
+      sc.querySelector('select').addEventListener('change', ev=>{ m.scope=ev.target.value; markDirty(); });
+      box.appendChild(sc);
+    });
+    if (!(e.mappings||[]).length) box.innerHTML = '<div class="text-muted small mb-1">No data carried yet.</div>';
+  }
+  // flatten a response body into clickable finder paths
+  function pathPicker(r) {
+    let data; try { data = JSON.parse((r.response&&r.response.body)||''); } catch(_) { return '<div class="text-muted small">Response was not JSON.</div>'; }
+    const leaves = []; (function walk(v, p){ if (v && typeof v==='object'){ if (Array.isArray(v)) v.slice(0,3).forEach((x,i)=>walk(x,`${p}${p?'.':''}${i}`));
+      else Object.keys(v).forEach(k=>walk(v[k],`${p}${p?'.':''}${k}`)); } else leaves.push({path:p, val:v}); })(data,'');
+    if (!leaves.length) return '<div class="text-muted small">No fields.</div>';
+    return '<div style="max-height:180px;overflow:auto">' + leaves.slice(0,60).map(l =>
+      `<div><span class="pathbtn" data-path="${esc(l.path)}">${esc(l.path)}</span> <span class="text-muted small">= ${esc(String(l.val).slice(0,30))}</span></div>`).join('') + '</div>';
+  }
+  function responseBlock(r) {
+    return `<div class="lbl mt-3">Last run</div>
+      <div class="small mb-1"><span class="chip chip-${r.status==='passed'?'pass':r.status==='failed'?'fail':'skip'}">${esc(r.status||'')}</span>
+        ${r.status_code?`<span class="text-muted ms-1">${r.status_code} · ${r.ms||0} ms</span>`:''}</div>
+      ${r.error?`<div class="text-danger small mb-1">${esc(r.error)}</div>`:''}
+      <pre class="resp">${esc(((r.response&&r.response.body)||'').slice(0,2000))||'(no body)'}</pre>`;
+  }
+  // click a finder path in the edge picker -> fill the last mapping row's from_path
+  $('panel').addEventListener('click', ev => {
+    const b = ev.target.closest('.pathbtn'); if (!b || !sel || sel.type!=='edge') return;
+    const e = G.edges.find(x=>x.id===sel.id); if (!e) return;
+    let m = (e.mappings||[]).slice(-1)[0];
+    if (!m || m.from_path) { m = {from_path:'', to_var:'', scope:'collection'}; e.mappings.push(m); }
+    m.from_path = b.dataset.path;
+    if (!m.to_var) m.to_var = b.dataset.path.split('.').pop();
+    markDirty(); renderMaps(e); drawEdges();
+  });
+
+  function removeNode(id) {
+    G.nodes = G.nodes.filter(n => n.id!==id);
+    G.edges = G.edges.filter(e => e.source!==id && e.target!==id);
+    delete results[id]; sel=null; markDirty(); render(); clearSel();
+  }
+  function removeEdge(id) { G.edges = G.edges.filter(e => e.id!==id); sel=null; markDirty(); render(); clearSel(); }
+
+  // ---------- add step ----------
+  const pickModal = new bootstrap.Modal($('pickModal'));
+  $('addBtn').addEventListener('click', () => { buildPickTree(); pickModal.show(); });
+  function buildPickTree() {
+    $('pickTree').innerHTML = COLLECTIONS.length ? COLLECTIONS.map(c => `
+      <div class="mb-2"><div class="small fw-semibold"><i class="bi bi-collection text-muted"></i> ${esc(c.name)}</div>
+        ${c.requests.map(rq => `<button class="btn btn-sm btn-light border w-100 text-start mt-1 pick-req" data-id="${rq.id}">
+          <span class="m ${methodClass(rq.method)}" style="font-size:.6rem;font-weight:800;font-family:monospace">${esc(rq.method)}</span>
+          <span class="ms-1">${esc(rq.name)}</span></button>`).join('')}
+      </div>`).join('') : '<div class="text-muted small">No saved requests yet. Use “Blank request”.</div>';
+    $('pickTree').querySelectorAll('.pick-req').forEach(b => b.addEventListener('click', () => addNode('item', +b.dataset.id)));
+  }
+  $('addBlank').addEventListener('click', () => addNode('inline', null));
+  async function addNode(kind, ref) {
+    const wr = wrap.getBoundingClientRect();
+    const x = wrap.scrollLeft + 60 + (G.nodes.length%4)*40, y = wrap.scrollTop + 60 + (G.nodes.length%6)*30;
+    const out = await post(URLS.add, {kind, ref, x, y});
+    if (!out.ok) { alert(out.error||'Could not add.'); return; }
+    G.nodes.push(out.node);
+    if (out.environment && !G.environment) { G.environment = out.environment; fillEnv(); }
+    pickModal.hide(); render(); selectNode(out.node.id);
+  }
+
+  // ---------- save ----------
+  async function save() {
+    const payload = { name: G.name, environment: G.environment,
+      nodes: G.nodes.map(n => ({id:n.id, name:n.name, x:n.x, y:n.y, on_fail:n.on_fail, spec:n.spec})),
+      edges: G.edges.map(e => ({source:e.source, target:e.target, mappings:e.mappings})) };
+    const out = await post(URLS.save, payload);
+    if (!out.ok) { alert(out.error||'Could not save.'); return false; }
+    // adopt server ids (new edges)
+    G.edges = out.graph.edges; render(); clean(); return true;
+  }
+  $('saveBtn').addEventListener('click', save);
+
+  // ---------- run ----------
+  $('runBtn').addEventListener('click', async () => {
+    if (dirty && !(await save())) return;
+    const btn = $('runBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Running';
+    G.nodes.forEach(n => results[n.id] = {status:'running'}); render();
+    try {
+      const out = await post(URLS.run, {});
+      if (!out.ok && out.error) { alert(out.error); results={}; render(); return; }
+      results = {}; (out.results||[]).forEach(r => results[r.node] = r);
+      render();
+      $('runSummary').innerHTML = `<b class="${out.failed?'text-danger':'text-success'}">${out.passed} passed, ${out.failed} failed${out.skipped?`, ${out.skipped} skipped`:''}</b> · ${out.total_ms} ms`;
+      showResultsPanel(out);
+    } finally { btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill"></i> Run workflow'; }
+  });
+  function showResultsPanel(out) {
+    sel = null; render();
+    const order = out.results || [];
+    $('panel').innerHTML = `<div class="d-flex align-items-center mb-2"><b class="small">Run result</b>
+        <span class="ms-auto small ${out.failed?'text-danger':'text-success'}">${out.passed}/${out.passed+out.failed} passed</span></div>
+      ${out.cycle?'<div class="alert alert-warning py-1 small">The links form a loop; steps after the loop ran in id order.</div>':''}
+      ${Object.keys(out.variables||{}).length?`<div class="lbl">Captured</div><div class="small mb-2">${Object.entries(out.variables).map(([k,v])=>`<div><code>{% templatetag openvariable %}${esc(k)}{% templatetag closevariable %}</code> = ${esc(String(v).slice(0,40))}</div>`).join('')}</div>`:''}
+      <div class="lbl">Steps</div>${order.map(resCard).join('')}`;
+    $('panel').querySelectorAll('.res-node .hd2').forEach(h => h.addEventListener('click', () => {
+      const bd = h.parentElement.querySelector('.bd'); bd.style.display = bd.style.display==='block'?'none':'block'; }));
+  }
+  function resCard(r) {
+    const cls = r.status==='passed'?'pass':r.status==='failed'?'fail':'skip';
+    return `<div class="res-node"><div class="hd2 d-flex align-items-center gap-2" style="cursor:pointer">
+        <span class="m ${methodClass(r.method)}" style="font-size:.6rem;font-weight:800;font-family:monospace">${esc((r.method||'').toUpperCase())}</span>
+        <span class="small fw-semibold flex-grow-1" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name)}</span>
+        <span class="chip chip-${cls}">${r.status_code||r.status||''}</span></div>
+      <div class="bd">
+        ${r.error?`<div class="text-danger small mb-1">${esc(r.error)}</div>`:''}
+        ${(r.tests||[]).map(t=>`<div class="small ${t.passed?'text-success':'text-danger'}">${t.passed?'✔':'✖'} ${esc(t.name||'')}</div>`).join('')}
+        ${(r.captured||[]).map(c=>`<div class="small text-primary">→ {% templatetag openvariable %}${esc(c.var)}{% templatetag closevariable %} = ${esc(String(c.value).slice(0,40))} ${c.found?'':'<span class="text-danger">(not found)</span>'}</div>`).join('')}
+        <pre class="resp">${esc(((r.response&&r.response.body)||'').slice(0,1500))||'(no body)'}</pre></div></div>`;
+  }
+
+  // deselect on canvas background click
+  wrap.addEventListener('mousedown', e => { if (e.target===wrap || e.target===canvas || e.target===svg) clearSel(); });
+  document.addEventListener('keydown', e => { if ((e.key==='Delete'||e.key==='Backspace') && sel &&
+      !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    if (sel.type==='node') removeNode(sel.id); else removeEdge(sel.id); } });
+  window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue=''; } });
+
+  fillEnv(); render(); clean();
+})();
+</script>
+{% endblock %}

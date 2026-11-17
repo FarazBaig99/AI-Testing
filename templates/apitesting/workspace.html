@@ -197,6 +197,7 @@
     <button type="button" class="btn btn-sm btn-light border ms-auto" id="authBtn" title="Environment login (Keycloak) and cookies"><i class="bi bi-shield-lock"></i> Auth &amp; Cookies</button>
     <button type="button" class="btn btn-sm btn-light border" id="varsBtn" title="Global and environment variables"><i class="bi bi-braces"></i> Variables</button>
     <a class="btn btn-sm btn-light border" href="{% url "api_lov_page" %}" title="LOV Management: categories of values filled into requests (defined values, unique values, dates, generated values)"><i class="bi bi-list-check"></i> LOV</a>
+    <a class="btn btn-sm btn-light border" href="{% url "api_workflow_list" %}" title="Workflows: chain APIs on a canvas, pass a response value into the next, run the whole chain"><i class="bi bi-diagram-3"></i> Workflows</a>
     <a href="{% url 'api_mail_settings' %}" class="btn btn-sm btn-light border" title="SMTP server for run reports"><i class="bi bi-envelope-gear"></i> Mail Settings</a>
     <div class="dropdown">
       <button class="btn btn-sm btn-pf dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-upload"></i> Import API</button>

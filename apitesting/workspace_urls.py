@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import runs, workspace
+from . import runs, workflows, workspace
 
 urlpatterns = [
     path('', workspace.api_workspace, name='api_workspace'),
@@ -34,4 +34,12 @@ urlpatterns = [
     path('runs/<int:run_id>/status/', runs.run_status, name='api_run_status'),
     path('runs/<int:run_id>/stop/', runs.run_stop, name='api_run_stop'),
     path('mail-settings/', runs.mail_settings, name='api_mail_settings'),
+    # workflows (visual API chaining)
+    path('workflows/', workflows.workflow_list, name='api_workflow_list'),
+    path('workflows/new/', workflows.workflow_create, name='api_workflow_create'),
+    path('workflows/<int:workflow_id>/', workflows.workflow_page, name='api_workflow_page'),
+    path('workflows/<int:workflow_id>/delete/', workflows.workflow_delete, name='api_workflow_delete'),
+    path('workflows/<int:workflow_id>/add-node/', workflows.workflow_add_node, name='api_workflow_add_node'),
+    path('workflows/<int:workflow_id>/save/', workflows.workflow_save, name='api_workflow_save'),
+    path('workflows/<int:workflow_id>/run/', workflows.workflow_run, name='api_workflow_run'),
 ]

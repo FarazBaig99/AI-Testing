@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Workflows - API Testing{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<style>
+  .wl .bar { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:14px 18px; }
+  .wl .card-wf { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:16px 18px; display:flex;
+                 align-items:center; gap:14px; text-decoration:none; color:inherit; transition:.12s; }
+  .wl .card-wf:hover { border-color:var(--pf); box-shadow:0 2px 12px rgba(0,0,0,.05); }
+  .wl .wf-ico { width:42px; height:42px; border-radius:11px; background:var(--pf-soft); color:var(--pf);
+                display:flex; align-items:center; justify-content:center; font-size:1.3rem; flex:0 0 auto; }
+  .wl .muted { color:#94a3b8; font-size:.8rem; }
+</style>
+<div class="wl container-fluid py-3" style="max-width:1100px">
+  <div class="bar mb-3 d-flex align-items-center flex-wrap gap-2">
+    <div class="me-2">
+      <div class="small text-muted fw-bold" style="letter-spacing:.06em">QUALITY ENGINEERING</div>
+      <h5 class="fw-bold mb-0"><i class="bi bi-diagram-3 text-success"></i> API Workflows</h5>
+    </div>
+    <a href="{% url 'api_workspace' %}" class="btn btn-sm btn-light border ms-auto"><i class="bi bi-arrow-left"></i> Back to API Testing</a>
+    <form method="post" action="{% url 'api_workflow_create' %}" class="d-flex gap-2">{% csrf_token %}
+      <input name="name" class="form-control form-control-sm" placeholder="New workflow name" style="width:220px" maxlength="200" required>
+      <button class="btn btn-sm btn-success text-nowrap"><i class="bi bi-plus-lg"></i> New workflow</button>
+    </form>
+  </div>
+
+  <p class="text-muted small mb-3">A workflow chains API calls on a canvas: run one, carry a value from its response into the next,
+     and run the whole chain in order. Click a workflow to open its editor.</p>
+
+  <div class="d-flex flex-column gap-2">
+    {% for w in workflows %}
+    <div class="d-flex align-items-stretch gap-2">
+      <a class="card-wf flex-grow-1" href="{% url 'api_workflow_page' w.pk %}">
+        <div class="wf-ico"><i class="bi bi-diagram-3"></i></div>
+        <div class="flex-grow-1">
+          <div class="fw-semibold">{{ w.name }}</div>
+          <div class="muted">{{ w.nodes.count }} step{{ w.nodes.count|pluralize }} ·
+            {{ w.edges.count }} link{{ w.edges.count|pluralize }}
+            {% if w.environment %}· {{ w.environment.project.name }} · {{ w.environment.name }}{% endif %}</div>
+        </div>
+        <i class="bi bi-chevron-right text-muted"></i>
+      </a>
+      <form method="post" action="{% url 'api_workflow_delete' w.pk %}"
+            onsubmit="return confirm('Delete workflow &quot;{{ w.name|escapejs }}&quot;? This cannot be undone.');">{% csrf_token %}
+        <button class="btn btn-sm btn-light border text-danger h-100" title="Delete workflow"><i class="bi bi-trash"></i></button>
+      </form>
+    </div>
+    {% empty %}
+    <div class="card-wf" style="cursor:default">
+      <div class="wf-ico"><i class="bi bi-diagram-3"></i></div>
+      <div class="text-muted small">No workflows yet. Give one a name above and press <b>New workflow</b>.</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

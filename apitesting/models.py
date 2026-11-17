@@ -585,3 +585,76 @@ class RequestRun(models.Model):
 
     def __str__(self):
         return f'run of {self.name or "request"} @ {self.created_at:%Y-%m-%d %H:%M:%S}'
+
+
+# ---------- API Workflows (visual chaining of API calls) ----------
+
+class ApiWorkflow(models.Model):
+    """A visual workflow: a graph of API-call nodes joined by arrows. An arrow runs its target after its source
+    and can carry data from the source's response into a variable the target uses. Runs stop on the first
+    failing node by default (a node may override this)."""
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    collection = models.ForeignKey(ApiCollection, on_delete=models.SET_NULL, null=True, blank=True, related_name='workflows')
+    environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class WorkflowNode(models.Model):
+    """One API call on the canvas. It either points at a saved request (a CollectionRequest or a synced
+    ApiTestCase) or is built inline. `spec` holds the inline / overridden request. x, y is its canvas position."""
+    ON_FAIL = [('stop', 'Stop the run'), ('continue', 'Carry on')]
+    workflow = models.ForeignKey(ApiWorkflow, on_delete=models.CASCADE, related_name='nodes')
+    name = models.CharField(max_length=300, blank=True)
+    source = models.ForeignKey(CollectionRequest, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    case = models.ForeignKey(ApiTestCase, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    spec = models.JSONField(default=dict, blank=True)        # method, url, headers, body, auth, scripts ... (overrides)
+    x = models.FloatField(default=60)
+    y = models.FloatField(default=60)
+    on_fail = models.CharField(max_length=10, choices=ON_FAIL, default='stop')
+    is_start = models.BooleanField(default=False)            # a node with no incoming edge is a start; this pins one
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return self.name or f'node {self.pk}'
+
+
+class WorkflowEdge(models.Model):
+    """An arrow from one node to another: run order plus optional data mappings. Each mapping reads a value from
+    the source node's response (a finder path like data.id) and writes it to a variable the target node uses."""
+    workflow = models.ForeignKey(ApiWorkflow, on_delete=models.CASCADE, related_name='edges')
+    source = models.ForeignKey(WorkflowNode, on_delete=models.CASCADE, related_name='out_edges')
+    target = models.ForeignKey(WorkflowNode, on_delete=models.CASCADE, related_name='in_edges')
+    mappings = models.JSONField(default=list, blank=True)    # [{from_path, to_var, scope}]
+
+    class Meta:
+        ordering = ['id']
+        constraints = [models.UniqueConstraint(fields=['source', 'target'], name='uniq_workflow_edge')]
+
+
+class WorkflowRun(models.Model):
+    """One execution of a whole workflow, kept for the run history."""
+    workflow = models.ForeignKey(ApiWorkflow, on_delete=models.CASCADE, related_name='runs')
+    ok = models.BooleanField(default=False)
+    passed = models.PositiveIntegerField(default=0)
+    failed = models.PositiveIntegerField(default=0)
+    total_ms = models.PositiveIntegerField(default=0)
+    results = models.JSONField(default=list, blank=True)     # per node: {node, name, status, request, response, tests, error}
+    variables = models.JSONField(default=dict, blank=True)   # the values captured along the way
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']

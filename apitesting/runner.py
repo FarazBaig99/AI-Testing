@@ -6,12 +6,13 @@ A spec is a dict:
 Key/value lists are [{key, value, enabled}] (form_data rows also have type: text|file).
 """
 import base64
+import http.client
 import json
 import ssl
 import time
 import uuid
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPCookieProcessor, HTTPSHandler, Request, build_opener
 
 from .models import BASE_URL_VAR
@@ -48,7 +49,18 @@ def resolve_url(url, env):
         url = 'http://' + url
     if urlsplit(url).scheme not in ('http', 'https') or not urlsplit(url).netloc:
         raise RequestError(f'Invalid URL: {url}')
-    return url
+    return _safe_url(url)
+
+
+def _safe_url(url):
+    """Percent-encode the characters http.client forbids (spaces, control characters) in the path and query,
+    so a param like `Guid id=1` is sent as `Guid%20id=1` instead of crashing. Anything already valid or
+    already percent-encoded is left as it is (`%` stays safe, so nothing is double-encoded)."""
+    p = urlsplit(url)
+    path = quote(p.path, safe="/%:@-._~!$&'()*+,;=")
+    query = quote(p.query, safe="%:@-._~!$&'()*+,;=/?")
+    fragment = quote(p.fragment, safe="%:@-._~!$&'()*+,;=/?")
+    return urlunsplit((p.scheme, p.netloc, path, query, fragment))
 
 
 def _multipart(form_rows, files):
@@ -192,7 +204,7 @@ def send(spec, env=None, files=None, opener=None, jar=None):
             result = _response(resp, started)
     except HTTPError as exc:
         result = _response(exc, started)
-    except (URLError, OSError, ValueError) as exc:
+    except (URLError, OSError, ValueError, http.client.HTTPException) as exc:
         reason = getattr(exc, 'reason', exc)
         text = str(reason)
         if isinstance(reason, ssl.SSLError) or 'CERTIFICATE' in text.upper():
@@ -200,6 +212,9 @@ def send(spec, env=None, files=None, opener=None, jar=None):
         elif 'timed out' in text:
             text = f'Request timed out after {TIMEOUT} s'
         return {'ok': False, 'error': f'Could not send request: {text}', 'url': url,
+                'ms': int((time.monotonic() - started) * 1000)}
+    except Exception as exc:        # last resort: a send must never raise, so the UI gets a body and a diagnosis
+        return {'ok': False, 'error': f'Could not send request: {exc}', 'url': url,
                 'ms': int((time.monotonic() - started) * 1000)}
     result['url'] = url
     result['method'] = method

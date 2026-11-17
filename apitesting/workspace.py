@@ -18,10 +18,11 @@ from django.views.decorators.http import require_POST
 
 from projects.models import Project
 
-from . import auth, lov, runner, scripting
+from . import auth, autofill, lov, runner, scripting
 from .parsers import is_empty_body
 from .models import (BODY_MODES, RAW_LANGUAGES, ApiCollection, ApiGlobals, ApiLov, ApiLovDateFormat, ApiLovUsedValue,
-                     ApiTestCase, AuthProfile, ProjectVariables, CollectionFolder, CollectionRequest, Environment)
+                     ApiParamType, ApiTestCase, AuthProfile, ProjectVariables, CollectionFolder, CollectionRequest,
+                     Environment)
 
 SESSION_KEY = 'api_ws'
 METHODS = [m for m, _ in ApiTestCase.METHOD_CHOICES]
@@ -774,6 +775,39 @@ def api_ws_lov_quick(request):
     except ValueError:
         return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
     return JsonResponse(_save_lov(request, data))
+
+
+@login_required
+@require_POST
+def api_ws_autofill(request):
+    """Fill a request's body fields with realistic random values.
+    POST {fields: [{name, value, type?}, ...], save: bool} -> {ok, fields: [{name, type, value}, ...], types}.
+    For each field the type is the one sent, else a type the user confirmed before (ApiParamType),
+    else a type guessed from the parameter name and its current value. When `save` is true the chosen
+    types are remembered, so the same parameter is filled the same way next time."""
+    try:
+        data = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+    fields = data.get('fields')
+    if not isinstance(fields, list) or not fields:
+        return JsonResponse({'ok': False, 'error': 'There are no fields to fill. Add a body first.'}, status=400)
+    learned = dict(ApiParamType.objects.values_list('name', 'data_type'))
+    out, to_save = [], []
+    for f in fields[:500]:
+        if not isinstance(f, dict):
+            continue
+        name = str(f.get('name') or '')
+        chosen = f.get('type') if f.get('type') in autofill.TYPE_KEYS else None
+        dtype = chosen or autofill.detect_type(name, f.get('value'), learned.get(name))
+        out.append({'name': name, 'type': dtype, 'value': autofill.generate_value(dtype)})
+        if data.get('save') and name:
+            to_save.append((name, dtype))
+    for name, dtype in to_save:
+        ApiParamType.objects.update_or_create(
+            name=name, defaults={'data_type': dtype,
+                                 'updated_by': request.user if request.user.is_authenticated else None})
+    return JsonResponse({'ok': True, 'fields': out, 'types': autofill.TYPES})
 
 
 @login_required

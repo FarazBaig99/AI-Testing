@@ -521,3 +521,18 @@ class ApiLovDateFormat(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ApiParamType(models.Model):
+    """A parameter's data type, learned once and reused: so Autofill knows next time that, say, `age`
+    takes an integer and `email` takes an email. Keyed by the parameter name across the project."""
+    name = models.CharField(max_length=200, unique=True)
+    data_type = models.CharField(max_length=30)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.name} = {self.data_type}'

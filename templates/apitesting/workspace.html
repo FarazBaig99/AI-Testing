@@ -289,6 +289,7 @@
           </div>
           <div class="d-flex align-items-center gap-2 mb-1">
             <button type="button" class="btn btn-sm btn-light border" id="genTestsBtn" title="Generate positive / negative / boundary / auth tests for this API into a folder beside it"><i class="bi bi-magic text-success"></i> Generate tests</button>
+            <button type="button" class="btn btn-sm btn-light border" id="autofillBtn" title="Analyse the body and fill every parameter with a realistic random value of the right type"><i class="bi bi-dice-5 text-success"></i> Autofill values</button>
             <div class="ctx flex-grow-1" id="baseHint"></div>
           </div>
 
@@ -470,6 +471,24 @@
     <button type="button" class="btn btn-pf" id="qlSave"><i class="bi bi-floppy"></i> Create &amp; insert</button></div>
 </div></div></div>
 
+<!-- autofill the body with realistic random values -->
+<div class="modal fade" id="autofillModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
+  <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-dice-5 text-success"></i> Autofill values</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="small text-muted mb-2">Each parameter was analysed and given a value of the type below. Change a type if it is wrong &mdash; it is remembered, so this parameter is filled the same way next time.</div>
+    <table class="table table-sm align-middle mb-2"><thead><tr class="small text-muted">
+      <th style="width:34%">Parameter</th><th style="width:28%">Type</th><th>Value</th><th style="width:34px"></th></tr></thead>
+      <tbody id="afRows"></tbody></table>
+    <div id="afEmpty" class="small text-muted" hidden>No fillable fields were found in the body.</div>
+  </div>
+  <div class="modal-footer"><span class="small me-auto" id="afMsg"></span>
+    <div class="form-check form-switch me-3"><input class="form-check-input" type="checkbox" id="afRemember" checked>
+      <label class="form-check-label small" for="afRemember">Remember these types</label></div>
+    <button type="button" class="btn btn-light border" id="afRegen"><i class="bi bi-arrow-repeat"></i> Regenerate</button>
+    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+    <button type="button" class="btn btn-pf" id="afFill"><i class="bi bi-check2"></i> Fill request</button></div>
+</div></div></div>
+
 <!-- environment login (Keycloak) + cookie jar -->
 <div class="modal fade" id="authModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content pf aw">
   <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-shield-lock text-success"></i> Auth &amp; Cookies</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -644,7 +663,7 @@
 <script>
 (() => {
   const CSRF = '{{ csrf_token }}';
-  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', reorderCols: '{% url "api_ws_reorder_collections" %}', lovQuick: '{% url "api_ws_lov_quick" %}', lovPage: '{% url "api_lov_page" %}',
+  const URLS = {req: '{% url "api_ws_request" %}', send: '{% url "api_ws_send" %}', save: '{% url "api_ws_save" %}', move: '{% url "api_ws_move" %}', variables: '{% url "api_ws_variables" %}', resolve: '{% url "api_ws_resolve" %}', setVar: '{% url "api_ws_variable_set" %}', extract: '{% url "api_ws_extract" %}', reorderCols: '{% url "api_ws_reorder_collections" %}', lovQuick: '{% url "api_ws_lov_quick" %}', autofill: '{% url "api_ws_autofill" %}', lovPage: '{% url "api_lov_page" %}',
                 auth: '{% url "api_ws_auth" %}', cookies: '{% url "api_ws_cookies" %}', rename: '{% url "api_ws_rename" %}',
                 page: '{% url "api_workspace" %}'};
   const $ = id => document.getElementById(id);
@@ -1546,6 +1565,109 @@
   })();
   document.addEventListener('mousedown', e => {
     if (!lovChip.hidden && e.target !== lovChip && !lovChip.contains(e.target) && e.target !== $('rawBody')) hideLovChip();
+  });
+
+  // ---------- Autofill: analyse the body and fill every parameter with a realistic random value ----------
+  const autofillModal = new bootstrap.Modal($('autofillModal'));
+  let afState = null;                 // {mode, root|formSnapshot, table, types, rows:[{name, path, type, value}]}
+  // walk a parsed JSON value, collecting every primitive leaf with the key it sits under
+  function afWalk(node, path, out, keyName) {
+    if (Array.isArray(node)) node.forEach((v, i) => afWalk(v, path.concat(i), out, keyName));
+    else if (node && typeof node === 'object') Object.keys(node).forEach(k => afWalk(node[k], path.concat(k), out, k));
+    else out.push({path, name: keyName || String(path[path.length - 1] ?? ''), value: node});
+  }
+  function afCollect() {
+    const mode = bodyMode();
+    if (mode === 'raw' && $('rawLang').value === 'json') {
+      let root;
+      try { root = JSON.parse($('rawBody').value || 'null'); }
+      catch (e) { return {error: 'The JSON body is not valid, so it cannot be analysed. Fix it and try again.'}; }
+      if (!root || typeof root !== 'object') return {error: 'Add a JSON object body with some fields first.'};
+      const leaves = []; afWalk(root, [], leaves, null);
+      return {mode: 'json', root, leaves: leaves.filter(l => l.name)};
+    }
+    if (mode === 'form-data' || mode === 'urlencoded') {
+      const table = mode === 'form-data' ? kv.form : kv.urlenc;
+      const snap = table.get();
+      return {mode, table, formSnapshot: snap, leaves: snap.map((r, i) => ({path: [i], name: r.key, value: r.value})).filter(l => l.name)};
+    }
+    return {error: 'Autofill works on a JSON body or form fields. Choose Body → raw (JSON) or form-data first.'};
+  }
+  function afSetMsg(cls, t) { $('afMsg').className = `small me-auto text-${cls}`; $('afMsg').textContent = t || ''; }
+  async function afPost(fields, save) {
+    return (await (await fetch(URLS.autofill, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+      body: JSON.stringify({fields, save: !!save})})).json());
+  }
+  function afTypeSelect(sel) {
+    return `<select class="form-select form-select-sm af-type">${afState.types.map(([k, label]) =>
+      `<option value="${esc(k)}"${k === sel ? ' selected' : ''}>${esc(label)}</option>`).join('')}</select>`;
+  }
+  function afRender() {
+    $('afEmpty').hidden = afState.rows.length > 0;
+    $('afRows').innerHTML = afState.rows.map((r, i) => {
+      const where = r.path.length > 1 ? `<div class="text-muted" style="font-size:.68rem">${esc(r.path.join(' › '))}</div>` : '';
+      return `<tr data-i="${i}"><td><code>${esc(r.name)}</code>${where}</td>
+        <td>${afTypeSelect(r.type)}</td>
+        <td><input class="form-control form-control-sm af-val" value="${esc(String(r.value))}"></td>
+        <td><button type="button" class="btn btn-sm btn-link text-muted p-0 af-one" title="New value"><i class="bi bi-arrow-repeat"></i></button></td></tr>`;
+    }).join('');
+    $('afRows').querySelectorAll('tr').forEach(tr => {
+      const i = +tr.dataset.i;
+      tr.querySelector('.af-type').addEventListener('change', async e => {
+        afState.rows[i].type = e.target.value;
+        const out = await afPost([{name: afState.rows[i].name, type: e.target.value}], false);
+        if (out.ok) { afState.rows[i].value = out.fields[0].value; tr.querySelector('.af-val').value = String(out.fields[0].value); }
+      });
+      tr.querySelector('.af-val').addEventListener('input', e => { afState.rows[i].value = e.target.value; });
+      tr.querySelector('.af-one').addEventListener('click', async () => {
+        const out = await afPost([{name: afState.rows[i].name, type: afState.rows[i].type}], false);
+        if (out.ok) { afState.rows[i].value = out.fields[0].value; tr.querySelector('.af-val').value = String(out.fields[0].value); }
+      });
+    });
+  }
+  async function openAutofill() {
+    const c = afCollect();
+    if (c.error) return toast(c.error, 'warning');
+    afSetMsg('muted', '');
+    if (!c.leaves.length) { afState = {...c, types: afState ? afState.types : [], rows: []}; afRender(); autofillModal.show(); return; }
+    const out = await afPost(c.leaves.map(l => ({name: l.name, value: l.value})), false);
+    if (!out.ok) return toast(out.error || 'Could not analyse the body.', 'danger');
+    afState = {...c, types: out.types, rows: c.leaves.map((l, i) => ({name: l.name, path: l.path, type: out.fields[i].type, value: out.fields[i].value}))};
+    afRender();
+    autofillModal.show();
+  }
+  function afCoerce(type, value) {
+    if (type === 'integer' || type === 'number') { const n = Number(value); return Number.isFinite(n) && String(value).trim() !== '' ? n : String(value); }
+    if (type === 'boolean') { const s = String(value).trim().toLowerCase();
+      if (['true', '1', 'yes', 'y'].includes(s)) return true; if (['false', '0', 'no', 'n'].includes(s)) return false; return String(value); }
+    return String(value);
+  }
+  $('autofillBtn').addEventListener('click', openAutofill);
+  $('afRegen').addEventListener('click', async () => {
+    if (!afState || !afState.rows.length) return;
+    const out = await afPost(afState.rows.map(r => ({name: r.name, type: r.type})), false);
+    if (!out.ok) return afSetMsg('danger', out.error || 'Could not regenerate.');
+    afState.rows.forEach((r, i) => r.value = out.fields[i].value);
+    afRender();
+  });
+  $('afFill').addEventListener('click', async () => {
+    if (!afState || !afState.rows.length) { autofillModal.hide(); return; }
+    if (afState.mode === 'json') {
+      afState.rows.forEach(r => {
+        let node = afState.root;
+        for (let k = 0; k < r.path.length - 1; k++) node = node[r.path[k]];
+        node[r.path[r.path.length - 1]] = afCoerce(r.type, r.value);
+      });
+      $('rawBody').value = JSON.stringify(afState.root, null, 2);
+      $('rawBody').dispatchEvent(new Event('input', {bubbles: true}));
+    } else {
+      const rows = afState.formSnapshot.map(r => ({...r}));
+      afState.rows.forEach(r => { if (rows[r.path[0]]) { rows[r.path[0]].value = String(r.value); rows[r.path[0]].enabled = true; } });
+      afState.table.set(rows); counts();
+    }
+    if ($('afRemember').checked) { try { await afPost(afState.rows.map(r => ({name: r.name, type: r.type})), true); } catch (e) {} }
+    autofillModal.hide();
+    toast(`Filled ${afState.rows.length} field${afState.rows.length > 1 ? 's' : ''} with random values.`, 'success');
   });
 
   // values set by code (URL <-> params sync, loading a request) do not fire input events: catch up quietly

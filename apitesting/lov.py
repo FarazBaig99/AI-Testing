@@ -144,7 +144,9 @@ def date_value(o):
     amount = int(o['amount']) if o['base'] != 'current' else 0
     if o['base'] == 'past':
         amount = -amount
-    if o['unit'] == 'months':
+    if o['unit'] == 'years':
+        dt = _add_months(now, amount * 12)
+    elif o['unit'] == 'months':
         dt = _add_months(now, amount)
     elif o['unit'] == 'weeks':
         dt = now + timedelta(weeks=amount)
@@ -216,7 +218,7 @@ OPTIONS = {
                ('length', 'number', 6, 'Length of the fragment')],
     'date': [('base', 'select:current|future|past', 'current', 'Today, or a date ahead / back'),
              ('amount', 'number', 1, 'How far ahead or back'),
-             ('unit', 'select:days|weeks|months', 'days', 'Unit of the distance'),
+             ('unit', 'select:days|weeks|months|years', 'days', 'Unit of the distance'),
              ('format', 'text', 'yyyy-MM-dd', 'A pattern from the date formats library'),
              ('time', 'select:current|start|end', 'current', 'Current time, start of day (00:00:00) or end of day (23:59:59)'),
              ('timezone', 'text', 'auto', 'auto = the timezone of this server, or a zone like Asia/Karachi')],

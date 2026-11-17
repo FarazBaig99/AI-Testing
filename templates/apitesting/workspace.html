@@ -727,6 +727,7 @@
   let current = null;        // loaded spec (case / item / blank)
   let lastResponse = null;
   const PROFILES = {{ auth_profiles_json|safe }};   // {environment id: [login, ...]}: the logins of the selected environments
+  const ENVIRONMENTS = {{ environments_json|safe }};  // [{id, name, project, project_name, base_url}] of the selected projects
 
   // ---------- left panel ----------
   document.querySelectorAll('[data-side]').forEach(b => b.addEventListener('click', () => {
@@ -1287,6 +1288,9 @@
   // ---------- which login (session cookies) the request is sent with ----------
   function loginChoice() { return (current && current.auth && current.auth.profile) || ''; }
   function renderLoginPick() {
+    // a request with no environment of its own (a brand-new one) still lists every selected environment's
+    // logins, so you can pick one; picking it pins the request to that login's environment.
+    if (current && !current.environment) return renderLoginPickNoEnv();
     const list = (current && current.environment && PROFILES[current.environment]) || [];
     const choice = loginChoice(), def = list.find(p => p.is_default && p.active) || list.find(p => p.active);
     const known = list.some(p => p.name === choice);
@@ -1302,6 +1306,42 @@
       + row('none', 'No login', 'send without a session')
       + '<li><hr class="dropdown-divider"></li><li><button type="button" class="dropdown-item small" id="loginManage"><i class="bi bi-shield-lock"></i> Manage logins…</button></li>';
     $('loginPickMenu').querySelectorAll('[data-login]').forEach(b => b.addEventListener('click', () => {
+      current.auth = {...(current.auth || {}), profile: b.dataset.login};
+      if (!b.dataset.login) delete current.auth.profile;
+      renderLoginPick();
+    }));
+    $('loginManage').addEventListener('click', () => $('authBtn').click());
+  }
+  function renderLoginPickNoEnv() {
+    const choice = loginChoice();
+    $('loginPickLabel').textContent = choice && choice !== 'none' ? choice : choice === 'none' ? 'none' : 'pick environment';
+    $('loginPick').querySelector('button').classList.remove('border-warning');   // no env yet, not a mismatch
+    // one button per (environment, login): picking it sets the environment and the login together
+    let html = '';
+    ENVIRONMENTS.forEach(e => {
+      const logins = PROFILES[e.id] || [];
+      if (!logins.length) return;
+      html += `<li><h6 class="dropdown-header py-1">${esc(e.project_name)} · ${esc(e.name)}</h6></li>`;
+      logins.forEach(p => {
+        html += `<li><button type="button" class="dropdown-item small d-flex align-items-start gap-2" data-env="${esc(e.id)}" data-login="${esc(p.name)}">
+          <i class="bi bi-check2 ${choice === p.name ? '' : 'invisible'}"></i><span>${esc(p.name)}${p.is_default ? '<div class="text-muted" style="font-size:.7rem">default</div>' : (p.active ? '' : '<div class="text-muted" style="font-size:.7rem">not set up yet</div>')}</span></button></li>`;
+      });
+    });
+    if (!html) html = '<li><span class="dropdown-item-text small text-muted">No login set up for the selected environments.</span></li>';
+    $('loginPickMenu').innerHTML = html
+      + '<li><hr class="dropdown-divider"></li>'
+      + `<li><button type="button" class="dropdown-item small d-flex align-items-start gap-2" data-env="" data-login="none">
+          <i class="bi bi-check2 ${choice === 'none' ? '' : 'invisible'}"></i><span>No login<div class="text-muted" style="font-size:.7rem">send without a session</div></span></button></li>`
+      + '<li><hr class="dropdown-divider"></li><li><button type="button" class="dropdown-item small" id="loginManage"><i class="bi bi-shield-lock"></i> Manage logins…</button></li>';
+    $('loginPickMenu').querySelectorAll('[data-login]').forEach(b => b.addEventListener('click', () => {
+      const env = ENVIRONMENTS.find(e => e.id === b.dataset.env);
+      if (env) {
+        current.environment = env.id; current.environment_name = env.name;
+        current.project_name = env.project_name; current.base_url = env.base_url;
+        updateBaseHint();
+        $('reqCtx').innerHTML = [current.collection_name && `<i class="bi bi-collection"></i> ${esc(current.collection_name)}`,
+          `${esc(env.project_name)} · ${esc(env.name)}`].filter(Boolean).join(' &nbsp;|&nbsp; ');
+      }
       current.auth = {...(current.auth || {}), profile: b.dataset.login};
       if (!b.dataset.login) delete current.auth.profile;
       renderLoginPick();
@@ -1994,7 +2034,16 @@
     fill(await res.json());
     loadVarScopes();
   }
-  $('newRequest').addEventListener('click', () => { fill({kind: 'blank', name: 'Untitled Request', method: 'GET', url: '', body_mode: 'none'}); loadVarScopes(); });
+  $('newRequest').addEventListener('click', () => { fill(blankSpec()); loadVarScopes(); });
+  // a blank request with no environment of its own adopts the only selected environment, so its baseUrl and logins work
+  function blankSpec() {
+    const spec = {kind: 'blank', name: 'Untitled Request', method: 'GET', url: '', body_mode: 'none'};
+    if (ENVIRONMENTS.length === 1) {
+      const e = ENVIRONMENTS[0];
+      Object.assign(spec, {environment: e.id, environment_name: e.name, project_name: e.project_name, base_url: e.base_url});
+    }
+    return spec;
+  }
 
   // ---------- send ----------
   $('sendBtn').addEventListener('click', async () => {

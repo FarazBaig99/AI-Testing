@@ -310,8 +310,14 @@ def api_workspace(request):
         elif action == 'add_request':
             c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
             folder = _folder_of(request, c)
-            item = CollectionRequest.objects.create(collection=c, folder=folder, name='New Request', method='GET',
-                                                    url='', position=_next_position(c, folder))
+            env = None   # a new request adopts the selected environment when there is exactly one, so its baseUrl and logins work
+            env_ids = {e for envs in get_selection(request).values() for e in envs}
+            if len(env_ids) == 1:
+                env = Environment.objects.filter(pk=next(iter(env_ids))).select_related('project').first()
+            item = CollectionRequest.objects.create(
+                collection=c, folder=folder, name='New Request', method='GET', url='',
+                position=_next_position(c, folder),
+                environment=env, project=(env.project if env else None))
             return redirect(f"{reverse('api_workspace')}?item={item.pk}")
         elif action == 'new_folder':
             c = get_object_or_404(ApiCollection, pk=request.POST.get('collection'))
@@ -414,9 +420,14 @@ def api_workspace(request):
     collections = list(ApiCollection.objects.prefetch_related('requests', 'folders'))
     for c in collections:
         c.tree_ = c.tree()
+    ws_envs = Environment.objects.filter(project_id__in=selection).select_related('project').order_by(
+        'project__name', 'name')
     return render(request, 'apitesting/workspace.html', {
         'selected': selected, 'groups': groups, 'collections': collections,
-        'auth_profiles_json': json.dumps(_profiles_by_env(Environment.objects.filter(project_id__in=selection))),
+        'auth_profiles_json': json.dumps(_profiles_by_env(ws_envs)),
+        'environments_json': json.dumps([
+            {'id': str(e.pk), 'name': e.name, 'project': e.project_id,
+             'project_name': e.project.name, 'base_url': e.base_url} for e in ws_envs]),
         'other_projects': Project.objects.exclude(pk__in=selection).order_by('name'),
         'methods': METHODS, 'body_modes': BODY_MODES, 'raw_languages': RAW_LANGUAGES,
         'date_formats': json.dumps(_date_formats()),

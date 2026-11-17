@@ -209,8 +209,11 @@
     } else if (o.type === 'number') {
       input = `<input type="number" step="any" id="${id}" class="form-control form-control-sm" value="${esc(v)}">`;
     } else if (o.type.startsWith('select:')) {
-      const labels = {full_random: 'Generate complete random value', prefix: 'Prefix', suffix: 'Suffix', current: 'Current', future: 'Future (ahead)', past: 'Past (back)', start: 'Start of day (00:00:00)', end: 'End of day (23:59:59)'};
-      input = `<select id="${id}" class="form-select form-select-sm">${o.type.slice(7).split('|').map(c => `<option value="${esc(c)}"${c === v ? ' selected' : ''}>${esc(labels[c] || c)}</option>`).join('')}</select>`;
+      const labels = {full_random: 'Generate complete random value', prefix: 'Prefix', suffix: 'Suffix', start: 'Start of day (00:00:00)', end: 'End of day (23:59:59)'};
+      const perField = {base: {current: 'Current date', future: 'Future date', past: 'Past date'}, time: {current: 'Current time'}};
+      const optLabel = c => (perField[o.key] && perField[o.key][c]) || labels[c] || c;
+      const rerender = o.key === 'base' ? ' data-rerender' : '';   // Date: show "how far" only for future/past
+      input = `<select id="${id}" class="form-select form-select-sm"${rerender}>${o.type.slice(7).split('|').map(c => `<option value="${esc(c)}"${c === v ? ' selected' : ''}>${esc(optLabel(c))}</option>`).join('')}</select>`;
     } else {
       input = `<input id="${id}" class="form-control form-control-sm" value="${esc(v)}">`;
     }
@@ -220,6 +223,8 @@
   function specsFor(produces, options) {
     let specs = SPECS[produces] || [];
     if (produces === 'generated') specs = specs.concat((GEN[(options || {}).kind || 'name'] || GEN.name).options);
+    if (produces === 'date' && ((options && options.base) || 'current') === 'current')
+      specs = specs.filter(o => o.key !== 'amount' && o.key !== 'unit');   // Current date needs no distance (like ATAS)
     return specs;
   }
   function renderCfg(box, prefix, produces, options) {

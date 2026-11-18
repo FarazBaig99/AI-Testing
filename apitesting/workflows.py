@@ -201,6 +201,8 @@ def run_workflow(workflow, user=None, sender=None):
                 if node.on_fail == 'stop':
                     stopped = True
 
+    # Keep what the nodes set (pm.globals/environment/... and the arrow mappings), like a workspace send does.
+    scripting.save_scopes(scopes, env, collection)
     run = WorkflowRun.objects.create(
         workflow=workflow, ok=(failed == 0 and passed > 0), passed=passed, failed=failed,
         total_ms=total_ms, results=results, variables=captured, created_by=user)
@@ -227,10 +229,27 @@ def workflow_page(request, workflow_id):
             collections.append({'id': c.pk, 'name': c.name, 'requests': reqs})
     envs = [{'id': e.pk, 'name': e.name, 'project': e.project.name, 'base_url': e.base_url}
             for e in Environment.objects.select_related('project').order_by('project__name', 'name')]
+    # the synced APIs (fresh, no data) grouped like the workspace "APIs" tab: project / environment -> folder
+    apis, groups = [], {}
+    cases = (ApiTestCase.objects.select_related('environment__project', 'folder')
+             .only('id', 'name', 'method', 'folder__name', 'environment__name',
+                   'environment__project__name', 'environment_id')
+             .order_by('environment__project__name', 'environment__name', 'folder__name', 'id'))
+    for c in cases:
+        env = c.environment
+        label = (f'{env.project.name} · {env.name}' if env and env.project_id else
+                 (env.name if env else 'No environment'))
+        g = groups.setdefault(c.environment_id, {'label': label, 'folders': {}})
+        fname = c.folder.name if c.folder_id else 'Ungrouped'
+        g['folders'].setdefault(fname, []).append({'id': c.pk, 'name': c.name, 'method': c.method})
+    for g in groups.values():
+        apis.append({'label': g['label'],
+                     'folders': [{'name': n, 'requests': r} for n, r in g['folders'].items()]})
     return render(request, 'apitesting/workflow.html', {
         'workflow': workflow,
         'graph_json': json.dumps(_graph(workflow)),
         'collections_json': json.dumps(collections),
+        'apis_json': json.dumps(apis),
         'environments_json': json.dumps(envs),
         'scopes_json': json.dumps(list(SCOPES)),
     })

@@ -85,9 +85,25 @@
   <div class="modal-header"><h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-success"></i> Add a step</h6>
     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body">
-    <button class="btn btn-sm btn-light border w-100 mb-3 text-start" id="addBlank"><i class="bi bi-pencil-square"></i> Blank request (build it inline)</button>
-    <div class="lbl small fw-bold text-muted mb-1">From a collection</div>
-    <div id="pickTree"></div>
+    <div class="btn-group btn-group-sm w-100 mb-3" role="group">
+      <button type="button" class="btn btn-success" id="srcApisBtn"><i class="bi bi-hdd-network"></i> APIs — fresh</button>
+      <button type="button" class="btn btn-outline-success" id="srcColsBtn"><i class="bi bi-collection"></i> Collections — with data</button>
+    </div>
+    <div class="mb-2"><div class="input-group input-group-sm">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input id="pickSearch" class="form-control form-control-sm" placeholder="Search by name, method or path…" autocomplete="off">
+    </div></div>
+    <div id="pickApisWrap">
+      <div class="small text-muted mb-2">Pick a fresh API from your synced APIs. Once it is on the canvas, use <b>Autofill random data</b> on the right to fill its body.</div>
+      <div id="pickApis"></div>
+    </div>
+    <div id="pickColsWrap" hidden>
+      <div class="small text-muted mb-2">Pick a request you already built in a collection — its variables and LOVs come with it.</div>
+      <div id="pickTree"></div>
+    </div>
+    <div id="pickEmpty" class="text-muted small mb-2" hidden>No request matches your search.</div>
+    <hr class="my-3">
+    <button class="btn btn-sm btn-light border w-100 text-start" id="addBlank"><i class="bi bi-pencil-square"></i> Blank request (build it inline)</button>
   </div>
 </div></div></div>
 {% endblock %}
@@ -101,9 +117,11 @@
     add: '{% url "api_workflow_add_node" workflow.pk %}',
     save: '{% url "api_workflow_save" workflow.pk %}',
     run: '{% url "api_workflow_run" workflow.pk %}',
+    autofill: '{% url "api_ws_autofill" %}',
   };
   const G = {{ graph_json|safe }};
   const COLLECTIONS = {{ collections_json|safe }};
+  const APIS = {{ apis_json|safe }};
   const ENVS = {{ environments_json|safe }};
   const SCOPES = {{ scopes_json|safe }};
   const $ = id => document.getElementById(id);
@@ -239,6 +257,7 @@
       </div>
       <div class="lbl">Body (raw)</div>
       <textarea id="nBody" class="form-control form-control-sm code" rows="6" spellcheck="false" placeholder="JSON body… use {% templatetag openvariable %}variable{% templatetag closevariable %} to insert a captured value">${esc(s.body||'')}</textarea>
+      <div class="d-flex align-items-center mt-1"><button class="btn btn-sm btn-light border" id="nAutofill" title="Fill the JSON body with realistic random values"><i class="bi bi-dice-5 text-success"></i> Autofill random data</button><span id="nAfMsg" class="small ms-2"></span></div>
       <div class="d-flex gap-2 mt-2">
         <div class="flex-grow-1"><div class="lbl">Expected status</div>
           <input id="nExp" class="form-control form-control-sm" value="${esc(s.expected_status||'')}" placeholder="any 2xx"></div>
@@ -256,9 +275,49 @@
     $('nMethod').addEventListener('change', ()=>{ n.spec.method=$('nMethod').value; markDirty(); render(); });
     $('nUrl').addEventListener('input', ()=>{ n.spec.url=$('nUrl').value; markDirty(); render(); });
     $('nBody').addEventListener('input', ()=>{ n.spec.body=$('nBody').value; n.spec.body_mode = n.spec.body_mode==='none'||!n.spec.body_mode?'raw':n.spec.body_mode; markDirty(); });
+    { const afBtn = $('nAutofill'); if (afBtn) afBtn.addEventListener('click', ()=> autofillNode(n)); }
     $('nExp').addEventListener('input', ()=>{ n.spec.expected_status = $('nExp').value ? +$('nExp').value : null; markDirty(); });
     $('nFail').addEventListener('change', ()=>{ n.on_fail=$('nFail').value; markDirty(); });
     $('delNode').addEventListener('click', ()=>{ removeNode(n.id); });
+  }
+
+  // one-click: fill the node's JSON body with realistic random values (reuses the workspace autofill brain)
+  async function autofillNode(n) {
+    const msg = (cls, t) => { const el = $('nAfMsg'); if (el) { el.className = 'small ms-2 text-' + cls; el.textContent = t || ''; } };
+    const text = (n.spec.body || '').trim();
+    if (!text) return msg('warning', 'Add a JSON body first.');
+    let data; try { data = JSON.parse(text); } catch (e) { return msg('danger', 'Body is not valid JSON.'); }
+    const leaves = [];
+    const pushLeaf = (container, key, name, value) => {
+      if (typeof value === 'string' && /\{\{.*\}\}/.test(value)) return;   // leave {{variables}} as they are
+      if (!name) return;
+      leaves.push({container, key, name, value});
+    };
+    (function walk(v, name) {
+      if (Array.isArray(v)) v.forEach((x, i) => { (x && typeof x === 'object') ? walk(x, name) : pushLeaf(v, i, name, x); });
+      else if (v && typeof v === 'object') Object.keys(v).forEach(k => { (v[k] && typeof v[k] === 'object') ? walk(v[k], k) : pushLeaf(v, k, k, v[k]); });
+    })(data, '');
+    if (!leaves.length) return msg('info', 'Nothing to fill (every field is a {{variable}} or empty).');
+    msg('muted', 'Filling…');
+    let out;
+    try {
+      out = await (await fetch(URLS.autofill, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'},
+        body: JSON.stringify({fields: leaves.map(l => ({name: l.name, value: l.value})), save: false})})).json();
+    } catch (e) { return msg('danger', 'Could not reach the server.'); }
+    if (!out || !out.ok) return msg('danger', (out && out.error) || 'Could not autofill.');
+    (out.fields || []).forEach((f, i) => {
+      const l = leaves[i]; if (!l) return;
+      let v = f.value;
+      if (f.type === 'integer' || f.type === 'number') { const num = Number(v); if (String(v).trim() !== '' && Number.isFinite(num)) v = num; }
+      else if (f.type === 'boolean') v = ['true', '1', 'yes', 'y'].includes(String(v).trim().toLowerCase());
+      else v = String(v);
+      l.container[l.key] = v;
+    });
+    n.spec.body = JSON.stringify(data, null, 2);
+    n.spec.body_mode = (n.spec.body_mode === 'none' || !n.spec.body_mode) ? 'raw' : n.spec.body_mode;
+    markDirty();
+    const ta = $('nBody'); if (ta) ta.value = n.spec.body;
+    msg('success', out.fields.length + ' field' + (out.fields.length === 1 ? '' : 's') + ' filled.');
   }
 
   function inspectEdge() {
@@ -332,15 +391,58 @@
 
   // ---------- add step ----------
   const pickModal = new bootstrap.Modal($('pickModal'));
-  $('addBtn').addEventListener('click', () => { buildPickTree(); pickModal.show(); });
+  $('addBtn').addEventListener('click', () => {
+    buildPickApis(); buildPickTree(); $('pickSearch').value = ''; showSource('apis');
+    pickModal.show(); setTimeout(() => $('pickSearch').focus(), 250);
+  });
+  function showSource(which) {
+    const apis = which === 'apis';
+    $('pickApisWrap').hidden = !apis; $('pickColsWrap').hidden = apis;
+    $('srcApisBtn').className = 'btn ' + (apis ? 'btn-success' : 'btn-outline-success');
+    $('srcColsBtn').className = 'btn ' + (apis ? 'btn-outline-success' : 'btn-success');
+    filterPicks();
+  }
+  $('srcApisBtn').addEventListener('click', () => showSource('apis'));
+  $('srcColsBtn').addEventListener('click', () => showSource('cols'));
+  function filterPicks() {
+    const term = ($('pickSearch').value || '').trim().toLowerCase();
+    const wrap = $('pickApisWrap').hidden ? $('pickColsWrap') : $('pickApisWrap');
+    let shown = 0;
+    wrap.querySelectorAll('.pick-req').forEach(b => {
+      const hit = !term || b.textContent.toLowerCase().indexOf(term) >= 0;
+      b.style.display = hit ? '' : 'none'; if (hit) shown++;
+    });
+    wrap.querySelectorAll('.pick-folder').forEach(f => {
+      f.style.display = [...f.querySelectorAll('.pick-req')].some(b => b.style.display !== 'none') ? '' : 'none';
+    });
+    wrap.querySelectorAll('.mb-2').forEach(g => {
+      if (!g.querySelector('.pick-req')) return;          // leave hint rows alone
+      g.style.display = [...g.querySelectorAll('.pick-req')].some(b => b.style.display !== 'none') ? '' : 'none';
+    });
+    const em = $('pickEmpty'); if (em) em.hidden = !(term && shown === 0);
+  }
+  $('pickSearch').addEventListener('input', filterPicks);
+  function reqBtn(rq, kind) {
+    return `<button class="btn btn-sm btn-light border w-100 text-start mt-1 pick-req" data-kind="${kind}" data-id="${rq.id}">
+      <span class="m ${methodClass(rq.method)}" style="font-size:.6rem;font-weight:800;font-family:monospace">${esc(rq.method)}</span>
+      <span class="ms-1">${esc(rq.name)}</span></button>`;
+  }
+  function wirePicks(box) {
+    box.querySelectorAll('.pick-req').forEach(b => b.addEventListener('click', () => addNode(b.dataset.kind, +b.dataset.id)));
+  }
+  function buildPickApis() {
+    $('pickApis').innerHTML = APIS.length ? APIS.map(g => `
+      <div class="mb-2"><div class="small fw-semibold"><i class="bi bi-hdd-network text-muted"></i> ${esc(g.label)}</div>
+        ${g.folders.map(f => `<div class="pick-folder"><div class="small text-muted mt-1">${esc(f.name)}</div>${f.requests.map(rq => reqBtn(rq, 'case')).join('')}</div>`).join('')}
+      </div>`).join('') : '<div class="text-muted small">No synced APIs yet. Sync some in API Testing, or use “Blank request”.</div>';
+    wirePicks($('pickApis'));
+  }
   function buildPickTree() {
     $('pickTree').innerHTML = COLLECTIONS.length ? COLLECTIONS.map(c => `
       <div class="mb-2"><div class="small fw-semibold"><i class="bi bi-collection text-muted"></i> ${esc(c.name)}</div>
-        ${c.requests.map(rq => `<button class="btn btn-sm btn-light border w-100 text-start mt-1 pick-req" data-id="${rq.id}">
-          <span class="m ${methodClass(rq.method)}" style="font-size:.6rem;font-weight:800;font-family:monospace">${esc(rq.method)}</span>
-          <span class="ms-1">${esc(rq.name)}</span></button>`).join('')}
+        ${c.requests.map(rq => reqBtn(rq, 'item')).join('')}
       </div>`).join('') : '<div class="text-muted small">No saved requests yet. Use “Blank request”.</div>';
-    $('pickTree').querySelectorAll('.pick-req').forEach(b => b.addEventListener('click', () => addNode('item', +b.dataset.id)));
+    wirePicks($('pickTree'));
   }
   $('addBlank').addEventListener('click', () => addNode('inline', null));
   async function addNode(kind, ref) {

@@ -1658,16 +1658,18 @@
     try {
       const out = await (await fetch(URLS.lovQuick, {method: 'POST', headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}, body: JSON.stringify(data)})).json();
       if (!out.ok) return msg('danger', out.error || 'Could not create the LOV.');
+      const keepX = window.scrollX, keepY = window.scrollY;   // keep the page where it is; don't jump to the field
       if (qlTarget && qlTarget.field) {           // drop {{name}} where the user was typing (or on the clicked value)
         const field = qlTarget.field, before = field.value.slice(0, qlTarget.start), after = field.value.slice(qlTarget.end);
         let token, caret;
         if (qlTarget.wrap) { token = '{' + '{' + name + '}' + '}'; caret = before.length + token.length; }
         else { token = name + (after.startsWith('}}') ? '' : '}}'); caret = before.length + name.length + 2; }
         field.value = before + token + after;
-        field.focus(); field.setSelectionRange(caret, caret);
+        field.focus({preventScroll: true}); field.setSelectionRange(caret, caret);
         field.dispatchEvent(new Event('input', {bubbles: true}));
       }
       loadVarScopes();
+      $('quickLovModal').addEventListener('hidden.bs.modal', () => window.scrollTo(keepX, keepY), {once: true});
       quickLovModal.hide();
     } catch (e) { msg('danger', 'Could not create the LOV.'); }
   });
@@ -2594,13 +2596,43 @@
     $('varsBody').innerHTML = '';
     $('varsBody').insertAdjacentHTML('beforeend', `<p class="small text-muted mb-3">Three places to keep a value: an <b>environment</b> variable works only in that environment,
       a <b>project</b> variable in every environment of the project, a <b>global</b> in every project. In a response, click any value to save it as one.</p>`);
+    $('varsBody').insertAdjacentHTML('beforeend', `<div class="mb-3 position-sticky top-0 bg-white py-2" style="z-index:3">
+      <div class="input-group input-group-sm"><span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input id="varSearch" class="form-control form-control-sm" placeholder="Search variables by key or value...">
+        <button type="button" class="btn btn-light border" id="varSearchClear" title="Clear search">&times;</button></div>
+      <div class="small text-muted mt-1" id="varSearchInfo"></div></div>`);
     data.environments.forEach(e => $('varsBody').appendChild(varSection(`<i class="bi bi-hdd-network text-success"></i> ${esc(e.project)} · ${esc(e.name)}`,
       `environment · baseUrl = ${esc(e.base_url)}`, e.variables, 'environment', e.id)));
     if (!data.environments.length) $('varsBody').insertAdjacentHTML('beforeend', '<p class="small text-muted">Turn on an environment at the top to edit its variables.</p>');
     (data.projects || []).forEach(p => $('varsBody').appendChild(varSection(`<i class="bi bi-folder2 text-success"></i> ${esc(p.name)}`,
       'project · used in every environment of this project', p.variables, 'project', p.id)));
     $('varsBody').appendChild(varSection('<i class="bi bi-globe2 text-success"></i> Globals', 'global · every project and environment', data.globals, 'globals', null));
+    wireVarSearch();
   });
+  function wireVarSearch() {
+    const box = $('varSearch'), info = $('varSearchInfo');
+    if (!box) return;
+    function run() {
+      const term = (box.value || '').trim().toLowerCase();
+      let hits = 0;
+      $('varsBody').querySelectorAll(':scope > div.mb-4').forEach(sec => {
+        let secHits = 0;
+        sec.querySelectorAll('tbody tr').forEach(tr => {
+          const k = (tr.querySelector('.k') ? tr.querySelector('.k').value : '').toLowerCase();
+          const v = (tr.querySelector('.v') ? tr.querySelector('.v').value : '').toLowerCase();
+          const isData = !!(k || v);
+          const hit = !term ? true : (isData && (k.indexOf(term) >= 0 || v.indexOf(term) >= 0));
+          tr.style.display = hit ? '' : 'none';
+          if (term && hit) secHits++;
+        });
+        sec.style.display = (!term || secHits) ? '' : 'none';
+        if (term) hits += secHits;
+      });
+      info.textContent = term ? (hits ? (hits + ' match' + (hits === 1 ? '' : 'es')) : 'No variable matches') : '';
+    }
+    box.addEventListener('input', run);
+    $('varSearchClear').addEventListener('click', () => { box.value = ''; run(); box.focus(); });
+  }
 
   // ---------- collection variables & scripts ----------
   const colModal = new bootstrap.Modal($('colModal'));
@@ -2868,12 +2900,20 @@
   const curH = () => parseInt(getComputedStyle(host).getPropertyValue('--resp-h'), 10) || 340;
   const setH = h => host.style.setProperty('--resp-h', Math.round(h) + 'px');
   try { const s = parseInt(localStorage.getItem(KEY) || '', 10); if (s) setH(Math.max(140, Math.min(s, window.innerHeight - 220))); } catch (e) {}
-  let startY = 0, startH = 0;
+  // when the raw body editor is on screen, this divider works as a true splitter:
+  // drag it down and the request body grows by exactly what the response gives up (and the reverse).
+  const BODY_KEY = 'api_body_h';
+  const bodyShown = () => { const el = document.getElementById('rawBody'); return !!(el && el.offsetParent !== null); };
+  const curBodyH = () => parseInt(getComputedStyle(host).getPropertyValue('--body-h'), 10) || 240;
+  const setBodyH = h => host.style.setProperty('--body-h', Math.round(h) + 'px');
+  let startY = 0, startH = 0, startBodyH = null;
   function move(e) {
     const y = e.touches ? e.touches[0].clientY : e.clientY;
     const main = host.querySelector('.main');
     const avail = (main ? main.clientHeight : window.innerHeight) - 170;   // keep room for the request
-    setH(Math.max(140, Math.min(Math.max(220, avail), startH + (startY - y))));
+    const newResp = Math.max(140, Math.min(Math.max(220, avail), startH + (startY - y)));
+    setH(newResp);
+    if (startBodyH != null) setBodyH(Math.max(100, Math.min(2000, startBodyH + (startH - newResp))));
   }
   function up() {
     split.classList.remove('dragging');
@@ -2881,17 +2921,23 @@
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', up);
     try { localStorage.setItem(KEY, curH()); } catch (e) {}
+    if (startBodyH != null) { try { localStorage.setItem(BODY_KEY, curBodyH()); } catch (e) {} }
+    startBodyH = null;
   }
   split.addEventListener('pointerdown', e => {
     e.preventDefault();
     startY = e.clientY; startH = curH();
+    startBodyH = bodyShown() ? curBodyH() : null;
     split.classList.add('dragging');
     document.body.style.userSelect = 'none';
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
   });
-  // double-click resets to the default height
-  split.addEventListener('dblclick', () => { setH(340); try { localStorage.setItem(KEY, 340); } catch (e) {} });
+  // double-click resets both panes to their default heights
+  split.addEventListener('dblclick', () => {
+    setH(340); try { localStorage.setItem(KEY, 340); } catch (e) {}
+    if (bodyShown()) { setBodyH(240); try { localStorage.setItem(BODY_KEY, 240); } catch (e) {} }
+  });
 })();
 
 // Resizable left panel: drag the vertical handle to widen / narrow it; the size is remembered.

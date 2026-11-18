@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from django.db import close_old_connections, connection
 from django.utils import timezone
 
-from . import lov, auth, runner, scripting
+from . import lov, auth, learn, runner, scripting
 from .models import ApiGlobals, CollectionRequest, CollectionRun, RunResult, RunSchedule
 
 log = logging.getLogger(__name__)
@@ -155,6 +155,7 @@ def _functional_loop(run, items, iterations, cfg, summary, variables, engine, se
                                           'iteration': iteration - 1, 'iterationCount': iterations})
             variables.keep(scopes, item.environment)
             result, tests, errors = out['result'], out['tests'], out['errors']
+            learn.observe(out.get('request') or _spec(item), result)   # the brain learns from every run, not just a manual send
             failed_tests = [t for t in tests if not t.get('passed')]
             passed = is_pass(result, expected) and not failed_tests and not errors
             body = result.get('body') or ''

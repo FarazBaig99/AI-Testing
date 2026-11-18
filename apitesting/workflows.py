@@ -17,7 +17,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from . import auth, scripting
+from . import auth, learn, scripting
 from .collection_runner import expected_status, is_pass
 from .models import (ApiCollection, ApiTestCase, ApiWorkflow, CollectionRequest, Environment,
                      WorkflowEdge, WorkflowNode, WorkflowRun)
@@ -195,6 +195,7 @@ def run_workflow(workflow, user=None, sender=None):
                                     send=lambda s, e, files=None: send(s, e),
                                     info={'requestName': node.name or 'Request', 'requestId': str(node.pk)})
             result, tests, errors = out['result'], out['tests'], out['errors']
+            learn.observe(out.get('request') or spec, result)      # feed the brain from every workflow run
             expected = spec.get('expected_status') or (expected_status(node.source) if node.source else None)
             failing = [t for t in tests if not t.get('passed')]
             ok = is_pass(result, expected) and not failing and not errors
@@ -417,6 +418,7 @@ def workflow_run_node(request, workflow_id):
                                 send=lambda s, e, files=None: send(s, e),
                                 info={'requestName': node.name or 'Request', 'requestId': str(node.pk)})
     result, tests, errors = out['result'], out['tests'], out['errors']
+    learn.observe(out.get('request') or spec, result)          # a single test-run trains the brain too
     expected = spec.get('expected_status') or (expected_status(node.source) if node.source else None)
     ok = is_pass(result, expected) and not [t for t in tests if not t.get('passed')] and not errors
     captured, notes = {}, []

@@ -29,6 +29,36 @@
   .wf .node .st { padding:0 10px 8px; font-size:.68rem; font-weight:700; display:none; }
   .wf .node.run-passed .st{display:block;color:#15803d;} .wf .node.run-failed .st{display:block;color:#b91c1c;}
   .wf .node.run-skipped .st{display:block;color:#64748b;} .wf .node.run-running .st{display:block;color:#0369a1;}
+  .wf .node.run-running { box-shadow:0 0 0 3px rgba(3,105,161,.25); }
+  .wf .node .resp { padding:6px 10px 8px; border-top:1px dashed #e2e8f0; }
+  .wf .node .resp .rb { font-size:.63rem; font-family:monospace; color:#475569; max-height:46px; overflow:hidden; white-space:pre-wrap; word-break:break-all; background:#f8fafc; border-radius:6px; padding:3px 6px; }
+  .wf .node .resp .rb.err { color:#b91c1c; background:#fef2f2; }
+  .wf .node .resp .cap { display:inline-block; margin:4px 4px 0 0; font-size:.6rem; font-weight:700; background:#ede9fe; color:#6d28d9; padding:1px 7px; border-radius:8px; }
+  .wf svg .packet { fill:#f59e0b; stroke:#fff; stroke-width:1.5; }
+  .wf svg .packet-lbl { fill:#b45309; font-size:10px; font-weight:800; font-family:monospace; paint-order:stroke; stroke:#fff; stroke-width:3px; }
+  .wf .resp-node { position:absolute; width:200px; background:#fff; border:1px solid #cbd5e1; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.06); font-size:.72rem; z-index:2; }
+  .wf .resp-node.run-failed { border-color:#fecaca; }
+  .wf .resp-node .rh { padding:5px 9px; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; gap:6px; }
+  .wf .resp-node .rfields { padding:4px; max-height:150px; overflow:auto; }
+  .wf .resp-node .rfield { display:flex; align-items:center; gap:6px; padding:3px 6px; border-radius:6px; cursor:pointer; }
+  .wf .resp-node .rfield:hover { background:#eff6ff; }
+  .wf .resp-node .rfield.pick { background:#dbeafe; outline:2px solid #3b82f6; }
+  .wf .resp-node .rfield .rk { color:#64748b; font-family:monospace; font-size:.66rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:92px; }
+  .wf .resp-node .rfield .rv { color:#0f172a; font-weight:700; font-family:monospace; font-size:.66rem; margin-left:auto; max-width:70px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wf .resp-node .rfield .rsend { color:#2563eb; font-weight:800; }
+  .wf .resp-node .rb { padding:6px 9px; font-family:monospace; font-size:.64rem; color:#475569; max-height:60px; overflow:auto; white-space:pre-wrap; word-break:break-all; }
+  .wf .resp-node .rb.err { color:#b91c1c; }
+  .wf .resp-node .rhint { padding:4px 9px 7px; font-size:.6rem; color:#94a3b8; }
+  .wf .node.target-hl { outline:2px dashed #2563eb; outline-offset:2px; }
+  .wf .node .url .param { background:#fef9c3; color:#854d0e; border-radius:4px; padding:0 3px; font-weight:800; }
+  .wf svg path.edge.data { stroke:#2563eb; stroke-dasharray:6 4; stroke-width:2.5; }
+  .wf svg text.edge-lbl { fill:#1d4ed8; font-size:10px; font-weight:800; font-family:monospace; paint-order:stroke; stroke:#fff; stroke-width:3px; }
+  .wf-toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px); background:#0f172a; color:#fff; padding:9px 16px; border-radius:10px; font-size:.82rem; font-weight:600; box-shadow:0 8px 24px rgba(0,0,0,.25); opacity:0; pointer-events:none; transition:.18s; z-index:4000; max-width:90vw; }
+  .wf-toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .wf-toast.ok { background:#065f46; } .wf-toast.warn { background:#92400e; }
+  .wf .node .rz { position:absolute; right:3px; bottom:3px; width:12px; height:12px; cursor:nwse-resize; border-right:2px solid #cbd5e1; border-bottom:2px solid #cbd5e1; border-bottom-right-radius:5px; }
+  .wf .node .rz:hover { border-color:var(--pf); }
+  .wf .node.wide .url { white-space:normal; word-break:break-all; }
   .wf .port { position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; border:2px solid var(--line);
       top:50%; transform:translateY(-50%); }
   .wf .port.out { right:-8px; cursor:crosshair; } .wf .port.out:hover { border-color:var(--pf); background:var(--pf-soft); }
@@ -117,6 +147,7 @@
     add: '{% url "api_workflow_add_node" workflow.pk %}',
     save: '{% url "api_workflow_save" workflow.pk %}',
     run: '{% url "api_workflow_run" workflow.pk %}',
+    runNode: '{% url "api_workflow_run_node" workflow.pk %}',
     autofill: '{% url "api_ws_autofill" %}',
   };
   const G = {{ graph_json|safe }};
@@ -133,6 +164,7 @@
   let results = {};               // node id -> run result
   let dirty = false;
   const canvas = $('canvas'), svg = $('edges'), wrap = $('canvasWrap');
+  canvas.addEventListener('mousedown', e => { if (e.target === canvas && picking) { picking = null; render(); } });
 
   // ---------- environment picker ----------
   function fillEnv() {
@@ -147,10 +179,119 @@
 
   // ---------- render ----------
   function methodClass(m){ return 'm-' + (m||'GET').toUpperCase(); }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function scrollNodeIntoView(id){ const el = canvas.querySelector(`.node[data-id="${id}"]`); if (el && el.scrollIntoView) el.scrollIntoView({block:'nearest', inline:'nearest', behavior:'smooth'}); }
+  // a dot (and the carried value) travels along an edge from the source step to the target step
+  function flyPacket(edge, label){
+    return new Promise(resolve => {
+      const pth = svg.querySelector(`path.edge[data-edge="${edge.id}"]`);
+      if (!pth || !pth.getTotalLength) return resolve();
+      const len = pth.getTotalLength();
+      const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      dot.setAttribute('r','7'); dot.setAttribute('class','packet'); svg.appendChild(dot);
+      let lbl = null;
+      if (label) { lbl = document.createElementNS('http://www.w3.org/2000/svg','text'); lbl.setAttribute('class','packet-lbl'); lbl.textContent = label; svg.appendChild(lbl); }
+      const dur = 750, t0 = performance.now();
+      (function step(t){
+        const k = Math.min(1, (t - t0) / dur), pt = pth.getPointAtLength(len * k);
+        dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y);
+        if (lbl) { lbl.setAttribute('x', pt.x + 9); lbl.setAttribute('y', pt.y - 9); }
+        if (k < 1) requestAnimationFrame(step); else { dot.remove(); if (lbl) lbl.remove(); resolve(); }
+      })(t0);
+    });
+  }
+  let picking = null;   // {source, path, name, val} while carrying a response value to a step
+  function toast(msg, kind){
+    let t = document.getElementById('wfToast');
+    if (!t){ t = document.createElement('div'); t.id = 'wfToast'; document.body.appendChild(t); }
+    t.className = 'wf-toast show' + (kind ? ' ' + kind : '');
+    t.textContent = msg;
+    clearTimeout(t._t); t._t = setTimeout(() => { t.className = 'wf-toast'; }, 3800);
+  }
+  function urlHtml(url){
+    if (!url) return '(no url)';
+    let h = esc(url);
+    h = h.replace(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g, '<span class="param">' + '{' + '{$1}' + '}' + '</span>');
+    h = h.replace(/(?<!\{)\{([A-Za-z_][A-Za-z0-9_]*)\}(?!\})/g, '<span class="param">{$1}</span>');
+    return h;
+  }
+  function respFields(r){
+    let data; try { data = JSON.parse((r.response && r.response.body) || ''); } catch(_) { return []; }
+    const out = [];
+    (function walk(v, p){
+      if (v && typeof v === 'object'){
+        if (Array.isArray(v)) v.slice(0,3).forEach((x,i)=>walk(x, `${p}${p?'.':''}${i}`));
+        else Object.keys(v).forEach(k=>walk(v[k], `${p}${p?'.':''}${k}`));
+      } else out.push({path:p, val:v});
+    })(data, '');
+    return out.slice(0,12);
+  }
+  function respBoxEl(n, r){
+    const d = document.createElement('div');
+    d.className = 'resp-node run-' + (r.status||'');
+    d.dataset.id = n.id;
+    const chipCls = r.status==='passed'?'pass':r.status==='failed'?'fail':'skip';
+    const head = `<div class="rh"><b>Response</b> <span class="chip chip-${chipCls} ms-auto">${esc(String(r.status_code||(r.error?'error':'')))}${r.ms!=null?' · '+r.ms+' ms':''}</span></div>`;
+    const fields = r.error ? [] : respFields(r);
+    let body;
+    if (r.error) body = `<div class="rb err">${esc(String(r.error).slice(0,180))}</div>`;
+    else if (fields.length) body = `<div class="rfields">${fields.map(f=>{
+        const pick = picking && picking.source===n.id && picking.path===f.path;
+        return `<div class="rfield${pick?' pick':''}" data-path="${esc(f.path)}" data-val="${esc(String(f.val))}">
+          <span class="rk">${esc(f.path)}</span><span class="rv">${esc(String(f.val).slice(0,18))}</span><span class="rsend" title="Send this value to a step">→</span></div>`;
+      }).join('')}</div>`;
+    else body = `<div class="rb">${esc(String((r.response&&r.response.body)||'').slice(0,180))||'(no body)'}</div>`;
+    d.innerHTML = head + body + '<div class="rhint">Field par click → phir us step par click jahan {id} bharni hai</div>';
+    d.querySelectorAll('.rfield').forEach(row => row.addEventListener('mousedown', ev => {
+      ev.stopPropagation(); pickRespField(n, row.dataset.path, row.dataset.val); }));
+    return d;
+  }
+  function pickRespField(n, path, val){
+    picking = {source: n.id, path, name: String(path).split('.').pop(), val};
+    render();
+    toast(`“${picking.name} = ${String(val).slice(0,18)}” chuna — ab us step par click karein jahan {${picking.name}} bharni hai.`);
+  }
+  function insertVarIntoUrl(url, varName){
+    const token = '{' + '{' + varName + '}' + '}';
+    const hash = url.split('#'), q = hash[0].split('?'), segs = q[0].split('/');
+    let done = false;
+    for (let i = segs.length - 1; i >= 0; i--) { if (segs[i] !== '') { segs[i] = token; done = true; break; } }
+    if (!done) return url;
+    q[0] = segs.join('/'); hash[0] = q.join('?'); return hash.join('#');
+  }
+  function bindPickTo(target){
+    const p = picking; picking = null;
+    target.spec = target.spec || {};
+    let url = target.spec.url || '';
+    const params = [...url.matchAll(/(?<!\{)\{([A-Za-z_][A-Za-z0-9_]*)\}(?!\})/g)].map(m => m[1]);
+    let param = params.find(x => x === p.name) || params[0], placed = false;
+    if (!param) {
+      param = p.name;
+      const nu = insertVarIntoUrl(url, param);
+      if (nu !== url) { url = nu; target.spec.url = url; placed = true; }
+    }
+    let e = G.edges.find(x => x.source === p.source && x.target === target.id);
+    if (!e){ e = {id:'new-'+Date.now(), source:p.source, target:target.id, mappings:[]}; G.edges.push(e); }
+    e.mappings = e.mappings || [];
+    if (!e.mappings.some(m => m.from_path===p.path && m.to_var===param)) e.mappings.push({from_path:p.path, to_var:param, scope:'collection'});
+    markDirty(); render();
+    if (params.length) toast(`${p.name} → ${target.name||'step'} ke {${param}} par set ho gaya. Save/Run par chalega.`, 'ok');
+    else if (placed) toast(`${target.name||'step'} ka URL ab ${'…/'}${'{' + '{' + param + '}' + '}'} — Run par ${p.name} yahan lagega.`, 'ok');
+    else toast(`${p.name} → variable bana, par URL mein jagah nahi mili — target URL mein ${'{' + '{' + param + '}' + '}'} khud lagayein.`, 'warn');
+  }
   function render() {
-    // nodes
-    [...canvas.querySelectorAll('.node')].forEach(n => n.remove());
+    [...canvas.querySelectorAll('.node, .resp-node')].forEach(n => n.remove());
     G.nodes.forEach(n => canvas.appendChild(nodeEl(n)));
+    // a separate response box sits right below each step that has run
+    G.nodes.forEach(n => {
+      const r = results[n.id];
+      if (!r || r.status === 'running' || !(r.response || r.error)) return;
+      const nel = canvas.querySelector(`.node[data-id="${n.id}"]`);
+      const box = respBoxEl(n, r);
+      box.style.left = n.x + 'px';
+      box.style.top = (n.y + (nel ? nel.offsetHeight : 92) + 14) + 'px';
+      canvas.appendChild(box);
+    });
     $('emptyHint').style.display = G.nodes.length ? 'none' : 'flex';
     drawEdges();
   }
@@ -160,18 +301,27 @@
     const r = results[n.id];
     if (r) d.classList.add('run-' + (r.status||''));
     d.style.left = n.x + 'px'; d.style.top = n.y + 'px'; d.dataset.id = n.id;
+    const w = n.spec && n.spec._w;
+    if (w) { d.style.width = w + 'px'; d.classList.add('wide'); }
     const m = (n.spec && n.spec.method) || 'GET';
     const url = (n.spec && n.spec.url) || '';
     const stTxt = r ? (r.status==='passed' ? `✔ ${r.status_code||''} passed` : r.status==='failed' ? `✖ ${r.status_code||'error'} failed`
                        : r.status==='skipped' ? '— skipped' : '…') : '';
+    if (picking && picking.source !== n.id) d.classList.add('target-hl');
     d.innerHTML = `
       <div class="hd"><span class="m ${methodClass(m)}">${esc(m.toUpperCase())}</span>
         <span class="nm">${esc(n.name||'Request')}</span></div>
-      <div class="url">${esc(url||'(no url)')}</div>
+      <div class="url">${urlHtml(url)}</div>
       <div class="st">${esc(stTxt)}</div>
-      <div class="port in"></div><div class="port out" title="Drag to another step to link"></div>`;
+      <div class="port in"></div><div class="port out" title="Drag to another step to link"></div>
+      <div class="rz" title="Drag to resize this step"></div>`;
     d.querySelector('.hd').addEventListener('mousedown', e => startDrag(e, n, d));
-    d.addEventListener('mousedown', e => { if (!e.target.classList.contains('port')) selectNode(n.id); });
+    d.querySelector('.rz').addEventListener('mousedown', e => startResize(e, n, d));
+    d.addEventListener('mousedown', e => {
+      if (e.target.classList.contains('port')) return;
+      if (picking && picking.source !== n.id) { bindPickTo(n); return; }
+      selectNode(n.id);
+    });
     d.querySelector('.port.out').addEventListener('mousedown', e => startLink(e, n));
     return d;
   }
@@ -185,23 +335,51 @@
     const dx = Math.max(40, Math.abs(b.x-a.x)/2);
     return `M${a.x},${a.y} C${a.x+dx},${a.y} ${b.x-dx},${b.y} ${b.x},${b.y}`;
   }
+  function respCenter(nodeId){
+    const el = canvas.querySelector(`.resp-node[data-id="${nodeId}"]`);
+    if (!el) return null;
+    const cr = canvas.getBoundingClientRect(), pr = el.getBoundingClientRect();
+    return { x: pr.right - cr.left, y: pr.top - cr.top + pr.height/2 };
+  }
   function drawEdges() {
-    [...svg.querySelectorAll('path.edge, path.hit')].forEach(p => p.remove());
+    [...svg.querySelectorAll('path.edge, path.hit, text.edge-lbl')].forEach(p => p.remove());
     G.edges.forEach(e => {
-      const a = portCenter(e.source,'out'), b = portCenter(e.target,'in');
+      const hasMap = (e.mappings||[]).length > 0;
+      // once the source has run, the value travels from its response box; otherwise from the step's out port
+      const a = (hasMap && respCenter(e.source)) || portCenter(e.source,'out');
+      const b = portCenter(e.target,'in');
       if (!a || !b) return;
       const d = path(a, b), isSel = sel && sel.type==='edge' && sel.id===e.id;
-      const hasMap = (e.mappings||[]).length > 0;
       const hit = document.createElementNS('http://www.w3.org/2000/svg','path');
       hit.setAttribute('d', d); hit.setAttribute('class','hit');
       hit.addEventListener('mousedown', () => selectEdge(e.id));
       svg.appendChild(hit);
       const vis = document.createElementNS('http://www.w3.org/2000/svg','path');
       vis.setAttribute('d', d);
-      vis.setAttribute('class', 'edge' + (isSel?' sel':'') + (hasMap && !isSel?' map':''));
+      vis.setAttribute('data-edge', e.id);
+      vis.setAttribute('class', 'edge' + (isSel?' sel':'') + (hasMap?' data':''));
       vis.setAttribute('marker-end', isSel ? 'url(#arrowSel)' : 'url(#arrow)');
       svg.appendChild(vis);
+      if (hasMap) {
+        const vars = (e.mappings||[]).map(m => m.to_var).filter(Boolean).join(', ');
+        if (vars) {
+          const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+          t.setAttribute('class','edge-lbl'); t.setAttribute('x', (a.x+b.x)/2); t.setAttribute('y', (a.y+b.y)/2 - 5);
+          t.textContent = vars; svg.appendChild(t);
+        }
+      }
     });
+  }
+
+  // ---------- resize a node ----------
+  function startResize(e, n, d) {
+    e.preventDefault(); e.stopPropagation();
+    const sx = e.clientX, sw = d.offsetWidth;
+    function move(ev){ const w = Math.max(160, Math.min(620, sw + (ev.clientX - sx)));
+      n.spec = n.spec || {}; n.spec._w = Math.round(w);
+      d.style.width = n.spec._w + 'px'; d.classList.add('wide'); drawEdges(); }
+    function up(){ document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); markDirty(); }
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
   }
 
   // ---------- drag a node ----------
@@ -244,9 +422,11 @@
     const n = G.nodes.find(x => x.id===sel.id); if (!n) return;
     const s = n.spec || {};
     const r = results[n.id];
+    const noBody = ['GET','HEAD'].includes(String(s.method||'GET').toUpperCase());
     $('panel').innerHTML = `
       <div class="d-flex align-items-center mb-2"><b class="small">Step</b>
         <button class="btn btn-sm btn-link text-danger ms-auto p-0" id="delNode"><i class="bi bi-trash"></i> Remove</button></div>
+      <button class="btn btn-sm btn-success w-100 mb-2" id="nTest"><i class="bi bi-play-fill"></i> Test run this step</button>
       <div class="lbl">Name</div><input id="nName" class="form-control form-control-sm" value="${esc(n.name||'')}">
       <div class="lbl">Method & URL</div>
       <div class="d-flex gap-1">
@@ -255,9 +435,12 @@
         </select>
         <input id="nUrl" class="form-control form-control-sm code" value="${esc(s.url||'')}" placeholder="{% templatetag openvariable %}baseUrl{% templatetag closevariable %}/path">
       </div>
+      <div id="nBodyWrap"${noBody ? ' hidden' : ''}>
       <div class="lbl">Body (raw)</div>
       <textarea id="nBody" class="form-control form-control-sm code" rows="6" spellcheck="false" placeholder="JSON body… use {% templatetag openvariable %}variable{% templatetag closevariable %} to insert a captured value">${esc(s.body||'')}</textarea>
       <div class="d-flex align-items-center mt-1"><button class="btn btn-sm btn-light border" id="nAutofill" title="Fill the JSON body with realistic random values"><i class="bi bi-dice-5 text-success"></i> Autofill random data</button><span id="nAfMsg" class="small ms-2"></span></div>
+      </div>
+      ${noBody ? '<div class="form-text mt-1">GET / HEAD send no body.</div>' : ''}
       <div class="d-flex gap-2 mt-2">
         <div class="flex-grow-1"><div class="lbl">Expected status</div>
           <input id="nExp" class="form-control form-control-sm" value="${esc(s.expected_status||'')}" placeholder="any 2xx"></div>
@@ -267,15 +450,16 @@
             <option value="continue" ${n.on_fail==='continue'?'selected':''}>Carry on</option></select></div>
       </div>
       <div class="form-text mt-1">Pick a saved request when adding, or edit the essentials here. Captured values from earlier steps work as <code>{% templatetag openvariable %}name{% templatetag closevariable %}</code>.</div>
-      ${r ? responseBlock(r) : ''}`;
+      ${r ? responseBlock(r) + '<div class="form-text mt-1">To send a value onward: drag an arrow from this step to the next, select the arrow, then click a field under “Pick from … response”.</div>' : ''}`;
     const bind = (elid, key, isSpec) => $(elid).addEventListener('input', () => {
       if (isSpec) n.spec[key] = $(elid).value; else n[key] = $(elid).value; markDirty();
       if (key==='method'||key==='url'||key==='name') render(); });
     $('nName').addEventListener('input', ()=>{ n.name=$('nName').value; markDirty(); render(); });
-    $('nMethod').addEventListener('change', ()=>{ n.spec.method=$('nMethod').value; markDirty(); render(); });
+    $('nMethod').addEventListener('change', ()=>{ n.spec.method=$('nMethod').value; markDirty(); render(); inspectNode(); });
     $('nUrl').addEventListener('input', ()=>{ n.spec.url=$('nUrl').value; markDirty(); render(); });
     $('nBody').addEventListener('input', ()=>{ n.spec.body=$('nBody').value; n.spec.body_mode = n.spec.body_mode==='none'||!n.spec.body_mode?'raw':n.spec.body_mode; markDirty(); });
     { const afBtn = $('nAutofill'); if (afBtn) afBtn.addEventListener('click', ()=> autofillNode(n)); }
+    { const tb = $('nTest'); if (tb) tb.addEventListener('click', ()=> testRunNode(n)); }
     $('nExp').addEventListener('input', ()=>{ n.spec.expected_status = $('nExp').value ? +$('nExp').value : null; markDirty(); });
     $('nFail').addEventListener('change', ()=>{ n.on_fail=$('nFail').value; markDirty(); });
     $('delNode').addEventListener('click', ()=>{ removeNode(n.id); });
@@ -297,7 +481,7 @@
       if (Array.isArray(v)) v.forEach((x, i) => { (x && typeof x === 'object') ? walk(x, name) : pushLeaf(v, i, name, x); });
       else if (v && typeof v === 'object') Object.keys(v).forEach(k => { (v[k] && typeof v[k] === 'object') ? walk(v[k], k) : pushLeaf(v, k, k, v[k]); });
     })(data, '');
-    if (!leaves.length) return msg('info', 'Nothing to fill (every field is a {{variable}} or empty).');
+    if (!leaves.length) return msg('info', 'Nothing to fill (every field is a ' + '{' + '{variable}' + '}' + ' or empty).');
     msg('muted', 'Filling…');
     let out;
     try {
@@ -318,6 +502,22 @@
     markDirty();
     const ta = $('nBody'); if (ta) ta.value = n.spec.body;
     msg('success', out.fields.length + ' field' + (out.fields.length === 1 ? '' : 's') + ' filled.');
+  }
+
+  // run just this one step so its response (and its fields) are available to wire the next step
+  async function testRunNode(n) {
+    const tb = $('nTest');
+    const reset = () => { if (tb) { tb.disabled = false; tb.innerHTML = '<i class="bi bi-play-fill"></i> Test run this step'; } };
+    if (tb) { tb.disabled = true; tb.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Running…'; }
+    if (dirty) { const okSave = await save(); if (!okSave) { reset(); return; } }
+    results[n.id] = {status: 'running'}; render();
+    try {
+      const out = await post(URLS.runNode, {node: n.id});
+      if (!out || !out.ok) { alert((out && out.error) || 'Could not run this step.'); delete results[n.id]; }
+      else { results[n.id] = out.result; }
+    } catch (e) { delete results[n.id]; alert('Could not reach the server.'); }
+    render();
+    if (sel && sel.type === 'node' && sel.id === n.id) inspectNode();
   }
 
   function inspectEdge() {
@@ -471,12 +671,23 @@
   $('runBtn').addEventListener('click', async () => {
     if (dirty && !(await save())) return;
     const btn = $('runBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Running';
-    G.nodes.forEach(n => results[n.id] = {status:'running'}); render();
+    sel = null; results = {}; render();
     try {
       const out = await post(URLS.run, {});
       if (!out.ok && out.error) { alert(out.error); results={}; render(); return; }
-      results = {}; (out.results||[]).forEach(r => results[r.node] = r);
-      render();
+      const order = out.results || [];
+      // play it back like a packet trace: each step lights up, shows its response below it,
+      // then the carried value travels along the arrow to the next step.
+      for (const r of order) {
+        results[r.node] = {status:'running'}; render(); scrollNodeIntoView(r.node); await sleep(420);
+        results[r.node] = r; render(); await sleep(260);
+        const caps = r.captured || [];
+        for (const e of G.edges.filter(e => e.source === r.node)) {
+          const vars = (e.mappings||[]).map(m => m.to_var).filter(Boolean);
+          const lbl = vars.map(v => { const c = caps.find(x => x.var === v); return v + (c ? ' = ' + String(c.value).slice(0,12) : ''); }).join('  ');
+          await flyPacket(e, lbl);
+        }
+      }
       $('runSummary').innerHTML = `<b class="${out.failed?'text-danger':'text-success'}">${out.passed} passed, ${out.failed} failed${out.skipped?`, ${out.skipped} skipped`:''}</b> · ${out.total_ms} ms`;
       showResultsPanel(out);
     } finally { btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill"></i> Run workflow'; }

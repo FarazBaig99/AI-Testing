@@ -8,6 +8,7 @@ collection runner use (scripting.execute + auth.sender), so a workflow behaves e
 by hand, in order, with the data handed on between them.
 """
 import json
+import re
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
@@ -24,6 +25,17 @@ from .workspace import case_spec, item_spec
 
 BODY_LIMIT = 20000
 SCOPES = ('environment', 'collection', 'project', 'globals')
+
+# /gha/{id} -> /gha/{{id}} when a variable named id has been captured, so a value carried
+# from an earlier step lands in the next step's URL. Already-{{doubled}} names are left alone.
+_PATH_PARAM_RE = re.compile(r'(?<!\{)\{([A-Za-z_][A-Za-z0-9_]*)\}(?!\})')
+
+def _fill_path_params(url, scopes):
+    if not url or '{' not in url:
+        return url
+    keys = (set(scopes.local) | set(scopes.environment) | set(scopes.collection)
+            | set(scopes.project) | set(scopes.globals))
+    return _PATH_PARAM_RE.sub(lambda m: ('{{' + m.group(1) + '}}') if m.group(1) in keys else m.group(0), url)
 
 
 # ---------- building a node's request ----------
@@ -177,6 +189,7 @@ def run_workflow(workflow, user=None, sender=None):
                                 'request': {}, 'response': {}, 'tests': []})
                 continue
             spec = dict(node.spec or _blank_spec())
+            spec['url'] = _fill_path_params(spec.get('url', ''), scopes)
             node_env = _node_env(node, env)
             out = scripting.execute(spec, node_env, scopes, engine, collection,
                                     send=lambda s, e, files=None: send(s, e),
@@ -378,3 +391,39 @@ def workflow_run(request, workflow_id):
     if not workflow.nodes.exists():
         return JsonResponse({'ok': False, 'error': 'Add at least one step to the workflow first.'}, status=400)
     return JsonResponse(run_workflow(workflow, user=request.user))
+
+
+@login_required
+@require_POST
+def workflow_run_node(request, workflow_id):
+    """Run one step on its own so the user can see its response and wire the next step from it.
+    It uses the workflow's environment / collection plus whatever earlier steps already captured,
+    then applies this step's out-edge mappings so the captured values are ready for the next steps."""
+    workflow = get_object_or_404(ApiWorkflow, pk=workflow_id)
+    data = _json_body(request)
+    if data is None:
+        return JsonResponse({'ok': False, 'error': 'Bad request data.'}, status=400)
+    node = workflow.nodes.filter(pk=data.get('node') or 0).first()
+    if node is None:
+        return JsonResponse({'ok': False, 'error': 'That step no longer exists.'}, status=404)
+    env, collection = workflow.environment, workflow.collection
+    scopes = scripting.load_scopes(env, collection)
+    send = auth.sender()
+    with scripting.ScriptEngine() as engine:
+        spec = dict(node.spec or _blank_spec())
+        spec['url'] = _fill_path_params(spec.get('url', ''), scopes)
+        node_env = _node_env(node, env)
+        out = scripting.execute(spec, node_env, scopes, engine, collection,
+                                send=lambda s, e, files=None: send(s, e),
+                                info={'requestName': node.name or 'Request', 'requestId': str(node.pk)})
+    result, tests, errors = out['result'], out['tests'], out['errors']
+    expected = spec.get('expected_status') or (expected_status(node.source) if node.source else None)
+    ok = is_pass(result, expected) and not [t for t in tests if not t.get('passed')] and not errors
+    captured, notes = {}, []
+    for e in WorkflowEdge.objects.filter(source=node):
+        notes += _apply_mappings(e.mappings, result, scopes, captured)
+    scripting.save_scopes(scopes, env, collection)
+    row = _node_result(node, result, out, ok)
+    if notes:
+        row['captured'] = notes
+    return JsonResponse({'ok': True, 'result': row, 'captured': captured})

@@ -42,4 +42,5 @@ urlpatterns = [
     path('workflows/<int:workflow_id>/add-node/', workflows.workflow_add_node, name='api_workflow_add_node'),
     path('workflows/<int:workflow_id>/save/', workflows.workflow_save, name='api_workflow_save'),
     path('workflows/<int:workflow_id>/run/', workflows.workflow_run, name='api_workflow_run'),
+    path('workflows/<int:workflow_id>/run-node/', workflows.workflow_run_node, name='api_workflow_run_node'),
 ]

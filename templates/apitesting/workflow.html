@@ -39,12 +39,33 @@
   .wf .resp-node { position:absolute; width:200px; background:#fff; border:1px solid #cbd5e1; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.06); font-size:.72rem; z-index:2; }
   .wf .resp-node.run-failed { border-color:#fecaca; }
   .wf .resp-node .rh { padding:5px 9px; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; gap:6px; }
-  .wf .resp-node .rfields { padding:4px; max-height:150px; overflow:auto; }
+  .wf .resp-node .rfields { padding:4px; max-height:340px; overflow:auto; }
+  .wf .resp-node .rsearch { margin:4px 4px 0; width:calc(100% - 8px); font-size:.68rem; padding:2px 6px; border:1px solid #e2e8f0; border-radius:6px; }
+  .wf .pl-box { position:absolute; background:#fff; border:1px solid #bfdbfe; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.06); font-size:.72rem; z-index:2; }
+  .wf .pl-box .ph { padding:5px 9px; border-bottom:1px solid #eff6ff; font-weight:700; color:#1d4ed8; display:flex; gap:6px; }
+  .wf .pl-box .plrows { padding:4px; max-height:300px; overflow:auto; }
+  .wf .pl-row { display:flex; align-items:center; gap:6px; padding:3px 6px; border-radius:6px; }
+  .wf .pl-row .pk { color:#64748b; font-family:monospace; font-size:.66rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:130px; }
+  .wf .pl-row .pv { color:#0f172a; font-family:monospace; font-size:.66rem; margin-left:auto; max-width:110px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wf .pl-row.bound { background:#ede9fe; } .wf .pl-row.bound .pv { color:#6d28d9; font-weight:800; max-width:190px; }
+  .wf .pl-row.bound .pk { max-width:96px; }
+  .wf .pl-row .pv .vn { color:#a78bfa; font-weight:600; margin-right:4px; }
+  .wf .pl-row .pv.unset { color:#dc2626; }
+  .wf .vuse { border:1px solid #e2e8f0; border-radius:8px; margin-top:8px; }
+  .wf .vuse .vh { padding:4px 8px; font-size:.7rem; font-weight:700; color:#475569; background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+  .wf .vuse .vr { display:flex; gap:6px; padding:3px 8px; font-size:.7rem; border-bottom:1px solid #f1f5f9; align-items:baseline; }
+  .wf .vuse .vr:last-child { border-bottom:0; }
+  .wf .vuse .vr .vk { font-family:monospace; font-weight:700; color:#6d28d9; white-space:nowrap; }
+  .wf .vuse .vr .vv { font-family:monospace; color:#0f172a; margin-left:auto; text-align:right; word-break:break-all; }
+  .wf .vuse .vr .vv.unset { color:#dc2626; font-family:inherit; }
+  .wf .vuse .vr .vs { color:#94a3b8; font-size:.62rem; white-space:nowrap; }
+  .wf .picking .pl-row { outline:1px dashed #93c5fd; cursor:pointer; }
+  .wf .picking .pl-row:hover { background:#dbeafe; outline:2px solid #3b82f6; }
   .wf .resp-node .rfield { display:flex; align-items:center; gap:6px; padding:3px 6px; border-radius:6px; cursor:pointer; }
   .wf .resp-node .rfield:hover { background:#eff6ff; }
   .wf .resp-node .rfield.pick { background:#dbeafe; outline:2px solid #3b82f6; }
-  .wf .resp-node .rfield .rk { color:#64748b; font-family:monospace; font-size:.66rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:92px; }
-  .wf .resp-node .rfield .rv { color:#0f172a; font-weight:700; font-family:monospace; font-size:.66rem; margin-left:auto; max-width:70px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wf .resp-node .rfield .rk { color:#64748b; font-family:monospace; font-size:.66rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px; }
+  .wf .resp-node .rfield .rv { color:#0f172a; font-weight:700; font-family:monospace; font-size:.66rem; margin-left:auto; max-width:110px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .wf .resp-node .rfield .rsend { color:#2563eb; font-weight:800; }
   .wf .resp-node .rb { padding:6px 9px; font-family:monospace; font-size:.64rem; color:#475569; max-height:60px; overflow:auto; white-space:pre-wrap; word-break:break-all; }
   .wf .resp-node .rb.err { color:#b91c1c; }
@@ -160,18 +181,41 @@
   const post = (url, body) => fetch(url, {method:'POST', headers:{'X-CSRFToken':CSRF,'Content-Type':'application/json'},
       body: JSON.stringify(body||{})}).then(r => r.json());
 
+  // ---- what each {{variable}} is worth: saved scopes (environment / collection / project / globals / LOV)
+  // plus values captured by earlier steps in this session. Used to show real values next to {{tokens}}.
+  const OPEN = '{' + '{', CLOSE = '}' + '}';
+  const VAR_RE = /\{\{\s*([\w.\-$]+)\s*\}\}/g;
+  const DYN_VARS = {'$guid':'new UUID at send','$randomUUID':'new UUID at send','$timestamp':'time at send','$isoTimestamp':'time at send','$randomInt':'random 0-1000'};
+  let varScopes = [];
+  const capturedVals = {};        // name -> value captured by a step that has run
+  const URL_RESOLVE = '{% url "api_ws_resolve" %}';
+  async function loadVarScopes() {
+    const q = new URLSearchParams({environment: G.environment || '', collection: G.collection || ''});
+    try { varScopes = (await (await fetch(`${URL_RESOLVE}?${q}`)).json()).scopes || []; } catch (e) { varScopes = []; }
+    render(); if (sel && sel.type === 'node') inspectNode();
+  }
+  function rememberCaptured(r) { (r && r.captured || []).forEach(c => { if (c && c.var && c.found !== false) capturedVals[c.var] = c.value; }); }
+  function varInfo(name) {
+    if (Object.prototype.hasOwnProperty.call(capturedVals, name)) return {value: String(capturedVals[name]), scope: 'captured by a step'};
+    for (const s of varScopes) if (Object.prototype.hasOwnProperty.call(s.values || {}, name))
+      return {value: String(s.values[name]), scope: s.scope === 'LOV' ? 'LOV (example, random per send)' : s.scope};
+    if (DYN_VARS[name]) return {value: '(' + DYN_VARS[name] + ')', scope: 'dynamic'};
+    return null;
+  }
+  const varsIn = text => [...new Set([...String(text == null ? '' : text).matchAll(VAR_RE)].map(m => m[1]))];
+
   let sel = null;                 // {type:'node'|'edge', id}
   let results = {};               // node id -> run result
   let dirty = false;
   const canvas = $('canvas'), svg = $('edges'), wrap = $('canvasWrap');
-  canvas.addEventListener('mousedown', e => { if (e.target === canvas && picking) { picking = null; render(); } });
+  canvas.addEventListener('mousedown', e => { if (e.target === canvas && picking) { endPick(); render(); } });
 
   // ---------- environment picker ----------
   function fillEnv() {
     $('wfEnv').innerHTML = '<option value="">— pick environment —</option>' +
       ENVS.map(e => `<option value="${e.id}" ${String(G.environment)===String(e.id)?'selected':''}>${esc(e.project)} · ${esc(e.name)}</option>`).join('');
   }
-  $('wfEnv').addEventListener('change', () => { G.environment = $('wfEnv').value || null; markDirty(); });
+  $('wfEnv').addEventListener('change', () => { G.environment = $('wfEnv').value || null; markDirty(); loadVarScopes(); });
   $('wfName').addEventListener('input', () => { G.name = $('wfName').value; markDirty(); });
 
   function markDirty() { dirty = true; $('saveBtn').classList.add('btn-warning'); $('saveBtn').classList.remove('btn-light'); }
@@ -200,6 +244,7 @@
       })(t0);
     });
   }
+  const ui = {pl: {}, resp: {}};   // which payload / response boxes are open (payload: closed unless clicked; response: open)
   let picking = null;   // {source, path, name, val} while carrying a response value to a step
   function toast(msg, kind){
     let t = document.getElementById('wfToast');
@@ -215,41 +260,132 @@
     h = h.replace(/(?<!\{)\{([A-Za-z_][A-Za-z0-9_]*)\}(?!\})/g, '<span class="param">{$1}</span>');
     return h;
   }
+  function endPick(){
+    picking = null; canvas.classList.remove('picking');
+    canvas.querySelectorAll('.node.target-hl').forEach(x => x.classList.remove('target-hl'));
+    canvas.querySelectorAll('.rfield.pick').forEach(x => x.classList.remove('pick'));
+  }
   function respFields(r){
     let data; try { data = JSON.parse((r.response && r.response.body) || ''); } catch(_) { return []; }
     const out = [];
     (function walk(v, p){
+      if (out.length >= 400) return;
       if (v && typeof v === 'object'){
-        if (Array.isArray(v)) v.slice(0,3).forEach((x,i)=>walk(x, `${p}${p?'.':''}${i}`));
+        if (Array.isArray(v)) v.slice(0,25).forEach((x,i)=>walk(x, `${p}${p?'.':''}${i}`));
         else Object.keys(v).forEach(k=>walk(v[k], `${p}${p?'.':''}${k}`));
       } else out.push({path:p, val:v});
     })(data, '');
-    return out.slice(0,12);
+    return out;
   }
   function respBoxEl(n, r){
     const d = document.createElement('div');
     d.className = 'resp-node run-' + (r.status||'');
     d.dataset.id = n.id;
+    const nodeW = (n.spec && n.spec._w) || 200;
+    d.style.width = Math.max(300, nodeW) + 'px';
     const chipCls = r.status==='passed'?'pass':r.status==='failed'?'fail':'skip';
-    const head = `<div class="rh"><b>Response</b> <span class="chip chip-${chipCls} ms-auto">${esc(String(r.status_code||(r.error?'error':'')))}${r.ms!=null?' · '+r.ms+' ms':''}</span></div>`;
     const fields = r.error ? [] : respFields(r);
+    const respOpen = ui.resp[n.id] !== false;
+    const head = `<div class="rh" style="cursor:pointer" title="Click to ${respOpen?'hide':'show'} the response"><b>${respOpen?'\u25BE':'\u25B8'} Response</b>${fields.length?` <span class="text-muted">${fields.length} values</span>`:''} <span class="chip chip-${chipCls} ms-auto">${esc(String(r.status_code||(r.error?'error':'')))}${r.ms!=null?' \u00b7 '+r.ms+' ms':''}</span></div>`;
     let body;
-    if (r.error) body = `<div class="rb err">${esc(String(r.error).slice(0,180))}</div>`;
-    else if (fields.length) body = `<div class="rfields">${fields.map(f=>{
-        const pick = picking && picking.source===n.id && picking.path===f.path;
-        return `<div class="rfield${pick?' pick':''}" data-path="${esc(f.path)}" data-val="${esc(String(f.val))}">
-          <span class="rk">${esc(f.path)}</span><span class="rv">${esc(String(f.val).slice(0,18))}</span><span class="rsend" title="Send this value to a step">→</span></div>`;
-      }).join('')}</div>`;
-    else body = `<div class="rb">${esc(String((r.response&&r.response.body)||'').slice(0,180))||'(no body)'}</div>`;
-    d.innerHTML = head + body + '<div class="rhint">Field par click → phir us step par click jahan {id} bharni hai</div>';
+    if (!respOpen && !picking) body = '';
+    else if (r.error) body = `<div class="rb err">${esc(String(r.error).slice(0,300))}</div>`;
+    else if (fields.length) body = `<input class="rsearch" placeholder="Search field or value..."><div class="rfields">${fields.map(f=>`<div class="rfield${picking && picking.source===n.id && picking.path===f.path ? ' pick' : ''}" data-path="${esc(f.path)}" data-val="${esc(String(f.val))}" data-q="${esc((f.path+' '+f.val).toLowerCase())}">
+          <span class="rk" title="${esc(f.path)}">${esc(f.path)}</span><span class="rv" title="${esc(String(f.val))}">${esc(String(f.val).slice(0,24))}</span><span class="rsend" title="Send this value to a field">\u2192</span></div>`).join('')}</div>`;
+    else body = `<div class="rb">${esc(String((r.response&&r.response.body)||'').slice(0,800))||'(no body)'}</div>`;
+    d.innerHTML = head + body + ((!respOpen && !picking) ? '' : '<div class="rhint">Value par click \u2192 phir agle step ke <b>Request payload</b> ki field par click</div>');
+    d.querySelector('.rh').addEventListener('mousedown', ev => { ev.stopPropagation(); if (picking) return; ui.resp[n.id] = !respOpen; render(); });
     d.querySelectorAll('.rfield').forEach(row => row.addEventListener('mousedown', ev => {
-      ev.stopPropagation(); pickRespField(n, row.dataset.path, row.dataset.val); }));
+      ev.stopPropagation(); pickRespField(n, row.dataset.path, row.dataset.val, row); }));
+    const sb = d.querySelector('.rsearch');
+    if (sb) { sb.addEventListener('mousedown', ev => ev.stopPropagation());
+      sb.addEventListener('input', () => { const q = sb.value.trim().toLowerCase();
+        d.querySelectorAll('.rfield').forEach(x => { x.style.display = (!q || x.dataset.q.indexOf(q) >= 0) ? '' : 'none'; }); }); }
     return d;
   }
-  function pickRespField(n, path, val){
+  function pickRespField(n, path, val, rowEl){
+    const sc = canvas.querySelector(`.resp-node[data-id="${n.id}"] .rfields`);
+    const keepScroll = sc ? sc.scrollTop : 0;
     picking = {source: n.id, path, name: String(path).split('.').pop(), val};
-    render();
-    toast(`“${picking.name} = ${String(val).slice(0,18)}” chuna — ab us step par click karein jahan {${picking.name}} bharni hai.`);
+    canvas.classList.add('picking');
+    render();                                   // payload boxes open while a value is being placed
+    const sc2 = canvas.querySelector(`.resp-node[data-id="${n.id}"] .rfields`);
+    if (sc2) sc2.scrollTop = keepScroll;
+    toast(`\u201c${picking.name} = ${String(val).slice(0,18)}\u201d chuna \u2014 ab agle step ki Request payload ki field par click karein (ya URL ke liye step par).`);
+  }
+  // ---- request payload shown on the canvas: every JSON field is a drop target ----
+  function bodyLeaves(spec){
+    if (!spec) return null;
+    const m = String(spec.method||'GET').toUpperCase();
+    if (m === 'GET' || m === 'HEAD') return null;
+    const text = String(spec.body||'').trim();
+    if (!text) return null;
+    let data; try { data = JSON.parse(text); } catch(_) { return null; }
+    if (!data || typeof data !== 'object') return null;
+    const out = [];
+    (function walk(v, keys){
+      if (out.length >= 200) return;
+      if (v && typeof v === 'object'){
+        if (Array.isArray(v)) v.forEach((x,i)=>walk(x, keys.concat([i])));
+        else Object.keys(v).forEach(k=>walk(v[k], keys.concat([k])));
+      } else out.push({keys, label: keys.join('.'), val: v});
+    })(data, []);
+    return out;
+  }
+  function setAtPath(data, keys, value){
+    let cur = data;
+    for (let i = 0; i < keys.length - 1; i++) cur = cur[keys[i]];
+    cur[keys[keys.length-1]] = value;
+  }
+  function varNameFor(path){ return String(path).replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '') || 'value'; }
+  function plBoxEl(n){
+    const leaves = bodyLeaves(n.spec);
+    if (!leaves || !leaves.length) return null;
+    const d = document.createElement('div');
+    d.className = 'pl-box'; d.dataset.id = n.id;
+    const nodeW = (n.spec && n.spec._w) || 200;
+    d.style.width = Math.max(300, nodeW) + 'px';
+    const open = !!ui.pl[n.id] || !!picking;
+    d.innerHTML = `<div class="ph" style="cursor:pointer" title="Click to ${open?'hide':'show'} the payload"><span>${open?'\u25BE':'\u25B8'} Request payload</span><span class="text-muted fw-normal ms-auto">${leaves.length} fields</span></div>${open?`<div class="plrows">${leaves.map(l => {
+      const vs = [...String(l.val==null?'':l.val).matchAll(/\{\{\s*([\w.\-$]+)\s*\}\}/g)].map(m => m[1]);
+      let pv, pvCls = 'pv', tip = String(l.val);
+      if (vs.length) {      // show the value the variable will really send
+        const infos = vs.map(v => ({v, i: varInfo(v)}));
+        const whole = /^\s*\{\{\s*[\w.\-$]+\s*\}\}\s*$/.test(String(l.val));
+        const shown = String(l.val).replace(VAR_RE, (_, v) => { const i = varInfo(v); return i ? i.value : OPEN + v + CLOSE; });
+        const missing = infos.some(x => !x.i);
+        if (missing) pvCls += ' unset';
+        pv = (whole ? `<span class="vn">${esc(vs[0])}</span>` : '') + esc((missing ? '⚠ ' : '') + shown.slice(0, 34));
+        tip = infos.map(x => `${OPEN}${x.v}${CLOSE} = ${x.i ? x.i.value + '  [' + x.i.scope + ']' : 'not set yet (an earlier step must capture it)'}`).join('\n');
+      } else pv = esc(String(l.val==null?'null':l.val).slice(0,28));
+      return `<div class="pl-row${vs.length?' bound':''}" data-keys="${esc(JSON.stringify(l.keys))}" data-vars="${esc(vs.join(','))}">
+        <span class="pk" title="${esc(l.label)}">${esc(l.label)}</span><span class="${pvCls}" title="${esc(tip)}">${pv}</span></div>`;
+    }).join('')}</div>`:''}`;
+    d.addEventListener('mousedown', ev => {
+      const row = ev.target.closest('.pl-row');
+      ev.stopPropagation();
+      if (ev.target.closest('.ph') && !picking) { ui.pl[n.id] = !ui.pl[n.id]; render(); return; }
+      if (picking && picking.source !== n.id) { if (row) bindToField(n, JSON.parse(row.dataset.keys)); else bindPickTo(n); return; }
+      selectNode(n.id);
+    });
+    return d;
+  }
+  function ensureEdgeMapping(sourceId, target, fromPath, toVar){
+    let e = G.edges.find(x => x.source === sourceId && x.target === target.id);
+    if (!e){ e = {id:'new-'+Date.now(), source:sourceId, target:target.id, mappings:[]}; G.edges.push(e); }
+    e.mappings = e.mappings || [];
+    if (!e.mappings.some(m => m.from_path===fromPath && m.to_var===toVar)) e.mappings.push({from_path:fromPath, to_var:toVar, scope:'collection'});
+  }
+  function bindToField(target, keys){
+    const p = picking; endPick();
+    let data; try { data = JSON.parse(target.spec.body||''); } catch(_) { toast('Is step ki body valid JSON nahi.', 'warn'); return; }
+    const v = varNameFor(p.path);
+    setAtPath(data, keys, '{' + '{' + v + '}' + '}');
+    target.spec.body = JSON.stringify(data, null, 2);
+    if (!target.spec.body_mode || target.spec.body_mode === 'none') target.spec.body_mode = 'raw';
+    ensureEdgeMapping(p.source, target, p.path, v);
+    markDirty(); render();
+    toast(`${p.path} \u2192 ${keys.join('.')} set ho gaya. Run par value yahan lagegi.`, 'ok');
   }
   function insertVarIntoUrl(url, varName){
     const token = '{' + '{' + varName + '}' + '}';
@@ -260,7 +396,7 @@
     q[0] = segs.join('/'); hash[0] = q.join('?'); return hash.join('#');
   }
   function bindPickTo(target){
-    const p = picking; picking = null;
+    const p = picking; endPick();
     target.spec = target.spec || {};
     let url = target.spec.url || '';
     const params = [...url.matchAll(/(?<!\{)\{([A-Za-z_][A-Za-z0-9_]*)\}(?!\})/g)].map(m => m[1]);
@@ -280,17 +416,20 @@
     else toast(`${p.name} → variable bana, par URL mein jagah nahi mili — target URL mein ${'{' + '{' + param + '}' + '}'} khud lagayein.`, 'warn');
   }
   function render() {
-    [...canvas.querySelectorAll('.node, .resp-node')].forEach(n => n.remove());
+    [...canvas.querySelectorAll('.node, .resp-node, .pl-box')].forEach(n => n.remove());
     G.nodes.forEach(n => canvas.appendChild(nodeEl(n)));
-    // a separate response box sits right below each step that has run
+    // below each step: its request payload (fields to fill), then its response once it has run
     G.nodes.forEach(n => {
-      const r = results[n.id];
-      if (!r || r.status === 'running' || !(r.response || r.error)) return;
       const nel = canvas.querySelector(`.node[data-id="${n.id}"]`);
-      const box = respBoxEl(n, r);
-      box.style.left = n.x + 'px';
-      box.style.top = (n.y + (nel ? nel.offsetHeight : 92) + 14) + 'px';
-      canvas.appendChild(box);
+      let y = n.y + (nel ? nel.offsetHeight : 92) + 12;
+      const pl = plBoxEl(n);
+      if (pl) { pl.style.left = n.x + 'px'; pl.style.top = y + 'px'; canvas.appendChild(pl); y += pl.offsetHeight + 12; }
+      const r = results[n.id];
+      if (r && r.status !== 'running' && (r.response || r.error)) {
+        const box = respBoxEl(n, r);
+        box.style.left = n.x + 'px'; box.style.top = y + 'px';
+        canvas.appendChild(box);
+      }
     });
     $('emptyHint').style.display = G.nodes.length ? 'none' : 'flex';
     drawEdges();
@@ -341,33 +480,56 @@
     const cr = canvas.getBoundingClientRect(), pr = el.getBoundingClientRect();
     return { x: pr.right - cr.left, y: pr.top - cr.top + pr.height/2 };
   }
+  function clampY(row, y){
+    const c = row.closest('.rfields, .plrows'); if (!c) return y;
+    const r = c.getBoundingClientRect(), cr = canvas.getBoundingClientRect();
+    return Math.max(r.top - cr.top + 4, Math.min(r.bottom - cr.top - 4, y));
+  }
+  function srcAnchor(e, m){
+    const box = canvas.querySelector(`.resp-node[data-id="${e.source}"]`);
+    if (!box) return portCenter(e.source, 'out');
+    const row = [...box.querySelectorAll('.rfield')].find(x => x.dataset.path === m.from_path);
+    if (!row) return respCenter(e.source);
+    const rr = row.getBoundingClientRect(), cr = canvas.getBoundingClientRect();
+    return { x: rr.right - cr.left, y: clampY(row, rr.top - cr.top + rr.height/2) };
+  }
+  function tgtAnchor(e, m){
+    const box = canvas.querySelector(`.pl-box[data-id="${e.target}"]`);
+    if (box) {
+      const row = [...box.querySelectorAll('.pl-row')].find(x => (x.dataset.vars||'').split(',').includes(m.to_var));
+      if (row) { const rr = row.getBoundingClientRect(), cr = canvas.getBoundingClientRect();
+        return { x: rr.left - cr.left, y: clampY(row, rr.top - cr.top + rr.height/2) }; }
+    }
+    if (box) { const cr = canvas.getBoundingClientRect(), br = box.getBoundingClientRect();
+      return { x: br.left - cr.left, y: br.top - cr.top + 14 }; }
+    return portCenter(e.target, 'in');
+  }
   function drawEdges() {
     [...svg.querySelectorAll('path.edge, path.hit, text.edge-lbl')].forEach(p => p.remove());
+    const NS = 'http://www.w3.org/2000/svg';
     G.edges.forEach(e => {
-      const hasMap = (e.mappings||[]).length > 0;
-      // once the source has run, the value travels from its response box; otherwise from the step's out port
-      const a = (hasMap && respCenter(e.source)) || portCenter(e.source,'out');
-      const b = portCenter(e.target,'in');
-      if (!a || !b) return;
-      const d = path(a, b), isSel = sel && sel.type==='edge' && sel.id===e.id;
-      const hit = document.createElementNS('http://www.w3.org/2000/svg','path');
-      hit.setAttribute('d', d); hit.setAttribute('class','hit');
-      hit.addEventListener('mousedown', () => selectEdge(e.id));
-      svg.appendChild(hit);
-      const vis = document.createElementNS('http://www.w3.org/2000/svg','path');
-      vis.setAttribute('d', d);
-      vis.setAttribute('data-edge', e.id);
-      vis.setAttribute('class', 'edge' + (isSel?' sel':'') + (hasMap?' data':''));
-      vis.setAttribute('marker-end', isSel ? 'url(#arrowSel)' : 'url(#arrow)');
-      svg.appendChild(vis);
-      if (hasMap) {
-        const vars = (e.mappings||[]).map(m => m.to_var).filter(Boolean).join(', ');
-        if (vars) {
-          const t = document.createElementNS('http://www.w3.org/2000/svg','text');
-          t.setAttribute('class','edge-lbl'); t.setAttribute('x', (a.x+b.x)/2); t.setAttribute('y', (a.y+b.y)/2 - 5);
-          t.textContent = vars; svg.appendChild(t);
+      const isSel = sel && sel.type==='edge' && sel.id===e.id;
+      const maps = (e.mappings||[]).filter(m => m.to_var);
+      const draws = maps.length ? maps.map(m => ({a: srcAnchor(e, m), b: tgtAnchor(e, m), label: m.to_var, data: true}))
+                               : [{a: portCenter(e.source,'out'), b: portCenter(e.target,'in'), label: '', data: false}];
+      draws.forEach(dr => {
+        if (!dr.a || !dr.b) return;
+        const d = path(dr.a, dr.b);
+        const hit = document.createElementNS(NS, 'path');
+        hit.setAttribute('d', d); hit.setAttribute('class', 'hit');
+        hit.addEventListener('mousedown', () => selectEdge(e.id));
+        svg.appendChild(hit);
+        const vis = document.createElementNS(NS, 'path');
+        vis.setAttribute('d', d); vis.setAttribute('data-edge', e.id);
+        vis.setAttribute('class', 'edge' + (isSel?' sel':'') + (dr.data?' data':''));
+        vis.setAttribute('marker-end', isSel ? 'url(#arrowSel)' : 'url(#arrow)');
+        svg.appendChild(vis);
+        if (dr.label) {
+          const t = document.createElementNS(NS, 'text');
+          t.setAttribute('class', 'edge-lbl'); t.setAttribute('x', (dr.a.x + dr.b.x)/2); t.setAttribute('y', (dr.a.y + dr.b.y)/2 - 5);
+          t.textContent = dr.label; svg.appendChild(t);
         }
-      }
+      });
     });
   }
 
@@ -418,6 +580,17 @@
   function clearSel(){ sel = null; render(); $('panel').innerHTML =
     '<div class="text-muted small">Select a step or a link to edit it. Drag from a node\'s right dot onto another node to connect them.</div>'; }
 
+  function varsUsedHtml(n) {
+    const s = n.spec || {};
+    const names = varsIn([s.url || '', s.body || '', JSON.stringify(s.headers || '')].join(' '));
+    if (!names.length) return '';
+    return `<div class="vuse"><div class="vh">Variables used &mdash; value that will be sent</div>${names.map(v => {
+      const i = varInfo(v);
+      return `<div class="vr"><span class="vk">${esc(v)}</span><span class="vs">${i ? esc(i.scope) : ''}</span>` +
+        (i ? `<span class="vv">${esc(i.value.length > 140 ? i.value.slice(0, 140) + '…' : i.value)}</span>`
+           : `<span class="vv unset">not set yet &mdash; an earlier step must capture it</span>`) + '</div>';
+    }).join('')}</div>`;
+  }
   function inspectNode() {
     const n = G.nodes.find(x => x.id===sel.id); if (!n) return;
     const s = n.spec || {};
@@ -441,6 +614,7 @@
       <div class="d-flex align-items-center mt-1"><button class="btn btn-sm btn-light border" id="nAutofill" title="Fill the JSON body with realistic random values"><i class="bi bi-dice-5 text-success"></i> Autofill random data</button><span id="nAfMsg" class="small ms-2"></span></div>
       </div>
       ${noBody ? '<div class="form-text mt-1">GET / HEAD send no body.</div>' : ''}
+      <div id="nVars">${varsUsedHtml(n)}</div>
       <div class="d-flex gap-2 mt-2">
         <div class="flex-grow-1"><div class="lbl">Expected status</div>
           <input id="nExp" class="form-control form-control-sm" value="${esc(s.expected_status||'')}" placeholder="any 2xx"></div>
@@ -453,11 +627,12 @@
       ${r ? responseBlock(r) + '<div class="form-text mt-1">To send a value onward: drag an arrow from this step to the next, select the arrow, then click a field under “Pick from … response”.</div>' : ''}`;
     const bind = (elid, key, isSpec) => $(elid).addEventListener('input', () => {
       if (isSpec) n.spec[key] = $(elid).value; else n[key] = $(elid).value; markDirty();
-      if (key==='method'||key==='url'||key==='name') render(); });
+      if (key==='method'||key==='url'||key==='name') render();
+      if (key==='url'||key==='body') { const v = $('nVars'); if (v) v.innerHTML = varsUsedHtml(n); } });
     $('nName').addEventListener('input', ()=>{ n.name=$('nName').value; markDirty(); render(); });
     $('nMethod').addEventListener('change', ()=>{ n.spec.method=$('nMethod').value; markDirty(); render(); inspectNode(); });
-    $('nUrl').addEventListener('input', ()=>{ n.spec.url=$('nUrl').value; markDirty(); render(); });
-    $('nBody').addEventListener('input', ()=>{ n.spec.body=$('nBody').value; n.spec.body_mode = n.spec.body_mode==='none'||!n.spec.body_mode?'raw':n.spec.body_mode; markDirty(); });
+    $('nUrl').addEventListener('input', ()=>{ n.spec.url=$('nUrl').value; markDirty(); const v=$('nVars'); if (v) v.innerHTML=varsUsedHtml(n); render(); });
+    $('nBody').addEventListener('input', ()=>{ n.spec.body=$('nBody').value; n.spec.body_mode = n.spec.body_mode==='none'||!n.spec.body_mode?'raw':n.spec.body_mode; markDirty(); const v=$('nVars'); if (v) v.innerHTML=varsUsedHtml(n); render(); });
     { const afBtn = $('nAutofill'); if (afBtn) afBtn.addEventListener('click', ()=> autofillNode(n)); }
     { const tb = $('nTest'); if (tb) tb.addEventListener('click', ()=> testRunNode(n)); }
     $('nExp').addEventListener('input', ()=>{ n.spec.expected_status = $('nExp').value ? +$('nExp').value : null; markDirty(); });
@@ -514,7 +689,7 @@
     try {
       const out = await post(URLS.runNode, {node: n.id});
       if (!out || !out.ok) { alert((out && out.error) || 'Could not run this step.'); delete results[n.id]; }
-      else { results[n.id] = out.result; }
+      else { results[n.id] = out.result; rememberCaptured(out.result); }
     } catch (e) { delete results[n.id]; alert('Could not reach the server.'); }
     render();
     if (sel && sel.type === 'node' && sel.id === n.id) inspectNode();
@@ -647,7 +822,8 @@
   $('addBlank').addEventListener('click', () => addNode('inline', null));
   async function addNode(kind, ref) {
     const wr = wrap.getBoundingClientRect();
-    const x = wrap.scrollLeft + 60 + (G.nodes.length%4)*40, y = wrap.scrollTop + 60 + (G.nodes.length%6)*30;
+    // the new step goes to the right of the rightmost one, so its payload / response boxes never cover another step
+    const x = G.nodes.length ? Math.max(...G.nodes.map(m => m.x + Math.max(300, (m.spec && m.spec._w) || 200))) + 60 : 60, y = 60;
     const out = await post(URLS.add, {kind, ref, x, y});
     if (!out.ok) { alert(out.error||'Could not add.'); return; }
     G.nodes.push(out.node);
@@ -680,7 +856,7 @@
       // then the carried value travels along the arrow to the next step.
       for (const r of order) {
         results[r.node] = {status:'running'}; render(); scrollNodeIntoView(r.node); await sleep(420);
-        results[r.node] = r; render(); await sleep(260);
+        results[r.node] = r; rememberCaptured(r); render(); await sleep(260);
         const caps = r.captured || [];
         for (const e of G.edges.filter(e => e.source === r.node)) {
           const vars = (e.mappings||[]).map(m => m.to_var).filter(Boolean);
@@ -723,7 +899,7 @@
     if (sel.type==='node') removeNode(sel.id); else removeEdge(sel.id); } });
   window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue=''; } });
 
-  fillEnv(); render(); clean();
+  fillEnv(); render(); clean(); loadVarScopes();
 })();
 </script>
 {% endblock %}

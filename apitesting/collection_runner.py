@@ -1,6 +1,9 @@
 """Runs a collection: functional (each request once per iteration, pass/fail on the status code) or performance
 (virtual users for a duration / number of iterations). Runs execute in a background thread inside the server;
 the in-process scheduler starts runs that are due."""
+import csv
+import io
+import json
 import logging
 import random
 import threading
@@ -16,7 +19,9 @@ from .models import ApiGlobals, CollectionRequest, CollectionRun, RunResult, Run
 log = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 100
+MAX_DATA_ROWS = 500         # rows of a data-driven run (one iteration per row)
 MAX_DELAY_MS = 60000
+MAX_RETRIES = 5
 MAX_VUS = 100
 MAX_DURATION = 1800
 MAX_VU_ITERATIONS = 10000
@@ -70,6 +75,41 @@ def _ordered_items(collection, ids):
 
 def _stop_requested(run):
     return CollectionRun.objects.filter(pk=run.pk, stop_requested=True).exists()
+
+
+# ---------- data-driven runs ----------
+
+def parse_data_rows(text):
+    """Rows for a data-driven run: a JSON array of objects, or CSV with a header line.
+    Returns (rows, error); each row is a {column: value} dict of strings/values."""
+    text = (text or '').strip().lstrip('﻿')
+    if not text:
+        return [], ''
+    rows = []
+    if text[0] in '[{':
+        try:
+            data = json.loads(text)
+        except ValueError as e:
+            return [], f'The data is not valid JSON: {e}'
+        data = [data] if isinstance(data, dict) else data
+        if not isinstance(data, list) or not all(isinstance(r, dict) for r in data):
+            return [], 'JSON data must be an array of objects, e.g. [{"id": 1}, {"id": 2}].'
+        rows = [{str(k): v for k, v in r.items()} for r in data]
+    else:
+        try:
+            dialect = csv.Sniffer().sniff(text.splitlines()[0], delimiters=',;\t|') if ',' not in text.splitlines()[0] else csv.excel
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+        if not reader.fieldnames or any(not (f or '').strip() for f in reader.fieldnames):
+            return [], 'The first CSV line must be the column names (they become the {{variables}}).'
+        for r in reader:
+            rows.append({(k or '').strip(): ('' if v is None else v) for k, v in r.items() if k is not None})
+    if not rows:
+        return [], 'The data has no rows.'
+    if len(rows) > MAX_DATA_ROWS:
+        return [], f'At most {MAX_DATA_ROWS} data rows are allowed; this has {len(rows)}.'
+    return rows, ''
 
 
 # ---------- functional ----------
@@ -126,7 +166,8 @@ def run_functional(run, sender=None):
     send = sender or auth.sender()                     # one cookie jar per login + automatic Keycloak re-login
     cfg = run.config
     items = _ordered_items(run.collection, cfg.get('items', []))
-    iterations = cfg.get('iterations', 1)
+    data = cfg.get('data') or []
+    iterations = len(data) if data else cfg.get('iterations', 1)     # data-driven: one iteration per row
     summary = {'planned': len(items) * iterations, 'done': 0, 'passed': 0, 'failed': 0, 'total_ms': 0,
                'iterations': iterations, 'current_iteration': 0, 'tests_total': 0, 'tests_passed': 0}
     variables = RunVariables(run.collection)
@@ -142,17 +183,31 @@ def run_functional(run, sender=None):
 
 
 def _functional_loop(run, items, iterations, cfg, summary, variables, engine, send):
+    data = cfg.get('data') or []
+    data_keys = set()
     for iteration in range(1, iterations + 1):
         summary['current_iteration'] = iteration
+        if data:       # this row's columns become local variables ({{column}}) for the whole iteration
+            for k in data_keys:
+                variables.shared.local.pop(k, None)
+            row = data[iteration - 1]
+            data_keys = set(row)
+            variables.shared.local.update(row)
         for position, item in enumerate(items, 1):
             if _stop_requested(run):
                 return True
             expected = expected_status(item)
             scopes = variables.scopes_for(item.environment)
-            out = scripting.execute(_spec(item), item.environment, scopes, engine, run.collection,
-                                    send=lambda s, e, files=None: send(s, e),
-                                    info={'requestName': item.name, 'requestId': str(item.pk),
-                                          'iteration': iteration - 1, 'iterationCount': iterations})
+            for attempt in range(1 + cfg.get('retries', 0)):       # a failed request is re-sent up to `retries` times
+                out = scripting.execute(_spec(item), item.environment, scopes, engine, run.collection,
+                                        send=lambda s, e, files=None: send(s, e),
+                                        info={'requestName': item.name, 'requestId': str(item.pk),
+                                              'iteration': iteration - 1, 'iterationCount': iterations})
+                if is_pass(out['result'], expected) and not [t for t in out['tests'] if not t.get('passed')]                         and not out['errors']:
+                    break
+                if attempt < cfg.get('retries', 0) and cfg.get('retry_delay_ms'):
+                    time.sleep(cfg['retry_delay_ms'] / 1000)
+            out.setdefault('retried', attempt)
             variables.keep(scopes, item.environment)
             result, tests, errors = out['result'], out['tests'], out['errors']
             learn.observe(out.get('request') or _spec(item), result)   # the brain learns from every run, not just a manual send
@@ -258,7 +313,21 @@ class Stats:
                        'avg': round(self.buckets[s][2] / self.buckets[s][0]) if s in self.buckets else None}
                       for s in range(last + 1)]
             return {'totals': self._metrics(count, errors, total, all_samples, lo, hi, elapsed), 'apis': apis,
-                    'series': series, 'codes': codes, 'elapsed': round(elapsed, 1), 'active_vus': self.active_vus}
+                    'series': series, 'codes': codes, 'elapsed': round(elapsed, 1), 'active_vus': self.active_vus,
+                    'degradation': _degradation(series)}
+
+
+def _degradation(series):
+    """Performance degradation: average response time of the first third of the run against the last third."""
+    pts = [x for x in series if x['avg'] is not None]
+    if len(pts) < 6:
+        return None
+    n = len(pts) // 3
+    first = sum(x['avg'] * x['count'] for x in pts[:n]) / max(1, sum(x['count'] for x in pts[:n]))
+    last = sum(x['avg'] * x['count'] for x in pts[-n:]) / max(1, sum(x['count'] for x in pts[-n:]))
+    pct = round((last - first) * 100 / first, 1) if first else None
+    return {'first_avg': round(first), 'last_avg': round(last), 'change_pct': pct,
+            'degraded': bool(pct is not None and pct > 25)}
 
 
 def _steps(items, modes):
@@ -297,9 +366,23 @@ def run_performance(run, sender=None, tick=1.0):
         result = send(spec, env)
         stats.record(item.pk, result.get('ms') or 0, is_pass(result, expected), result.get('status'))
 
+    profile = cfg.get('profile', 'load') if by_duration else 'load'
+    base_vus = max(1, vus // 5)
+
     def virtual_user(index):
-        if ramp_up and stop.wait(ramp_up * index / vus):
-            return
+        if profile == 'spike' and index >= base_vus:
+            # spike: a fifth of the users run steadily; the rest join suddenly for the middle of the run
+            if stop.wait(duration * 0.4):
+                return
+            spike_end = stats.started + duration * 0.6
+        else:
+            spike_end = None
+            if profile == 'stress':
+                ramp = duration * 0.8          # stress: users keep arriving until almost the end
+                if stop.wait(ramp * index / vus):
+                    return
+            elif ramp_up and stop.wait(ramp_up * index / vus):
+                return
         with stats.lock:
             stats.active_vus += 1
         pool = ThreadPoolExecutor(max_workers=max(len(g) for g in steps)) if any(len(g) > 1 for g in steps) else None
@@ -307,6 +390,8 @@ def run_performance(run, sender=None, tick=1.0):
             done = 0
             while not stop.is_set():
                 if deadline and time.monotonic() >= deadline:
+                    break
+                if spike_end and time.monotonic() >= spike_end:
                     break
                 if not deadline and done >= vu_iterations:
                     break

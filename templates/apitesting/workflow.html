@@ -505,8 +505,10 @@
     return portCenter(e.target, 'in');
   }
   function drawEdges() {
-    [...svg.querySelectorAll('path.edge, path.hit, text.edge-lbl')].forEach(p => p.remove());
     const NS = 'http://www.w3.org/2000/svg';
+    // Perf: do all layout READS first (anchors), then all DOM WRITES, so the
+    // browser doesn't re-flow the page for every edge while dragging.
+    const frag = document.createDocumentFragment();
     G.edges.forEach(e => {
       const isSel = sel && sel.type==='edge' && sel.id===e.id;
       const maps = (e.mappings||[]).filter(m => m.to_var);
@@ -518,20 +520,25 @@
         const hit = document.createElementNS(NS, 'path');
         hit.setAttribute('d', d); hit.setAttribute('class', 'hit');
         hit.addEventListener('mousedown', () => selectEdge(e.id));
-        svg.appendChild(hit);
+        frag.appendChild(hit);
         const vis = document.createElementNS(NS, 'path');
         vis.setAttribute('d', d); vis.setAttribute('data-edge', e.id);
         vis.setAttribute('class', 'edge' + (isSel?' sel':'') + (dr.data?' data':''));
         vis.setAttribute('marker-end', isSel ? 'url(#arrowSel)' : 'url(#arrow)');
-        svg.appendChild(vis);
+        frag.appendChild(vis);
         if (dr.label) {
           const t = document.createElementNS(NS, 'text');
           t.setAttribute('class', 'edge-lbl'); t.setAttribute('x', (dr.a.x + dr.b.x)/2); t.setAttribute('y', (dr.a.y + dr.b.y)/2 - 5);
-          t.textContent = dr.label; svg.appendChild(t);
+          t.textContent = dr.label; frag.appendChild(t);
         }
       });
     });
+    [...svg.querySelectorAll('path.edge, path.hit, text.edge-lbl')].forEach(p => p.remove());
+    svg.appendChild(frag);
   }
+  // coalesce redraws to one per animation frame
+  let _edgeRaf = 0;
+  function drawEdgesSoon(){ if (_edgeRaf) return; _edgeRaf = requestAnimationFrame(() => { _edgeRaf = 0; drawEdges(); }); }
 
   // ---------- resize a node ----------
   function startResize(e, n, d) {
@@ -539,7 +546,7 @@
     const sx = e.clientX, sw = d.offsetWidth;
     function move(ev){ const w = Math.max(160, Math.min(620, sw + (ev.clientX - sx)));
       n.spec = n.spec || {}; n.spec._w = Math.round(w);
-      d.style.width = n.spec._w + 'px'; d.classList.add('wide'); drawEdges(); }
+      d.style.width = n.spec._w + 'px'; d.classList.add('wide'); drawEdgesSoon(); }
     function up(){ document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); markDirty(); }
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
   }
@@ -549,7 +556,7 @@
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY, ox = n.x, oy = n.y;
     function move(ev){ n.x = Math.max(0, ox + (ev.clientX-sx)); n.y = Math.max(0, oy + (ev.clientY-sy));
-      d.style.left = n.x+'px'; d.style.top = n.y+'px'; drawEdges(); }
+      d.style.left = n.x+'px'; d.style.top = n.y+'px'; drawEdgesSoon(); }
     function up(){ document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); markDirty(); }
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
   }

@@ -6,11 +6,12 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from . import collection_runner as engine
+from . import collection_runner as engine, defects
 from .mail import MailError, send_mail, split_emails
-from .models import ApiCollection, CollectionRun, MailSettings, RunSchedule
+from .models import ApiCollection, CollectionRun, IntegrationSettings, MailSettings, RunResult, RunSchedule
 from .schedules import WEEKDAYS, CronError, describe, next_run, parse_cron
 
 
@@ -40,11 +41,20 @@ def functional_config(request, collection, errors):
         if code != item.expected_status:
             item.expected_status = code
             item.save(update_fields=['expected_status'])
-    return {'items': [i.pk for i in items],
-            'iterations': _int(request.POST.get('iterations'), 1, 1, engine.MAX_ITERATIONS),
-            'delay_ms': _int(request.POST.get('delay_ms'), 0, 0, engine.MAX_DELAY_MS),
-            'stop_on_fail': request.POST.get('stop_on_fail') == 'on',
-            'keep_variables': request.POST.get('keep_variables') == 'on'}
+    cfg = {'items': [i.pk for i in items],
+           'iterations': _int(request.POST.get('iterations'), 1, 1, engine.MAX_ITERATIONS),
+           'delay_ms': _int(request.POST.get('delay_ms'), 0, 0, engine.MAX_DELAY_MS),
+           'retries': _int(request.POST.get('retries'), 0, 0, engine.MAX_RETRIES),
+           'retry_delay_ms': _int(request.POST.get('retry_delay_ms'), 0, 0, engine.MAX_DELAY_MS),
+           'stop_on_fail': request.POST.get('stop_on_fail') == 'on',
+           'keep_variables': request.POST.get('keep_variables') == 'on'}
+    rows, problem = engine.parse_data_rows(request.POST.get('data_rows', ''))
+    if problem:
+        errors.append(problem)
+    elif rows:                  # data-driven: one iteration per row
+        cfg['data'] = rows
+        cfg['iterations'] = len(rows)
+    return cfg
 
 
 def performance_config(request, collection, errors):
@@ -57,6 +67,7 @@ def performance_config(request, collection, errors):
     return {'items': [{'id': i.pk, 'mode': 'parallel' if request.POST.get(f'mode_{i.pk}') == 'parallel' else 'sequence'}
                       for i in items],
             'vus': _int(request.POST.get('vus'), 1, 1, engine.MAX_VUS),
+            'profile': request.POST.get('profile') if request.POST.get('profile') in ('load', 'stress', 'spike', 'soak') else 'load',
             'stop_by': 'iterations' if request.POST.get('stop_by') == 'iterations' else 'duration',
             'duration': duration,
             'iterations': _int(request.POST.get('vu_iterations'), 1, 1, engine.MAX_VU_ITERATIONS),
@@ -263,3 +274,80 @@ def mail_settings(request, smtp=None):
         return redirect('api_mail_settings')
     return render(request, 'apitesting/mail_settings.html', {'settings': settings,
                                                             'next': request.GET.get('next', '')})
+
+
+# ---------- defect trackers + CI/CD trigger ----------
+
+@login_required
+def integrations(request):
+    """ClickUp / Jira defect settings and the CI/CD trigger token."""
+    cfg = IntegrationSettings.load()
+    if request.method == 'POST':
+        for field, size in (('clickup_list_id', 64), ('jira_url', 255), ('jira_email', 255),
+                            ('jira_project_key', 32), ('jira_issue_type', 64)):
+            setattr(cfg, field, request.POST.get(field, '').strip()[:size])
+        cfg.jira_issue_type = cfg.jira_issue_type or 'Bug'
+        for field in ('clickup_token', 'jira_token'):         # blank keeps the saved secret
+            if request.POST.get(field):
+                setattr(cfg, field, request.POST[field].strip()[:255])
+            if request.POST.get('clear_' + field) == 'on':
+                setattr(cfg, field, '')
+        if request.POST.get('new_ci_token') == 'on':
+            import secrets
+            cfg.ci_token = secrets.token_urlsafe(32)
+        if request.POST.get('clear_ci_token') == 'on':
+            cfg.ci_token = ''
+        cfg.save()
+        messages.success(request, 'Integration settings saved.')
+        return redirect('api_integrations')
+    return render(request, 'apitesting/integrations.html', {
+        'cfg': cfg, 'collections': ApiCollection.objects.all(),
+        'base': request.build_absolute_uri('/api-testing/').rstrip('/')})
+
+
+@login_required
+@require_POST
+def result_defect(request, result_id):
+    """Create a ClickUp / Jira defect from one failed result of a collection run."""
+    result = get_object_or_404(RunResult.objects.select_related('run', 'run__collection'), pk=result_id)
+    target = request.POST.get('target', '')
+    cfg = IntegrationSettings.load()
+    title = f'[API] {result.method} {result.name or result.url} failed'             + (f' ({result.status_code})' if result.status_code else '')
+    ok, info = defects.create_defect(cfg, target, title, defects.describe_result(result, result.run))
+    return JsonResponse({'ok': ok, 'link' if ok else 'message': info}, status=200 if ok else 400)
+
+
+def _ci_authorised(request):
+    import hmac
+    cfg = IntegrationSettings.load()
+    given = request.headers.get('X-CI-Token') or request.headers.get('Authorization', '').removeprefix('Bearer ').strip()
+    return bool(cfg.ci_token) and hmac.compare_digest(given.encode(), cfg.ci_token.encode())
+
+
+@csrf_exempt
+def ci_run(request, collection_id):
+    """CI/CD: start a functional run of every request in a collection. Header X-CI-Token: <token>."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if not _ci_authorised(request):
+        return JsonResponse({'error': 'invalid or missing CI token'}, status=401)
+    collection = get_object_or_404(ApiCollection, pk=collection_id)
+    items = [r.pk for r in collection.ordered_requests()]
+    if not items:
+        return JsonResponse({'error': 'the collection has no requests'}, status=400)
+    run = CollectionRun.objects.create(collection=collection, kind='functional', trigger='manual',
+                                       config={'items': items, 'iterations': 1, 'delay_ms': 0, 'retries': 0,
+                                               'stop_on_fail': False, 'keep_variables': True})
+    engine.start_run(run)
+    return JsonResponse({'run_id': run.pk, 'status': run.status,
+                         'status_url': request.build_absolute_uri(reverse('api_ci_status', args=[run.pk]))}, status=202)
+
+
+@csrf_exempt
+def ci_status(request, run_id):
+    """CI/CD: poll a run. `finished` is true when done; `passed` is true only when every request passed."""
+    if not _ci_authorised(request):
+        return JsonResponse({'error': 'invalid or missing CI token'}, status=401)
+    run = get_object_or_404(CollectionRun, pk=run_id)
+    return JsonResponse({'run_id': run.pk, 'status': run.status, 'finished': not run.is_active,
+                         'passed': run.status == 'passed', 'summary': run.summary})

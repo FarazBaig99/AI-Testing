@@ -14,6 +14,46 @@ const readline = require('readline');
 const SCRIPT_TIMEOUT_MS = 5000;
 const MAX_CONSOLE = 200;
 
+// Small JSON-Schema checker (type, required, properties, additionalProperties, items, enum, const,
+// min/max, minLength/maxLength, pattern, minItems/maxItems, format email/uuid/date-time). Returns a list of problems.
+function schemaErrors(data, schema, at) {
+  const errs = [], here = at || '$';
+  if (schema === true || schema === undefined || schema === null || typeof schema !== 'object') return errs;
+  const typeOf = v => v === null ? 'null' : Array.isArray(v) ? 'array' : Number.isInteger(v) ? 'integer' : typeof v;
+  const actual = typeOf(data);
+  if (schema.type !== undefined) {
+    const want = [].concat(schema.type);
+    const ok = want.some(t => t === actual || (t === 'number' && actual === 'integer'));
+    if (!ok) { errs.push(`${here}: expected ${want.join('|')} but got ${actual}`); return errs; }
+  }
+  if (schema.enum && !schema.enum.some(v => JSON.stringify(v) === JSON.stringify(data))) errs.push(`${here}: ${JSON.stringify(data)} is not one of ${JSON.stringify(schema.enum)}`);
+  if ('const' in schema && JSON.stringify(schema.const) !== JSON.stringify(data)) errs.push(`${here}: expected ${JSON.stringify(schema.const)}`);
+  if (typeof data === 'number') {
+    if (schema.minimum !== undefined && data < schema.minimum) errs.push(`${here}: ${data} is below minimum ${schema.minimum}`);
+    if (schema.maximum !== undefined && data > schema.maximum) errs.push(`${here}: ${data} is above maximum ${schema.maximum}`);
+  }
+  if (typeof data === 'string') {
+    if (schema.minLength !== undefined && data.length < schema.minLength) errs.push(`${here}: shorter than ${schema.minLength}`);
+    if (schema.maxLength !== undefined && data.length > schema.maxLength) errs.push(`${here}: longer than ${schema.maxLength}`);
+    if (schema.pattern && !new RegExp(schema.pattern).test(data)) errs.push(`${here}: does not match ${schema.pattern}`);
+    const fmts = {email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/, uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+                  'date-time': /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/, date: /^\d{4}-\d{2}-\d{2}$/};
+    if (schema.format && fmts[schema.format] && !fmts[schema.format].test(data)) errs.push(`${here}: not a valid ${schema.format}`);
+  }
+  if (Array.isArray(data)) {
+    if (schema.minItems !== undefined && data.length < schema.minItems) errs.push(`${here}: fewer than ${schema.minItems} items`);
+    if (schema.maxItems !== undefined && data.length > schema.maxItems) errs.push(`${here}: more than ${schema.maxItems} items`);
+    if (schema.items) data.slice(0, 200).forEach((v, i) => errs.push(...schemaErrors(v, schema.items, `${here}[${i}]`)));
+  }
+  if (actual === 'object') {
+    (schema.required || []).forEach(k => { if (!(k in data)) errs.push(`${here}: missing required "${k}"`); });
+    const props = schema.properties || {};
+    Object.keys(props).forEach(k => { if (k in data) errs.push(...schemaErrors(data[k], props[k], `${here}.${k}`)); });
+    if (schema.additionalProperties === false) Object.keys(data).forEach(k => { if (!(k in props)) errs.push(`${here}: unexpected field "${k}"`); });
+  }
+  return errs;
+}
+
 function fmt(v) {
   if (typeof v === 'string') return v;
   if (v === undefined) return 'undefined';
@@ -314,6 +354,12 @@ function runEvent(msg) {
           if (isObj(path)) { check(deepEqual(data, path), `expected response JSON to equal ${fmt(path)}`, 'expected response JSON to differ'); return have; }
           const r = getPath(data, path);
           check(r.found && (value === undefined || deepEqual(r.value, value)), `expected response JSON to have '${path}'${value !== undefined ? ` = ${fmt(value)}` : ''}${r.found ? ` but got ${fmt(r.value)}` : ''}`, `expected response JSON to not have '${path}'`);
+          return have;
+        },
+        jsonSchema(schema) {
+          let data; try { data = json(); } catch (e) { check(false, 'expected response body to be JSON', ''); }
+          const errs = schemaErrors(data, schema);
+          check(errs.length === 0, `response does not match the schema: ${errs.slice(0, 5).join('; ')}${errs.length > 5 ? ` (+${errs.length - 5} more)` : ''}`, 'expected response to not match the schema');
           return have;
         },
         responseTime: undefined,

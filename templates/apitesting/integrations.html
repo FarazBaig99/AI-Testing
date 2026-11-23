@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Integrations{% endblock %}
+{% block content %}
+{% include "portfolio/_theme.html" %}
+<div class="pf">
+  <div class="pf-head mb-3 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-auto">
+      <div class="pf-eyebrow">API Testing</div>
+      <h4 class="fw-bold mb-0"><i class="bi bi-plug text-success"></i> Integrations</h4>
+      <small class="text-muted">Create ClickUp / Jira defects from failed results, and start runs from a CI/CD pipeline.</small>
+    </div>
+    <a href="javascript:history.back()" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Back</a>
+  </div>
+  <form method="post" class="row g-3" autocomplete="off">{% csrf_token %}
+    <div class="col-lg-6"><div class="panel">
+      <h6>ClickUp {% if cfg.clickup_ready %}<span class="pill-pf">Ready</span>{% else %}<span class="badge text-bg-warning">Not configured</span>{% endif %}</h6>
+      <label class="form-label small fw-semibold">API token</label>
+      <input type="password" name="clickup_token" class="form-control form-control-sm" placeholder="{% if cfg.clickup_token %}•••••••• (saved, leave blank to keep){% else %}pk_...{% endif %}" autocomplete="new-password">
+      <label class="form-check small mt-1"><input type="checkbox" name="clear_clickup_token" class="form-check-input">Remove the saved token</label>
+      <label class="form-label small fw-semibold mt-2">List id (tasks are created in this list)</label>
+      <input name="clickup_list_id" value="{{ cfg.clickup_list_id }}" class="form-control form-control-sm" placeholder="901234567">
+    </div></div>
+    <div class="col-lg-6"><div class="panel">
+      <h6>Jira {% if cfg.jira_ready %}<span class="pill-pf">Ready</span>{% else %}<span class="badge text-bg-warning">Not configured</span>{% endif %}</h6>
+      <div class="row g-2">
+        <div class="col-12"><label class="form-label small fw-semibold">Jira URL</label>
+          <input name="jira_url" value="{{ cfg.jira_url }}" class="form-control form-control-sm" placeholder="https://yourcompany.atlassian.net"></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">Account e-mail</label>
+          <input name="jira_email" value="{{ cfg.jira_email }}" class="form-control form-control-sm"></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">API token</label>
+          <input type="password" name="jira_token" class="form-control form-control-sm" placeholder="{% if cfg.jira_token %}•••••••• (saved){% endif %}" autocomplete="new-password">
+          <label class="form-check small mt-1"><input type="checkbox" name="clear_jira_token" class="form-check-input">Remove saved token</label></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">Project key</label>
+          <input name="jira_project_key" value="{{ cfg.jira_project_key }}" class="form-control form-control-sm" placeholder="QA"></div>
+        <div class="col-md-6"><label class="form-label small fw-semibold">Issue type</label>
+          <input name="jira_issue_type" value="{{ cfg.jira_issue_type }}" class="form-control form-control-sm"></div>
+      </div>
+    </div></div>
+    <div class="col-12"><div class="panel">
+      <h6><i class="bi bi-diagram-3 text-success"></i> CI/CD trigger {% if cfg.ci_token %}<span class="pill-pf">Enabled</span>{% else %}<span class="badge text-bg-secondary">Off</span>{% endif %}</h6>
+      <p class="small text-muted mb-2">Your pipeline calls BaigNova with the token below. Keep it secret; anyone with it can start runs.</p>
+      {% if cfg.ci_token %}
+        <label class="form-label small fw-semibold">Token</label>
+        <input readonly value="{{ cfg.ci_token }}" class="form-control form-control-sm font-monospace" onclick="this.select()">
+        <div class="small mt-2 fw-semibold">Start a run (returns <code>run_id</code> and <code>status_url</code>):</div>
+        <pre class="small mb-2">curl -X POST -H "X-CI-Token: {{ cfg.ci_token }}" {{ base }}/ci/run/&lt;collection id&gt;/</pre>
+        <div class="small fw-semibold">Check the result (<code>finished</code> and <code>passed</code>):</div>
+        <pre class="small mb-2">curl -H "X-CI-Token: {{ cfg.ci_token }}" {{ base }}/ci/status/&lt;run id&gt;/</pre>
+        <div class="small text-muted mb-2">Collection ids: {% for c in collections %}<code>{{ c.pk }}</code> = {{ c.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+      {% endif %}
+      <label class="form-check small"><input type="checkbox" name="new_ci_token" class="form-check-input">{% if cfg.ci_token %}Generate a new token (the old one stops working){% else %}Generate a token and enable CI/CD{% endif %}</label>
+      {% if cfg.ci_token %}<label class="form-check small"><input type="checkbox" name="clear_ci_token" class="form-check-input">Turn CI/CD off</label>{% endif %}
+    </div></div>
+    <div class="col-12"><button class="btn btn-pf"><i class="bi bi-check2"></i> Save</button></div>
+  </form>
+</div>
+{% endblock %}

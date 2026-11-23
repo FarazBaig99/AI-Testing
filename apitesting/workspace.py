@@ -1473,6 +1473,16 @@ def api_testgen(request):
     scenarios = []
     if case:
         spec = case_spec(case)
+        if 'contract' in groups:      # the last successful response of this API becomes the contract
+            import json as _json
+            for rr in case.run_history.filter(ok=True, status_code__gte=200, status_code__lt=300)[:5]:
+                try:
+                    sample = _json.loads((rr.response or {}).get('body') or '')
+                except ValueError:
+                    continue
+                if isinstance(sample, (dict, list)):
+                    spec['sample_response'] = sample
+                    break
         scenarios = testgen.generate(spec, groups=groups, neg_status=neg_status, auth_status=auth_status)
 
     if request.method == 'POST' and request.POST.get('action') == 'generate':

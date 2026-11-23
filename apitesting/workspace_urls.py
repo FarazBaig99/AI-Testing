@@ -34,6 +34,10 @@ urlpatterns = [
     path('runs/<int:run_id>/status/', runs.run_status, name='api_run_status'),
     path('runs/<int:run_id>/stop/', runs.run_stop, name='api_run_stop'),
     path('mail-settings/', runs.mail_settings, name='api_mail_settings'),
+    path('integrations/', runs.integrations, name='api_integrations'),
+    path('results/<int:result_id>/defect/', runs.result_defect, name='api_result_defect'),
+    path('ci/run/<int:collection_id>/', runs.ci_run, name='api_ci_run'),
+    path('ci/status/<int:run_id>/', runs.ci_status, name='api_ci_status'),
     # workflows (visual API chaining)
     path('workflows/', workflows.workflow_list, name='api_workflow_list'),
     path('workflows/new/', workflows.workflow_create, name='api_workflow_create'),

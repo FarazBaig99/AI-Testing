@@ -21,6 +21,7 @@
     </div>
     <a href="{% url 'api_workspace' %}?open={{ collection.pk }}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Back to collection</a>
     <a href="{% url 'api_mail_settings' %}" class="btn btn-sm btn-light border"><i class="bi bi-envelope-gear"></i> Mail Settings</a>
+    <a href="{% url 'api_integrations' %}" class="btn btn-sm btn-light border" title="ClickUp / Jira defects and CI/CD trigger"><i class="bi bi-plug"></i> Integrations</a>
   </div>
 
   <div class="ws-tabs mb-3">
@@ -52,11 +53,24 @@
     <div class="row g-2 mb-3">
       <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Iterations</label>
         <input type="number" name="iterations" min="1" max="{{ limits.MAX_ITERATIONS }}" value="1" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Retries on failure</label>
+        <input type="number" name="retries" min="0" max="{{ limits.MAX_RETRIES }}" value="0" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Wait before retry (ms)</label>
+        <input type="number" name="retry_delay_ms" min="0" max="{{ limits.MAX_DELAY_MS }}" value="0" class="form-control form-control-sm"></div>
       <div class="col-6 col-md-3"><label class="form-label small fw-semibold">Delay between requests (ms)</label>
         <input type="number" name="delay_ms" min="0" max="{{ limits.MAX_DELAY_MS }}" value="0" class="form-control form-control-sm"></div>
       <div class="col-md-6 d-flex flex-column justify-content-end">
         <label class="form-check small"><input type="checkbox" name="stop_on_fail" class="form-check-input">Stop the run when a request fails</label>
         <label class="form-check small"><input type="checkbox" name="keep_variables" class="form-check-input" checked>Keep variable values set by scripts after the run</label></div>
+      <div class="col-12">
+        <label class="form-label small fw-semibold"><i class="bi bi-table text-success"></i> Data-driven run <span class="text-muted fw-normal">(optional)</span></label>
+        <textarea name="data_rows" id="dataRows" rows="3" class="form-control form-control-sm font-monospace" placeholder="Paste CSV (first line = column names) or a JSON array, e.g.&#10;name,city&#10;Ali,Lahore&#10;Sara,Karachi"></textarea>
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <input type="file" id="dataFile" accept=".csv,.json,.txt" class="form-control form-control-sm" style="max-width:280px">
+          <span class="small text-muted">Each row is one iteration; its columns are available as <code>{% templatetag openvariable %}column{% templatetag closevariable %}</code>. Overrides "Iterations".</span>
+        </div>
+        <script>document.getElementById('dataFile').addEventListener('change', function(){ var f=this.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ document.getElementById('dataRows').value=r.result; }; r.readAsText(f); });</script>
+      </div>
       <div class="col-12 small text-muted"><i class="bi bi-code-slash"></i> Pre-request and post-response scripts of the collection and of each request run here. A request also fails when one of its tests fails.</div>
     </div>
     {% include "apitesting/_email_fields.html" with when='always' %}
@@ -89,6 +103,9 @@
     <div class="row g-2 mb-3">
       <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Virtual users</label>
         <input type="number" name="vus" min="1" max="{{ limits.MAX_VUS }}" value="10" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Test type</label>
+        <select name="profile" class="form-select form-select-sm" title="Load: steady. Stress: users keep arriving until the system struggles. Spike: a sudden jump in the middle (duration mode). Soak: steady for a long time.">
+          <option value="load">Load</option><option value="stress">Stress (ramping)</option><option value="spike">Spike</option><option value="soak">Soak (endurance)</option></select></div>
       <div class="col-6 col-md-2"><label class="form-label small fw-semibold">Run for</label>
         <select name="stop_by" class="form-select form-select-sm" id="stopBy"><option value="duration">Duration</option><option value="iterations">Iterations</option></select></div>
       <div class="col-6 col-md-2" data-stop="duration"><label class="form-label small fw-semibold">Duration (sec)</label>

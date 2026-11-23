@@ -313,6 +313,31 @@ class MailSettings(models.Model):
         return '•' * 8 if self.password else ''
 
 
+class IntegrationSettings(models.Model):
+    """Defect trackers (ClickUp / Jira) and the CI/CD trigger token (one row)."""
+    clickup_token = models.CharField('ClickUp API token', max_length=255, blank=True)
+    clickup_list_id = models.CharField('ClickUp list id', max_length=64, blank=True)
+    jira_url = models.CharField('Jira URL', max_length=255, blank=True)
+    jira_email = models.CharField('Jira e-mail', max_length=255, blank=True)
+    jira_token = models.CharField('Jira API token', max_length=255, blank=True)
+    jira_project_key = models.CharField('Jira project key', max_length=32, blank=True)
+    jira_issue_type = models.CharField('Jira issue type', max_length=64, default='Bug')
+    ci_token = models.CharField('CI/CD trigger token', max_length=128, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def load(cls):
+        return cls.objects.order_by('pk').first() or cls()
+
+    @property
+    def clickup_ready(self):
+        return bool(self.clickup_token and self.clickup_list_id)
+
+    @property
+    def jira_ready(self):
+        return bool(self.jira_url and self.jira_email and self.jira_token and self.jira_project_key)
+
+
 class RunSchedule(models.Model):
     FREQUENCIES = [('interval', 'Every N minutes'), ('hourly', 'Hourly'), ('daily', 'Daily'),
                    ('weekly', 'Weekly'), ('cron', 'Cron expression')]

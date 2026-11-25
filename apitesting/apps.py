@@ -8,6 +8,8 @@ class ApitestingConfig(AppConfig):
         # collection schedules run inside the web server process (not in tests or other manage.py commands)
         import os
         import sys
+        # (in RUN_EXECUTION=worker mode the `run_worker` process owns the scheduler instead)
         if 'runserver' in sys.argv and (os.environ.get('RUN_MAIN') == 'true' or '--noreload' in sys.argv):
-            from .collection_runner import start_scheduler
-            start_scheduler()
+            from .collection_runner import start_scheduler, worker_mode
+            if not worker_mode():
+                start_scheduler()

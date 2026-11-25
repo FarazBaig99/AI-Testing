@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import logging
+import os
 import random
 import threading
 import time
@@ -489,8 +490,49 @@ def _background(run_id):
         connection.close()
 
 
+def worker_mode():
+    """True when runs are executed by a separate `manage.py run_worker` process instead of web-server threads."""
+    return os.environ.get('RUN_EXECUTION', 'thread').lower() == 'worker'
+
+
 def start_run(run):
+    if worker_mode():
+        return              # the run stays 'queued'; a run_worker process claims it
     threading.Thread(target=_background, args=(run.pk,), daemon=True, name=f'collection-run-{run.pk}').start()
+
+
+def claim_next():
+    """Atomically take the oldest queued run (safe with several workers). Returns the run or None."""
+    for pk in CollectionRun.objects.filter(status='queued').order_by('created_at').values_list('pk', flat=True)[:10]:
+        if CollectionRun.objects.filter(pk=pk, status='queued').update(status='running', started_at=timezone.now()):
+            return CollectionRun.objects.select_related('collection').get(pk=pk)
+    return None
+
+
+def worker_loop(poll=2.0, once=False, stop=None):
+    """Execute queued runs and fire due schedules. This is what `manage.py run_worker` runs."""
+    os.environ['RUN_EXECUTION'] = 'worker'
+    # runs a crashed worker left half-done can never finish (queued ones are still fine)
+    CollectionRun.objects.filter(status='running').update(
+        status='error', error='The worker stopped during this run.', finished_at=timezone.now())
+    last_tick = 0.0
+    while not (stop and stop.is_set()):
+        close_old_connections()
+        try:
+            if time.monotonic() - last_tick >= 30:
+                last_tick = time.monotonic()
+                tick()
+            run = claim_next()
+            if run:
+                execute(run)
+                continue                 # look for more work straight away
+        except Exception:
+            log.exception('Worker loop failed')
+        finally:
+            connection.close()
+        if once:
+            return
+        time.sleep(poll)
 
 
 # ---------- scheduler ----------

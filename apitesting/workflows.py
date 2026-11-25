@@ -93,17 +93,30 @@ def _response_json(result):
         return None
 
 
-def _apply_mappings(mappings, result, scopes, captured):
+def _request_json(request, scopes):
+    """The JSON body this step sent (its {{variables}} filled in), or None."""
+    body = (request or {}).get('body')
+    if not isinstance(body, str) or not body.strip():
+        return None
+    try:
+        return json.loads(scopes.substitute(body))
+    except ValueError:
+        return None
+
+
+def _apply_mappings(mappings, result, scopes, captured, request=None):
     """After a source node runs, read each mapping's path from its response and set the variable so later
     nodes resolve {{var}}. Returns notes for the run report."""
     notes = []
     data = _response_json(result)
+    req_data = _request_json(request, scopes)
     for m in mappings or []:
         var = (m.get('to_var') or '').strip()
         if not var:
             continue
         scope = m.get('scope') if m.get('scope') in SCOPES else 'collection'
-        value = dig(data, m.get('from_path')) if data is not None else None
+        source = req_data if m.get('from') == 'request' else data     # a value from the request payload or the response
+        value = dig(source, m.get('from_path')) if source is not None else None
         text = value if isinstance(value, str) else ('' if value is None else json.dumps(value))
         getattr(scopes, scope)[var] = text        # later nodes resolve {{var}} from this scope
         captured[var] = text
@@ -203,7 +216,7 @@ def run_workflow(workflow, user=None, sender=None):
             # hand values forward along this node's arrows
             maps = []
             for e in out_edges.get(nid, []):
-                maps += _apply_mappings(e.mappings, result, scopes, captured)
+                maps += _apply_mappings(e.mappings, result, scopes, captured, out.get('request'))
             if maps:
                 row['captured'] = maps
             results.append(row)
@@ -378,7 +391,8 @@ def workflow_save(request, workflow_id):
             if s in valid and t in valid and s != t and (s, t) not in made:
                 mappings = [{'from_path': (m.get('from_path') or '').strip(),
                              'to_var': (m.get('to_var') or '').strip(),
-                             'scope': m.get('scope') if m.get('scope') in SCOPES else 'collection'}
+                             'scope': m.get('scope') if m.get('scope') in SCOPES else 'collection',
+                             'from': 'request' if m.get('from') == 'request' else 'response'}
                             for m in (e.get('mappings') or []) if (m.get('to_var') or '').strip()]
                 WorkflowEdge.objects.create(workflow=workflow, source_id=s, target_id=t, mappings=mappings)
                 made.add((s, t))
@@ -423,7 +437,7 @@ def workflow_run_node(request, workflow_id):
     ok = is_pass(result, expected) and not [t for t in tests if not t.get('passed')] and not errors
     captured, notes = {}, []
     for e in WorkflowEdge.objects.filter(source=node):
-        notes += _apply_mappings(e.mappings, result, scopes, captured)
+        notes += _apply_mappings(e.mappings, result, scopes, captured, out.get('request'))
     scripting.save_scopes(scopes, env, collection)
     row = _node_result(node, result, out, ok)
     if notes:
